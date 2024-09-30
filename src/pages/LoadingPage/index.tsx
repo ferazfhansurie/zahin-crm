@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from "react";
-import logoUrl from "@/assets/images/logo_black.png";
 import { useNavigate, useLocation } from "react-router-dom";
 import LoadingIcon from "@/components/Base/LoadingIcon";
 import { useConfig } from '../../config';
@@ -471,7 +470,7 @@ function LoadingPage() {
                 {error && <div className="text-red-500 dark:text-red-400 mt-2">{error}</div>}
                 {isQRLoading ? (
                   <div className="mt-4">
-                    <img alt="Logo" className="w-40 h-40 p-25 animate-spin" src={logoUrl} style={{ animation: 'spin 10s linear infinite' }} />
+                   
                     <p className="mt-2 text-gray-600 dark:text-gray-400">Loading QR Code...</p>
                   </div>
                 ) : qrCodeImage ? (
@@ -515,7 +514,6 @@ function LoadingPage() {
                 )}
                 {(isLoading || !processingComplete || isFetchingChats) && (
                 <div className="mt-4 flex flex-col items-center">
-                  <img alt="Logo" className="w-40 h-40 p-25 animate-spin" src={logoUrl} style={{ animation: 'spin 3s linear infinite' }} />
                   <p className="mt-2 text-gray-600 dark:text-gray-400">
                     {isQRLoading ? "Please wait while QR code is loading..." : "Please wait while QR Code is loading..."}
                   </p>

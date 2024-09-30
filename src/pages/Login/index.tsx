@@ -78,11 +78,9 @@ const firebaseConfig = {
             <div className="block grid-cols-2 gap-4 xl:grid">
               <div className="flex-col hidden min-h-screen xl:flex">
                 <div className="my-auto flex flex-col items-left w-full">
-                  <img
-                    alt="Juta Software Logo"
-                    className="w-2/4 -mt-16"
-                    src={logoUrl}
-                  />
+                <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-center intro-x xl:text-left text-white">
+  Zahin Travel
+</h1>
                 </div>
               </div>
               <div className="flex h-screen py-5 my-10 xl:h-auto xl:py-0 xl:my-0">

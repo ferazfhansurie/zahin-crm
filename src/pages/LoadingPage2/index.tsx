@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import logoUrl from "@/assets/images/logo_black.png";
+
 import { useNavigate, useLocation } from "react-router-dom";
 import LoadingIcon from "@/components/Base/LoadingIcon";
 import { useConfig } from '../../config';
@@ -389,7 +389,7 @@ function LoadingPage2() {
   return (
     <div className="flex items-center justify-center h-screen bg-white dark:bg-gray-900">
       <div className="flex flex-col items-center w-3/4 max-w-lg text-center p-15">
-        <img alt="Logo" className="w-40 h-40 p-25" src={logoUrl} />
+
         {v2 ? (
           <>
             {botStatus === 'qr' && currentQrIndex !== null ? (

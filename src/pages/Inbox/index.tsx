@@ -7,7 +7,6 @@ import { DocumentReference, updateDoc, getDoc, getDocs, deleteDoc } from 'fireba
 import { getFirestore, collection, doc, setDoc, DocumentSnapshot } from 'firebase/firestore';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-import logoUrl from "@/assets/images/logo_black.png";
 import LoadingIcon from "@/components/Base/LoadingIcon";
 import { Tab } from '@headlessui/react'
 import { getStorage, ref, uploadBytes, getDownloadURL, listAll } from 'firebase/storage';
@@ -555,7 +554,7 @@ const Main: React.FC = () => {
               {loading ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="flex flex-col items-center w-3/4 max-w-lg text-center p-4">
-                    <img alt="Logo" className="w-24 h-24 mb-4" src={logoUrl} />
+               
                     <div className="mt-2 text-xs p-2 dark:text-gray-200">Fetching Assistant...</div>
                     <LoadingIcon icon="three-dots" className="w-20 h-20 p-4" />
                   </div>
@@ -702,7 +701,7 @@ const Main: React.FC = () => {
                 {loading ? (
                   <div className="flex items-center justify-center h-full">
                     <div className="flex flex-col items-center w-3/4 max-w-lg text-center p-15">
-                      <img alt="Logo" className="w-24 h-24 p-15" src={logoUrl} />
+                    
                       <div className="mt-2 text-xs p-15 dark:text-gray-200">Fetching Assistant...</div>
                       <LoadingIcon icon="three-dots" className="w-20 h-20 p-4" />
                     </div>
