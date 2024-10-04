@@ -20,8 +20,11 @@ import LZString from 'lz-string';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import Tippy from "@/components/Base/Tippy";
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
+import { ReactMic } from 'react-mic';
 import {  useNavigate } from "react-router-dom";
 import noti from "../../assets/audio/noti.mp3";
+import { FFmpeg } from '@ffmpeg/ffmpeg';
+import { fetchFile } from '@ffmpeg/util';
 import { Lock, MessageCircle } from "lucide-react";
 import { Menu as ContextMenu, Item, Separator, useContextMenu } from 'react-contexify';
 import 'react-contexify/dist/ReactContexify.css';
@@ -178,7 +181,7 @@ interface QuickReply {
   keyword: string;
   text: string;
   type:string;
-  document?: File | null;
+  document?: string | null;
   image?: string | null;
 }
 interface ImageModalProps {
@@ -188,10 +191,11 @@ interface ImageModalProps {
 }
 interface DocumentModalProps {
   isOpen: boolean;
-  type:string;
   onClose: () => void;
   document: File | null;
-  onSend: (file: File, caption: string) => void;
+  onSend: (document: File | null, caption: string) => void;
+  type: string;
+  initialCaption?: string; // Add this prop
 }
 interface PDFModalProps {
   isOpen: boolean;
@@ -216,15 +220,21 @@ interface EditMessagePopupProps {
   handleEditMessage: () => void;
   cancelEditMessage: () => void;
 }
-const DocumentModal: React.FC<DocumentModalProps> = ({ isOpen, onClose, document, onSend }) => {
-  const [caption, setCaption] = useState('');
+
+const DocumentModal: React.FC<DocumentModalProps> = ({ isOpen, onClose, document, onSend, type, initialCaption }) => {
+  const [caption, setCaption] = useState(initialCaption); // Initialize with initialCaption
+
+  useEffect(() => {
+    // Update caption when initialCaption changes
+    setCaption(initialCaption);
+  }, [initialCaption]);
 
   const handleSendClick = () => {
     if (document) {
-      onSend(document, caption);
+      onSend(document, caption || '');
+      onClose();
     }
     setCaption('');
-    onClose();
   };
 
   if (!isOpen || !document) return null;
@@ -383,6 +393,8 @@ function Main() {
   const [isTabOpen, setIsTabOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchQuery2, setSearchQuery2] = useState('');
+  const [forwardDialogTags, setForwardDialogTags] = useState<string[]>([]);
+  const [filteredForwardingContacts, setFilteredForwardingContacts] = useState<Contact[]>([]);
   const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
   const baseMessageClass = "flex flex-col max-w-[auto] min-w-[auto] p-1 text-white";
   const myMessageClass = `${baseMessageClass} bg-primary self-end ml-auto text-left mb-1 mr-6 group`;
@@ -494,6 +506,26 @@ function Main() {
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [showPlaceholders, setShowPlaceholders] = useState(false);
   const [caption, setCaption] = useState(''); // Add this line to define setCaption
+  const [isRecording, setIsRecording] = useState(false);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [isRecordingPopupOpen, setIsRecordingPopupOpen] = useState(false);
+  const [selectedDocumentURL, setSelectedDocumentURL] = useState<string | null>(null);
+  const [documentCaption, setDocumentCaption] = useState('');
+  
+
+  const [showAllForwardTags, setShowAllForwardTags] = useState(false);
+  const [visibleForwardTags, setVisibleForwardTags] = useState<typeof tagList>([]);
+
+  // Update this useEffect
+  useEffect(() => {
+    setVisibleForwardTags(showAllForwardTags ? tagList : tagList.slice(0, 5));
+  }, [tagList, showAllForwardTags]);
+
+  // Update this function name
+  const toggleForwardTagsVisibility = () => {
+    setShowAllForwardTags(!showAllForwardTags);
+  };
 
   const filteredContactsSearch = useMemo(() => {
     return contacts.filter((contact) => {
@@ -517,6 +549,82 @@ function Main() {
       return matchesSearch && matchesTagFilters;
     });
   }, [contacts, searchQuery, activeTags]);
+
+  const toggleRecordingPopup = () => {
+    setIsRecordingPopupOpen(!isRecordingPopupOpen);
+    if (!isRecordingPopupOpen) {
+      setIsRecording(false);
+      setAudioBlob(null);
+      setAudioUrl(null);
+    }
+  };
+
+
+  const onStop = (recordedBlob: { blob: Blob; blobURL: string }) => {
+    console.log('recordedBlob is: ', recordedBlob);
+    setAudioBlob(recordedBlob.blob);
+  };
+  
+  const toggleRecording = () => {
+    setIsRecording(!isRecording);
+    if (isRecording) {
+      setAudioBlob(null);
+    }
+  };
+
+  const convertToOggOpus = async (blob: Blob): Promise<Blob> => {
+    const ffmpeg = new FFmpeg();
+    await ffmpeg.load();
+  
+    const inputFileName = 'input.webm';
+    const outputFileName = 'output.ogg';
+  
+    ffmpeg.writeFile(inputFileName, await fetchFile(blob));
+  
+    await ffmpeg.exec(['-i', inputFileName, '-c:a', 'libopus', outputFileName]);
+  
+    const data = await ffmpeg.readFile(outputFileName);
+    return new Blob([data], { type: 'audio/ogg; codecs=opus' });
+  };
+  
+const sendVoiceMessage = async () => {
+  if (audioBlob && selectedChatId && userData) {
+    try {
+      // Convert the audio Blob to a File
+      const audioFile = new File([audioBlob], `voice_message_${Date.now()}.webm`, { type: "audio/webm" });
+
+      // Upload the audio file using the provided uploadFile function
+      const audioUrl = await uploadFile(audioFile);
+      console.log(audioUrl)
+      const requestBody = {
+        audioUrl,
+        caption: '',
+        phoneIndex: selectedContact?.phoneIndex || 0,
+        userName: userData.name
+      };
+
+      const response = await axios.post(
+        `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/audio/${userData.companyId}/${selectedChatId}`,
+        requestBody
+      );
+
+      if (response.data.success) {
+        console.log("Voice message sent successfully:", response.data.messageId);
+        toast.success("Voice message sent successfully");
+      } else {
+        console.error("Failed to send voice message");
+        toast.error("Failed to send voice message");
+      }
+
+      setAudioBlob(null);
+      setIsRecordingPopupOpen(false);
+    } catch (error) {
+      console.error("Error sending voice message:", error);
+      toast.error("Error sending voice message");
+    }
+  }
+};
+
 
   const uploadDocument = async (file: File): Promise<string> => {
     const storage = getStorage(); // Correctly initialize storage
@@ -1102,6 +1210,19 @@ const closePDFModal = () => {
     return await getDownloadURL(storageRef); // Return the download URL
 };
 
+const fetchFileFromURL = async (url: string): Promise<File | null> => {
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const decodedUrl = decodeURIComponent(url);
+    const filename = decodedUrl.split('/').pop()?.split('?')[0] || 'document';
+    return new File([blob], filename, { type: blob.type });
+  } catch (error) {
+    console.error('Error fetching file from URL:', error);
+    return null;
+  }
+};
+
   const addQuickReply = async () => {
     if (newQuickReply.trim() === '') return;
   
@@ -1127,7 +1248,7 @@ const closePDFModal = () => {
         type: newQuickReplyType,
         createdAt: serverTimestamp(),
         createdBy: user.email,
-        document: selectedDocument ? await uploadDocument(selectedDocument) : null,
+        document: selectedDocument ? await uploadDocument(selectedDocument) : null, // URL stored
         image: selectedImage ? await uploadImage(selectedImage) : null,
       };
   
@@ -1213,25 +1334,21 @@ const closePDFModal = () => {
     }
   };
 
-  const handleQRClick = (reply: QuickReply, document: File | null, image: string | null) => {
-    if (document && image) {
-      console.warn('Cannot select both document and image.');
-      return; // Prevent setting both
-    }
-    
-    if (image) {
-      const imageFile = new File([image], "image.png", { type: "image/png" });
-      const imageUrl = URL.createObjectURL(imageFile);
-      setPastedImageUrl(imageUrl);
+  const handleQRClick = (reply: QuickReply) => {
+    if (reply.image) {
+      setPastedImageUrl(reply.image);
       setImageModalOpen2(true);
     }
-    
-    if (document) {
-      const documentFile = new File([document], "document", { type: document.type });
-      setSelectedDocument(documentFile);
-      setDocumentModalOpen(true);
+  
+    if (reply.document) {
+      fetchFileFromURL(reply.document).then(file => {
+        if (file) {
+          setSelectedDocument(file);
+          setDocumentModalOpen(true);
+        }
+      });
     }
-    
+  
     setNewMessage(reply.text);
     setIsQuickRepliesOpen(false);
   };
@@ -2923,25 +3040,25 @@ const fiveDaysFollowUpMalay = (contact: Contact) => {
         // Handle specific tags
         if (tagName === 'Before Quote Follow Up') {
           addTagBeforeQuote(contact);
-        } else if (tagName === 'Before Quote Follow Up (English)') {
+        } else if (tagName === 'Before Quote Follow Up EN') {
           addTagBeforeQuoteEnglish(contact);
-        } else if (tagName === 'Before Quote Follow Up (Malay)') {
+        } else if (tagName === 'Before Quote Follow Up BM') {
           addTagBeforeQuoteMalay(contact);
-        } else if (tagName === 'Before Quote Follow Up (Chinese)') {
+        } else if (tagName === 'Before Quote Follow Up CN') {
           addTagBeforeQuoteChinese(contact);
         } else if (tagName === 'After Quote Follow Up') {
           addTagAfterQuote(contact);
-        } else if (tagName === 'After Quote Follow Up (English)') {
+        } else if (tagName === 'After Quote Follow Up EN') {
           addTagAfterQuoteEnglish(contact);
-        } else if (tagName === 'After Quote Follow Up (Chinese)') {
+        } else if (tagName === 'After Quote Follow Up CN') {
           addTagAfterQuoteChinese(contact);
-        } else if (tagName === 'After Quote Follow Up (Malay)') {
+        } else if (tagName === 'After Quote Follow Up BM') {
           addTagAfterQuoteMalay(contact);
-        } else if (tagName === '5 Days Follow Up (English)') {
+        } else if (tagName === '5 Days Follow Up EN') {
           fiveDaysFollowUpEnglish(contact);
-        } else if (tagName === '5 Days Follow Up (Chinese)') {
+        } else if (tagName === '5 Days Follow Up CN') {
           fiveDaysFollowUpChinese(contact);
-        } else if (tagName === '5 Days Follow Up (Malay)') {
+        } else if (tagName === '5 Days Follow Up BM') {
           fiveDaysFollowUpMalay(contact);
         } else {
           // Check if the tag is an employee's name and send assignment notification
@@ -2992,7 +3109,6 @@ const addNotificationToUser = async (companyId: string, employeeName: string, no
 
 const sendAssignmentNotification = async (assignedEmployeeName: string, contact: Contact) => {
   try {
-
     const user = auth.currentUser;
     if (!user) {
       console.error('No authenticated user');
@@ -3013,7 +3129,6 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
       console.error('Invalid companyId:', companyId);
       throw new Error('Invalid companyId');
     }
-    
 
     // Check if notification has already been sent
     const notificationRef = doc(firestore, 'companies', companyId, 'assignmentNotifications', `${contact.id}_${assignedEmployeeName}`);
@@ -3032,20 +3147,13 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
       return;
     }
 
-    if (!assignedEmployee.phoneNumber) {
-      console.error(`Phone number missing for employee: ${assignedEmployeeName}`);
-      toast.error(`Failed to send assignment notification: Phone number missing for ${assignedEmployeeName}`);
-      return;
-    }
+    // Fetch all admin users
+    const usersRef = collection(firestore, 'user');
+    const adminQuery = query(usersRef, where('companyId', '==', companyId), where('role', '==', '1'));
+    const adminSnapshot = await getDocs(adminQuery);
+    const adminUsers = adminSnapshot.docs.map(doc => doc.data());
 
-    // Format the phone number for WhatsApp chat_id
-    const employeePhone = `${assignedEmployee.phoneNumber.replace(/[^\d]/g, '')}@c.us`;
-    console.log('Formatted employee chat_id:', employeePhone);
-
-    if (!employeePhone || !/^\d+@c\.us$/.test(employeePhone)) {
-      console.error('Invalid employeePhone:', employeePhone);
-      throw new Error('Invalid employeePhone');
-    }
+    console.log(`Found ${adminUsers.length} admin users for notifications`);
 
     const docRef = doc(firestore, 'companies', companyId);
     const docSnapshot = await getDoc(docRef);
@@ -3055,49 +3163,50 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
     }
     const companyData = docSnapshot.data();
 
-    let message = `Hello ${assignedEmployee.name}, a new contact has been assigned to you:\n\nName: ${contact.contactName || contact.firstName || 'N/A'}\nPhone: ${contact.phone}\n\nPlease follow up with them as soon as possible.`;
-    if(companyId == '042'){
-      message = `Hi ${assignedEmployee.employeeId || assignedEmployee.phoneNumber} ${assignedEmployee.name}.\n\nAnda telah diberi satu prospek baharu\n\nSila masuk ke https://web.jutasoftware.co/login untuk melihat perbualan di antara Zahin Travel dan prospek.\n\nTerima kasih.\n\nIkhlas,\nZahin Travel Sdn. Bhd. (1276808-W)\nNo. Lesen Pelancongan: KPK/LN 9159\nNo. MATTA: MA6018\n\n#zahintravel - Nikmati setiap detik..\n#diyakini\n#responsif\n#budibahasa`;
-    }
-
-    let url;
-    let requestBody;
-    if (companyData.v2 === true) {
-      console.log("v2 is true");
-      url = `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${employeePhone}`;
-      requestBody = { message };
+    // Function to send WhatsApp message
+    const sendWhatsAppMessage = async (phoneNumber: string, message: string) => {
+      const chatId = `${phoneNumber.replace(/[^\d]/g, '')}@c.us`;
+      let url;
+      let requestBody;
+      if (companyData.v2 === true) {
+        url = `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${chatId}`;
+        requestBody = { message };
       } else {
-      console.log("v2 is false");
-      url = `https://mighty-dane-newly.ngrok-free.app/api/messages/text/${employeePhone}/${companyData.whapiToken}`;
-      requestBody = { message };
+        url = `https://mighty-dane-newly.ngrok-free.app/api/messages/text/${chatId}/${companyData.whapiToken}`;
+        requestBody = { message };
+      }
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Error response:', response.status, errorText);
+        throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+      }
+
+      return await response.json();
+    };
+
+    // Send notification to assigned employee
+    if (assignedEmployee.phoneNumber) {
+      let employeeMessage = `Hello ${assignedEmployee.name}, a new contact has been assigned to you:\n\nName: ${contact.contactName || contact.firstName || 'N/A'}\nPhone: ${contact.phone}\n\nPlease follow up with them as soon as possible.`;
+      if(companyId == '042'){
+        employeeMessage = `Hi ${assignedEmployee.employeeId || assignedEmployee.phoneNumber} ${assignedEmployee.name}.\n\nAnda telah diberi satu prospek baharu\n\nSila masuk ke https://web.jutasoftware.co/login untuk melihat perbualan di antara Zahin Travel dan prospek.\n\nTerima kasih.\n\nIkhlas,\nZahin Travel Sdn. Bhd. (1276808-W)\nNo. Lesen Pelancongan: KPK/LN 9159\nNo. MATTA: MA6018\n\n#zahintravel - Nikmati setiap detik..\n#diyakini\n#responsif\n#budibahasa`;
+      }
+      await sendWhatsAppMessage(assignedEmployee.phoneNumber, employeeMessage);
     }
 
-    console.log('Sending request to:', url);
-    console.log('Request body:', JSON.stringify(requestBody));
-
-    console.log('Full request details:', {
-      url,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody)
-    });
-
-    // Send WhatsApp message to the employee
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody),
-    });
-  
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Error response:', response.status, errorText);
-      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+    // Send notification to all admins
+    for (const admin of adminUsers) {
+      if (admin.phoneNumber) {
+        const adminMessage = `Admin notification: A new contact has been assigned to ${assignedEmployee.name}:\n\nName: ${contact.contactName || contact.firstName || 'N/A'}\nPhone: ${contact.phone}`;
+        await sendWhatsAppMessage(admin.phoneNumber, adminMessage);
+      }
     }
-
-    const responseData = await response.json();
-    console.log('Assignment notification response:', responseData);
-    console.log('Sent to phone number:', employeePhone);
 
     // Mark notification as sent
     await setDoc(notificationRef, {
@@ -3106,25 +3215,147 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
       contactId: contact.id
     });
 
-    toast.success("Assignment notification sent successfully!");
+    toast.success("Assignment notifications sent successfully!");
   } catch (error) {
-    console.error('Error sending assignment notification:', error);
+    console.error('Error sending assignment notifications:', error);
     
-    // Instead of throwing the error, we'll handle it here
     if (error instanceof TypeError && error.message === 'Failed to fetch') {
       toast.error('Network error. Please check your connection and try again.');
     } else {
-      toast.error('Failed to send assignment notification. Please try again.');
+      toast.error('Failed to send assignment notifications. Please try again.');
     }
     
-    // Log additional information that might be helpful
     console.log('Assigned Employee Name:', assignedEmployeeName);
     console.log('Contact:', contact);
     console.log('Employee List:', employeeList);
     console.log('Company ID:', companyId);
   }
 };
-  
+
+
+//start of sending daily summary code
+
+useEffect(() => {
+  const checkAndSendDailySummary = async () => {
+    const now = new Date();
+    const targetHour = 23; // 11 PM
+    const targetMinute = 30;
+
+    if (now.getHours() === targetHour && now.getMinutes() === targetMinute) {
+      console.log('It\'s 11:30 PM. Preparing to send daily summary...');
+      const user = auth.currentUser;
+      if (user) {
+        const docUserRef = doc(firestore, 'user', user.email!);
+        const docUserSnapshot = await getDoc(docUserRef);
+        if (docUserSnapshot.exists()) {
+          const userData = docUserSnapshot.data();
+          const companyId = userData.companyId;
+          const companyRef = doc(firestore, 'companies', companyId);
+          const companySnapshot = await getDoc(companyRef);
+          if (companySnapshot.exists()) {
+            const companyData = companySnapshot.data();
+            const companyName = companyData.name;
+            console.log(`Sending daily summary for company ${companyName} (ID: ${companyId})`);
+            await sendDailyLeadsSummary(companyId);
+          } else {
+            console.log('Company document does not exist');
+          }
+        } else {
+          console.log('User document does not exist');
+        }
+      } else {
+        console.log('No authenticated user');
+      }
+    }
+  };
+
+  // Check every minute
+  const intervalId = setInterval(checkAndSendDailySummary, 60000);
+
+  return () => clearInterval(intervalId);
+}, []);
+
+const sendDailyLeadsSummary = async (companyId: string) => {
+  try {
+    console.log('Starting to send daily leads summary');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // Query to get contacts created today
+    const contactsRef = collection(firestore, 'companies', companyId, 'contacts');
+    const todayQuery = query(
+      contactsRef,
+      where('createdAt', '>=', Timestamp.fromDate(today)),
+      where('createdAt', '<', Timestamp.fromDate(tomorrow))
+    );
+    const todaySnapshot = await getDocs(todayQuery);
+    const newLeadsCount = todaySnapshot.size;
+
+    console.log(`New leads count: ${newLeadsCount}`);
+
+    // Get all admin users
+    const usersRef = collection(firestore, 'user');
+    const adminQuery = query(usersRef, where('companyId', '==', companyId), where('role', 'in', ['1', '2']));
+    const adminSnapshot = await getDocs(adminQuery);
+    const adminUsers = adminSnapshot.docs.map(doc => doc.data());
+
+    console.log(`Found ${adminUsers.length} admin users`);
+
+    // Get company data
+    const companyRef = doc(firestore, 'companies', companyId);
+    const companySnapshot = await getDoc(companyRef);
+    if (!companySnapshot.exists()) {
+      throw new Error('Company document not found');
+    }
+    const companyData = companySnapshot.data();
+
+    // Send summary to all admin users
+    for (const admin of adminUsers) {
+      if (admin.phoneNumber) {
+        const summaryMessage = `Daily Lead Summary\n\nDate: ${today.toLocaleDateString()}\nNew Leads: ${newLeadsCount}\n\nThis is an automated message from your CRM system.`;
+        console.log(`Sending summary to ${admin.phoneNumber}`);
+        await sendWhatsAppMessage(admin.phoneNumber, summaryMessage, companyId, companyData);
+      } else {
+        console.log(`Admin ${admin.email} has no phone number`);
+      }
+    }
+
+    console.log(`Daily lead summary sent to ${adminUsers.length} admin users.`);
+  } catch (error) {
+    console.error('Error sending daily leads summary:', error);
+  }
+};
+
+const sendWhatsAppMessage = async (phoneNumber: string, message: string, companyId: string, companyData: any) => {
+  const chatId = `${phoneNumber.replace(/[^\d]/g, '')}@c.us`;
+  let url;
+  let requestBody;
+  if (companyData.v2 === true) {
+    url = `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${chatId}`;
+    requestBody = { message };
+  } else {
+    url = `https://mighty-dane-newly.ngrok-free.app/api/messages/text/${chatId}/${companyData.whapiToken}`;
+    requestBody = { message };
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Error response:', response.status, errorText);
+    throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+  }
+
+  return await response.json();
+};
+
+//end of sending daily summary code
  
 const formatText = (text: string) => {
   const parts = text.split(/(\*[^*]+\*|\*\*[^*]+\*\*)/g);
@@ -3320,19 +3551,30 @@ const sortContacts = (contacts: Contact[]) => {
     // We'll handle the filtering in the useEffect
   };
 
+  const filterForwardDialogContacts = (tag: string) => {
+    setForwardDialogTags(prevTags => 
+      prevTags.includes(tag) ? prevTags.filter(t => t !== tag) : [...prevTags, tag]
+    );
+  };
+  
+  // Modify the handleSearchChange2 function
   const handleSearchChange2 = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const query = e.target.value.toLowerCase();
-    setSearchQuery2(query);
+    setSearchQuery2(e.target.value);
+  };
   
-    const filtered = contacts.filter((contact) => {
-      const name = (contact.contactName || contact.firstName || contact.phone || '').toLowerCase();
-      const phone = (contact.phone || '').toLowerCase();
-      const tags = (contact.tags || []).join(' ').toLowerCase();
+  // Add this function to get filtered contacts
+  const getFilteredForwardingContacts = () => {
+    return contacts.filter(contact => {
+      const matchesSearch = 
+        contact.contactName?.toLowerCase().includes(searchQuery2.toLowerCase()) ||
+        contact.firstName?.toLowerCase().includes(searchQuery2.toLowerCase()) ||
+        contact.phone?.toLowerCase().includes(searchQuery2.toLowerCase());
   
-      return name.includes(query) || phone.includes(query) || tags.includes(query);
+      const matchesTags = forwardDialogTags.length === 0 || 
+        contact.tags?.some(tag => forwardDialogTags.includes(tag));
+  
+      return matchesSearch && matchesTags;
     });
-  
-    setFilteredContactsForForwarding(filtered);
   };
 
   // Update the pagination logic
@@ -3530,64 +3772,78 @@ const sortContacts = (contacts: Contact[]) => {
             : [...prevSelectedMessages, message]
     );
   };
-const handleForwardMessage = async () => {
-  if (selectedMessages.length === 0 || selectedContactsForForwarding.length === 0) return;
 
-  try {
+  const handleForwardMessage = async () => {
+    if (selectedMessages.length === 0 || selectedContactsForForwarding.length === 0) return;
+  
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error('No authenticated user');
+  
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) throw new Error('No user document found');
+  
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+  
       for (const contact of selectedContactsForForwarding) {
-          for (const message of selectedMessages) {
-              let response;
-              if (message.type === 'image') {
-                  response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/messages/image/${whapiToken}`, {
-                      method: 'POST',
-                      headers: {
-                          'Content-Type': 'application/json',
-                      },
-                      body: JSON.stringify({
-                          chatId: contact.chat_id,
-                          imageUrl: message.image?.link,
-                          caption: message.image?.caption || '',
-                      }),
-                  });
-              } else if (message.type === 'document') {
-                  response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/messages/document/${whapiToken}`, {
-                      method: 'POST',
-                      headers: {
-                          'Content-Type': 'application/json',
-                      },
-                      body: JSON.stringify({
-                          chatId: contact.chat_id,
-                          imageUrl: message.document?.link,
-                          fileName: message.document?.file_name,
-                          mimeType: message.document?.mime_type,
-                      }),
-                  });
-              } else {
-                const message_string = message!.text?.body!;
-                  response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/messages/text/${contact.chat_id}/${whapiToken}`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        message: message_string,
-              
-                      }),
-                  });
+        for (const message of selectedMessages) {
+          try {
+            if (message.type === 'image') {
+              // Ensure we have a valid image link
+              const imageLink = message.image?.link || message.image?.url;
+              if (!imageLink) {
+                throw new Error('Invalid image link');
               }
-              if (!response.ok) throw new Error('Failed to forward message');
+              await sendImageMessage(contact.chat_id ?? '', imageLink, message.image?.caption ?? '');
+            } else if (message.type === 'document') {
+              // Ensure we have a valid document link
+              const documentLink = message.document?.link;
+              if (!documentLink) {
+                throw new Error('Invalid document link');
+              }
+              await sendDocumentMessage(
+                contact.chat_id ?? '',
+                documentLink,
+                message.document?.mime_type ?? '',
+                message.document?.file_name ?? '',
+                message.document?.caption ?? ''
+              );
+            } else {
+              // For text messages, use the existing API call
+              const response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${contact.chat_id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  message: message.text?.body || '',
+                  phoneIndex: userData.phone || 0,
+                  userName: userData.name || userData.email || ''
+                }),
+              });
+  
+              if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`Failed to forward text message: ${response.status} ${errorText}`);
+              }
+            }
+            console.log('Message forwarded successfully');
+          } catch (error) {
+            console.error('Error forwarding message:', error);
+            toast.error(`Failed to forward a message: ${error instanceof Error ? error.message : 'Unknown error'}`);
           }
+        }
       }
-
+  
       setIsForwardDialogOpen(false);
       setSelectedMessages([]);
       setSelectedContactsForForwarding([]);
       toast.success('Messages forwarded successfully');
-  } catch (error) {
-      console.error('Error forwarding messages:', error);
-      alert('Failed to forward messages');
-  }
-};
-
-
+    } catch (error) {
+      console.error('Error in forward process:', error);
+      toast.error(`Error in forward process: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
 
   const handleSelectContactForForwarding = (contact: Contact) => {
     setSelectedContactsForForwarding(prevContacts => 
@@ -3669,6 +3925,8 @@ const handleForwardMessage = async () => {
   
   const sendImageMessage = async (chatId: string, imageUrl: string, caption?: string) => {
     try {
+      console.log(`Sending image message. ChatId: ${chatId}`);
+      
       const user = auth.currentUser;
       if (!user) throw new Error('No authenticated user');
   
@@ -3678,8 +3936,11 @@ const handleForwardMessage = async () => {
   
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-      const phoneIndex = userData.phone || 0;
+      const phoneIndex = userData.phone || 0; // Use the same approach as in sendMessage
       const userName = userData.name || userData.email || '';
+      
+      console.log(`Using phoneIndex: ${phoneIndex}`);
+  
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) throw new Error('No company document found');
@@ -3687,8 +3948,8 @@ const handleForwardMessage = async () => {
       const companyData = docSnapshot.data();
   
       let response;
-      // Try the new API first
       try {
+        console.log(`Attempting to send image via API. PhoneIndex: ${phoneIndex}`);
         response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/image/${companyId}/${chatId}`, {
           method: 'POST',
           headers: {
@@ -3697,35 +3958,20 @@ const handleForwardMessage = async () => {
           body: JSON.stringify({
             imageUrl: imageUrl,
             caption: caption || '',
-            phoneIndex: phoneIndex, // Assuming default phone index is 0
+            phoneIndex: phoneIndex,
             userName: userName,
           }),
         });
   
-        if (!response.ok) throw new Error(`New API failed with status ${response.status}`);
-      } catch (newApiError) {
-        console.warn('New API failed, falling back to old API', newApiError);
-  
-        // If the new API fails, fall back to the old API
-        response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/messages/image/${companyData.whapiToken}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            chatId: chatId,
-            imageUrl: imageUrl,
-            caption: caption || '',
-            userName: userName,
-          }),
-        });
-  
-        if (!response.ok) throw new Error(`Old API failed with status ${response.status}`);
+        if (!response.ok) throw new Error(`API failed with status ${response.status}`);
+      } catch (error) {
+        console.error('Error sending image:', error);
+        throw error;
       }
   
       const data = await response.json();
-      fetchMessages(chatId, companyData.ghl_accessToken);
       console.log('Image message sent successfully:', data);
+      fetchMessages(chatId, companyData.ghl_accessToken);
     } catch (error) {
       console.error('Error sending image message:', error);
       toast.error(`Failed to send image: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -3733,8 +3979,10 @@ const handleForwardMessage = async () => {
     }
   };
   
-  const sendDocumentMessage = async (chatId: string, documentUrl: string, mimeType: string, fileName: string, caption?: string, phoneIndex: number = 0) => {
+  const sendDocumentMessage = async (chatId: string, documentUrl: string, mimeType: string, fileName: string, caption?: string) => {
     try {
+      console.log(`Sending document message. ChatId: ${chatId}`);
+      
       const user = auth.currentUser;
       if (!user) throw new Error('No authenticated user');
   
@@ -3744,7 +3992,11 @@ const handleForwardMessage = async () => {
   
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
+      const phoneIndex = userData.phone || 0; // Use the same approach as in sendMessage
       const userName = userData.name || userData.email || '';
+      
+      console.log(`Using phoneIndex: ${phoneIndex}`);
+  
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) throw new Error('No company document found');
@@ -3752,8 +4004,8 @@ const handleForwardMessage = async () => {
       const companyData = docSnapshot.data();
   
       let response;
-      // Try the new API first
       try {
+        console.log(`Attempting to send document via API. PhoneIndex: ${phoneIndex}`);
         response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/document/${companyId}/${chatId}`, {
           method: 'POST',
           headers: {
@@ -3768,32 +4020,15 @@ const handleForwardMessage = async () => {
           }),
         });
   
-        if (!response.ok) throw new Error(`New API failed with status ${response.status}`);
-      } catch (newApiError) {
-        console.warn('New API failed, falling back to old API', newApiError);
-  
-        // If the new API fails, fall back to the old API
-        response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/messages/document/${companyData.whapiToken}`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            chatId: chatId,
-            imageUrl: documentUrl,
-            mimeType: mimeType,
-            fileName: fileName,
-            caption: caption || '',
-            userName: userName,
-          }),
-        });
-  
-        if (!response.ok) throw new Error(`Old API failed with status ${response.status}`);
+        if (!response.ok) throw new Error(`API failed with status ${response.status}`);
+      } catch (error) {
+        console.error('Error sending document:', error);
+        throw error;
       }
   
       const data = await response.json();
-      fetchMessages(chatId, companyData.ghl_accessToken);
       console.log('Document message sent successfully:', data);
+      fetchMessages(chatId, companyData.ghl_accessToken);
     } catch (error) {
       console.error('Error sending document message:', error);
       toast.error(`Failed to send document: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -4014,25 +4249,25 @@ const handleForwardMessage = async () => {
       //handle specific tags
       if (tagName === 'Before Quote Follow Up') {
         removeTagBeforeQuote(contact);
-      } else if (tagName === 'Before Quote Follow Up (English)') {
+      } else if (tagName === 'Before Quote Follow Up EN') {
         removeTagBeforeQuote(contact);
-      } else if (tagName === 'Before Quote Follow Up (Malay)') {
+      } else if (tagName === 'Before Quote Follow Up BM') {
         removeTagBeforeQuote(contact);
-      } else if (tagName === 'Before Quote Follow Up (Chinese)') {
+      } else if (tagName === 'Before Quote Follow Up CN') {
         removeTagBeforeQuote(contact);
       } else if (tagName === 'After Quote Follow Up') {
         removeTagAfterQuote(contact);
-      } else if (tagName === 'After Quote Follow Up (English)') {
+      } else if (tagName === 'After Quote Follow Up EN') {
         removeTagAfterQuote(contact);
-      } else if (tagName === 'After Quote Follow Up (Chinese)') {
+      } else if (tagName === 'After Quote Follow Up CN') {
         removeTagAfterQuote(contact);
-      } else if (tagName === 'After Quote Follow Up (Malay)') {
+      } else if (tagName === 'After Quote Follow Up BM') {
         removeTagAfterQuote(contact);
-      } else if (tagName === '5 Days Follow Up (English)') {
+      } else if (tagName === '5 Days Follow Up EN') {
         removeTagAfterQuote(contact);
-      } else if (tagName === '5 Days Follow Up (Chinese)') {
+      } else if (tagName === '5 Days Follow Up CN') {
         removeTagAfterQuote(contact);
-      } else if (tagName === '5 Days Follow Up (Malay)') {
+      } else if (tagName === '5 Days Follow Up BM') {
         removeTagAfterQuote(contact);
       }
       // Update state
@@ -4172,12 +4407,13 @@ const handleForwardMessage = async () => {
       </div>
     </div>
   );
+  
   const sendDocument = async (file: File, caption: string) => {
     setLoading(true);
     try {
       const uploadedDocumentUrl = await uploadFile(file);
       if (uploadedDocumentUrl) {
-        await sendDocumentMessage(selectedChatId!, uploadedDocumentUrl, caption, file.name);
+        await sendDocumentMessage(selectedChatId!, uploadedDocumentUrl, file.type, file.name, caption);
       }
     } catch (error) {
       console.error('Error sending document:', error);
@@ -4187,6 +4423,7 @@ const handleForwardMessage = async () => {
       setDocumentModalOpen(false);
     }
   };
+
   const uploadLocalImageUrl = async (localUrl: string): Promise<string | null> => {
     try {
       const response = await fetch(localUrl);
@@ -4209,6 +4446,7 @@ const handleForwardMessage = async () => {
       return null;
     }
   };
+  
   const sendImage = async (imageUrl: string | null, caption: string) => {
     console.log('Image URL:', imageUrl);
     console.log('Caption:', caption);
@@ -4995,6 +5233,7 @@ console.log(prompt);
               </div>
               </div>
             )}
+
             {isForwardDialogOpen && (
               <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
                 <div className="bg-white dark:bg-gray-800 rounded-lg text-left shadow-xl transform transition-all sm:my-8 sm:max-w-lg sm:w-full">
@@ -5015,27 +5254,34 @@ console.log(prompt);
                             className="absolute top-2 right-3 w-5 h-5 text-gray-500 dark:text-gray-400"
                           />
                         </div>
-                        <div className="sticky top-0 bg-white dark:bg-gray-800 z-20 w-full">
-                          <div className="overflow-x-auto whitespace-nowrap pb-2 sticky top-0 z-20">
-                            <div className="flex gap-2 sticky top-0" style={{ overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none', position: 'sticky', top: 0 }}>
-                              {visibleTags.map((tag) => (
-                                <button
-                                  key={tag.id}
-                                  onClick={() => filterTagContact('mine')}
-                                  className={`px-3 py-1 rounded-full text-sm flex-shrink-0 ${
-                                    activeTags.includes(tag.name)
-                                      ? 'bg-primary text-white dark:bg-primary dark:text-white'
-                                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
-                                  } transition-colors duration-200`}
-                                >
-                                  {tag.name}
-                                </button>
-          ))}
-        </div>
-      </div>
+                        <div className="mb-4">
+                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Filter by tags:</h4>
+                          <div className="flex flex-wrap gap-2">
+                            {visibleForwardTags.map((tag) => (
+                              <button
+                                key={tag.id}
+                                onClick={() => filterForwardDialogContacts(tag.name)}
+                                className={`px-3 py-1 rounded-full text-sm flex-shrink-0 ${
+                                  forwardDialogTags.includes(tag.name)
+                                    ? 'bg-primary text-white dark:bg-primary dark:text-white'
+                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
+                                } transition-colors duration-200`}
+                              >
+                                {tag.name}
+                              </button>
+                            ))}
+                          </div>
+                          {tagList.length > 5 && (
+                            <button
+                              onClick={toggleForwardTagsVisibility}
+                              className="mt-2 text-sm text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                            >
+                              {showAllForwardTags ? 'Show Less' : 'Show More'}
+                            </button>
+                          )}
                         </div>
                         <div className="max-h-60 overflow-y-auto">
-                          {filteredContactsForForwarding.map((contact, index) => (
+                          {getFilteredForwardingContacts().map((contact, index) => (
                             <div
                               key={contact.id || `${contact.phone}-${index}`}
                               className="flex items-center p-2 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
@@ -5052,40 +5298,20 @@ console.log(prompt);
                                 </div>
                                 <div className="flex-grow">
                                   <div className="font-semibold capitalize">{contact.contactName || contact.firstName || contact.phone}</div>
+                                  {contact.tags && contact.tags.length > 0 && (
+                                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                                      Tags: {contact.tags.join(', ')}
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             </div>
                           ))}
                         </div>
-                        <div className="mt-4 mb-2 px-1 h-40 overflow-y-auto">
-                          {/* Content goes here */}
-                        </div>
-                        {tagList.length > 5 && (
-                          <div className="sticky bottom-0 bg-white dark:bg-gray-800 py-2 z-10">
-                            <div className="flex justify-center">
-                              <button
-                                onClick={toggleTagsExpansion}
-                                className="text-primary dark:text-blue-400 hover:underline focus:outline-none flex items-center"
-                              >
-                                {isTagsExpanded ? (
-                                  <>
-                                    <Lucide icon="ChevronUp" className="z-99 w-4 h-4 mr-1" />
-                                    Show Less
-                                  </>
-                                ) : (
-                                  <>
-                                    <Lucide icon="ChevronDown" className="w-4 h-4 mr-1" />
-                                    Show More
-                                  </>
-                                )}
-                              </button>
-                            </div>
-                          </div>
-                        )}
-            </div>
-          </div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+                  <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
                     <Button
                       type="button"
                       className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary text-base font-medium text-white hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
@@ -5095,7 +5321,7 @@ console.log(prompt);
                     </Button>
                     <Button
                       type="button"
-                      className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm"
+                      className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white dark:bg-gray-600 text-base font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm"
                       onClick={() => handleCloseForwardDialog()}
                     >
                       Cancel
@@ -5103,24 +5329,24 @@ console.log(prompt);
                   </div>
                 </div>
               </div>
-)} 
+            )}
 
     <div className="flex justify-end space-x-3">
-    { (
-  <div className="relative flex-grow">
-    <input
-      type="text"
-      className="!box w-full h-9 py-1 pl-10 pr-4 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-800"
-      placeholder="Search..."
-      value={searchQuery}
-      onChange={handleSearchChange}
-    />
-  <Lucide
-    icon="Search"
-    className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500 dark:text-gray-400"
-  />
-</div>
-)}
+    {(
+      <div className="relative flex-grow">
+        <input
+          type="text"
+          className="!box w-full h-9 py-1 pl-10 pr-4 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-800"
+          placeholder="Search..."
+          value={searchQuery}
+          onChange={handleSearchChange}
+        />
+        <Lucide
+          icon="Search"
+          className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500 dark:text-gray-400"
+        />
+      </div>
+    )}
     {isAssistantAvailable && (
       <button 
         className={`flex items-center justify-start p-2 !box ${
@@ -6106,7 +6332,7 @@ console.log(prompt);
          <div className="flex mb-1">
             <button
               className={`px-4 py-2 mr-1 rounded-lg ${
-                messageMode === 'reply'
+                messageMode === 'reply' || messageMode === `phone${selectedContact?.phoneIndex + 1}`
                   ? 'bg-primary text-white'
                   : 'bg-white text-gray-800 dark:bg-gray-800 dark:text-gray-200'
               }`}
@@ -6202,6 +6428,53 @@ console.log(prompt);
               <Lucide icon='Zap' className="w-5 h-5 text-gray-800 dark:text-gray-200" />
             </span>
           </button>
+          <button className="p-2 m-0 !box ml-2" onClick={toggleRecordingPopup}>
+        <span className="flex items-center justify-center w-5 h-5">
+          <Lucide icon="Mic" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
+        </span>
+      </button>
+
+      {isRecordingPopupOpen && (
+        <div className="absolute bottom-full mb-2 left-0 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4">
+          <div className="flex items-center mb-2">
+            <button
+              className={`p-2 rounded-md ${isRecording ? 'bg-red-500 text-white' : 'bg-primary text-white'}`}
+              onClick={toggleRecording}
+            >
+              <Lucide icon={isRecording ? "StopCircle" : "Mic"} className="w-5 h-5" />
+            </button>
+            <ReactMic
+              record={isRecording}
+              className="w-44 rounded-md h-10 mr-2 ml-2"
+              onStop={onStop}
+              strokeColor="#0000CD"
+              backgroundColor="#FFFFFF"
+              mimeType="audio/webm"
+            />
+          </div>
+          <div className="flex flex-col space-y-2">
+            {audioBlob && (
+              <>
+                <audio src={URL.createObjectURL(audioBlob)} controls className="w-full h-10 mb-2" />
+                <div className="flex justify-between">
+                  <button
+                    className="px-3 py-1 rounded bg-gray-500 text-white"
+                    onClick={() => setAudioBlob(null)}
+                  >
+                    Remove
+                  </button>
+                  <button
+                    className="px-3 py-1 rounded bg-green-700 text-white"
+                    onClick={sendVoiceMessage}
+                  >
+                    Send
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
           {userData?.company === 'Juta Software' && (
         <button 
           className="p-2 m-0 !box ml-2" 
@@ -6399,7 +6672,7 @@ console.log(prompt);
                       <span
                         className="px-2 py-1 flex-grow text-lg cursor-pointer text-gray-800 dark:text-gray-200"
                         onClick={() => {
-                          handleQRClick(reply, reply?.document ?? null, reply?.image ?? null);
+                          handleQRClick(reply);
                           let message = reply.text;
                           if (reply.image) {
                             const imageFile = new File([reply.image], "image.png", { type: "image/png" });
@@ -6408,9 +6681,10 @@ console.log(prompt);
                             setImageModalOpen2(true);
                           }
                           if (reply.document) {
-                            const documentFile = new File([reply.document], "document", { type: reply.document.type });
+                            const documentFile = new File([reply.document], "document", { type: reply.document });
                             setSelectedDocument(documentFile);
                             setDocumentModalOpen(true);
+                            setDocumentCaption(reply.text);
                           }
                           setNewMessage(message);
                           setIsQuickRepliesOpen(false);
@@ -6472,7 +6746,7 @@ console.log(prompt);
                 rows={1}
                 style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'Arial, sans-serif', fontSize: '14px' }}
               />
-              {/* <input
+              <input
                 type="file"
                 className="hidden"
                 id="quickReplyFile"
@@ -6480,10 +6754,10 @@ console.log(prompt);
               />
               <label htmlFor="quickReplyFile" className="p-2 m-1 !box cursor-pointer">
                 <span className="flex items-center justify-center w-5 h-5">
-                  <Lucide icon="Paperclip" className="w-5 h-5 text-gray-800 dark:text-gray-200" />  
+                  <Lucide icon="File" className="w-5 h-5 text-gray-800 dark:text-gray-200" />  
                 </span>
               </label>  
-              <input
+              {/* <input
                 type="file"
                 accept="image/*"
                 className="hidden"
@@ -6766,10 +7040,16 @@ console.log(prompt);
 
 <DocumentModal 
   isOpen={documentModalOpen} 
-  type={selectedDocument?.type || ''} // Provide a default empty string
+  type={selectedDocument?.type || ''}
   onClose={() => setDocumentModalOpen(false)} 
   document={selectedDocument} 
-  onSend={sendDocument} 
+  onSend={(document, caption) => {
+    if (document) {
+      sendDocument(document, caption);
+    }
+    setDocumentModalOpen(false);
+  }} 
+  initialCaption={documentCaption}
 />
       <ImageModal isOpen={isImageModalOpen} onClose={closeImageModal} imageUrl={modalImageUrl} />
       <ImageModal2 isOpen={isImageModalOpen2} onClose={() => setImageModalOpen2(false)} imageUrl={pastedImageUrl} onSend={sendImage} />

@@ -153,45 +153,62 @@ useEffect(() => {
   return () => unsubscribe();
 }, [auth.currentUser?.email]);
 
-// Add notification to the user's notifications collection
-async function addNotification(assignedEmployee: { email: string }, contact: { id: string, contactName?: string, firstName?: string, chat_id: string }, assignedEmployeeName: string, adminEmail?: string) {
-  const contactName = contact.contactName || contact.firstName || 'N/A';
-  const notificationData = {
-    type: 'assignment',
-    from: `${contactName}`,
-    from_name: `${contactName}`,
-    text: { body: `Contact ${contactName} assigned to ${assignedEmployeeName}` },
-    timestamp: serverTimestamp(),
-    chat_id: contact.chat_id,
-    assignedTo: assignedEmployeeName
+useEffect(() => {
+  const MAX_NOTIFICATIONS = 150;
+
+  const clearExcessNotifications = async () => {
+    if (notifications.length > MAX_NOTIFICATIONS) {
+      const user = auth.currentUser;
+      if (!user || !user.email) return;
+
+      try {
+        const notificationsRef = collection(firestore, 'user', user.email, 'notifications');
+        const notificationsSnapshot = await getDocs(notificationsRef);
+        
+        // Sort notifications by timestamp, oldest first
+        const sortedNotifications = notificationsSnapshot.docs
+          .map(doc => ({ id: doc.id, ...doc.data() as Notification }))
+          .sort((a, b) => a.timestamp - b.timestamp);
+
+        // Identify excess notifications (oldest ones)
+        const excessNotifications = sortedNotifications.slice(0, sortedNotifications.length - MAX_NOTIFICATIONS);
+
+        // Delete excess notifications
+        const deletePromises = excessNotifications.map(notification => 
+          deleteDoc(doc(notificationsRef, notification.id))
+        );
+        
+        await Promise.all(deletePromises);
+
+        // Update local state with the most recent notifications
+        setNotifications(sortedNotifications.slice(-MAX_NOTIFICATIONS));
+      } catch (error) {
+        console.error('Error clearing excess notifications:', error);
+      }
+    }
   };
 
-  // Add notification for the assigned employee
-  const employeeNotificationRef = doc(firestore, 'user', assignedEmployee.email, 'notifications', `${contact.id}_${Date.now()}`);
-  await setDoc(employeeNotificationRef, notificationData);
+  clearExcessNotifications();
 
-  // Add notification for the admin if adminEmail is provided
-  if (adminEmail) {
-    const adminNotificationRef = doc(firestore, 'user', adminEmail, 'notifications', `${contact.id}_${Date.now()}`);
-    await setDoc(adminNotificationRef, notificationData);
-  }
-}
+  const oneWeekAgo = new Date();
+  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
-useEffect(() => {
   const unique = notifications
-    .sort((a, b) => b.timestamp - a.timestamp) // Sort by timestamp, most recent first
+    .filter(notification => new Date(notification.timestamp * 1000) > oneWeekAgo)
+    .sort((a, b) => b.timestamp - a.timestamp)
     .reduce((uniqueNotifications: Notification[], notification) => {
       const existingNotificationIndex = uniqueNotifications.findIndex(
         (n) => n.chat_id === notification.chat_id
       );
       if (existingNotificationIndex !== -1) {
-        // If a notification with the same chat_id exists, replace it with the current one
         uniqueNotifications[existingNotificationIndex] = notification;
       } else {
         uniqueNotifications.push(notification);
       }
       return uniqueNotifications;
-    }, []);
+    }, [])
+    .slice(0, MAX_NOTIFICATIONS);
+
   setUniqueNotifications(unique);
 }, [notifications]);
 

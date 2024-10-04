@@ -241,6 +241,11 @@ function Main() {
         errors[field] = `${field.charAt(0).toUpperCase() + field.slice(1)} is required`;
       }
     });
+
+    // Password validation
+    if (userData.password && userData.password.length < 6) {
+      errors.password = "Password must be at least 6 characters long";
+    }
   
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;

@@ -76,6 +76,9 @@ function LoadingPage() {
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [isFetchingChats, setIsFetchingChats] = useState(false);
   const [isQRLoading, setIsQRLoading] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [isPairingCodeLoading, setIsPairingCodeLoading] = useState(false);
   
   const fetchQRCode = async () => {
     const auth = getAuth(app);
@@ -456,21 +459,41 @@ function LoadingPage() {
     }
   };
 
+  const requestPairingCode = async () => {
+    setIsPairingCodeLoading(true);
+    setError(null);
+    try {
+      const response = await axios.post(`https://mighty-dane-newly.ngrok-free.app/api/request-pairing-code/${companyId}`, {
+        phoneNumber
+      });
+      setPairingCode(response.data.pairingCode);
+    } catch (error) {
+      console.error('Error requesting pairing code:', error);
+      setError('Failed to request pairing code. Please try again.');
+    } finally {
+      setIsPairingCodeLoading(false);
+    }
+  };
+
   return (
-    <div className="flex items-center justify-center h-screen bg-white dark:bg-gray-900">
-      <div className="flex flex-col items-center w-3/4 max-w-lg text-center p-15">
+    <div className="flex items-center justify-center min-h-screen bg-white dark:bg-gray-900 py-8">
+      <div className="flex flex-col items-center w-full max-w-lg text-center px-4">
         {(
           <>
             {botStatus === 'qr' ? (
               <>
-                <div className="mt-2 text-md p-25 text-gray-800 dark:text-gray-200">
-                  Please use your WhatsApp QR scanner to scan the code and proceed.
+                <div className="mt-2 text-md text-gray-800 dark:text-gray-200">
+                  Please use your WhatsApp QR scanner to scan the code or enter your phone number for a pairing code.
                 </div>
                 <hr className="w-full my-4 border-t border-gray-300 dark:border-gray-700" />
                 {error && <div className="text-red-500 dark:text-red-400 mt-2">{error}</div>}
                 {isQRLoading ? (
                   <div className="mt-4">
+<<<<<<< HEAD
                    
+=======
+                    <img alt="Logo" className="w-32 h-32 animate-spin mx-auto" src={logoUrl} style={{ animation: 'spin 10s linear infinite' }} />
+>>>>>>> juta-crm/main
                     <p className="mt-2 text-gray-600 dark:text-gray-400">Loading QR Code...</p>
                   </div>
                 ) : qrCodeImage ? (
@@ -479,13 +502,48 @@ function LoadingPage() {
                   </div>
                 ) : (
                   <div className="mt-4 text-gray-600 dark:text-gray-400">
-                    No QR Code available. Please try refreshing.
+                    No QR Code available. Please try refreshing or use the pairing code option below.
+                  </div>
+                )}
+                
+                <div className="mt-4 w-full">
+                  <input
+                    type="tel"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    placeholder="Enter phone number with country code eg: 60123456789"
+                    className="w-full px-4 py-2 border rounded-md text-gray-700 focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    onClick={requestPairingCode}
+                    disabled={isPairingCodeLoading || !phoneNumber}
+                    className="mt-2 px-6 py-3 bg-primary text-white text-lg font-semibold rounded hover:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 w-full disabled:bg-gray-400"
+                  >
+                    {isPairingCodeLoading ? (
+                      <span className="flex items-center justify-center">
+                        <LoadingIcon className="w-5 h-5 mr-2" />
+                        Generating...
+                      </span>
+                    ) : 'Get Pairing Code'}
+                  </button>
+                </div>
+                
+                {isPairingCodeLoading && (
+                  <div className="mt-4 text-gray-600 dark:text-gray-400">
+                    Generating pairing code...
+                  </div>
+                )}
+                
+                {pairingCode && (
+                  <div className="mt-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded">
+                    Your pairing code: <strong>{pairingCode}</strong>
+                    <p className="text-sm mt-2">Enter this code in your WhatsApp app to authenticate.</p>
                   </div>
                 )}
               </>
             ) : (
               <>
-                <div className="mt-2 text-xs p-15 text-gray-800 dark:text-gray-200">
+                <div className="mt-2 text-xs text-gray-800 dark:text-gray-200">
                   {botStatus === 'authenticated' || botStatus === 'ready' 
                     ? 'Authentication successful. Loading contacts...' 
                     : botStatus === 'initializing'
@@ -514,6 +572,10 @@ function LoadingPage() {
                 )}
                 {(isLoading || !processingComplete || isFetchingChats) && (
                 <div className="mt-4 flex flex-col items-center">
+<<<<<<< HEAD
+=======
+                  <img alt="Logo" className="w-32 h-32 animate-spin mx-auto" src={logoUrl} style={{ animation: 'spin 3s linear infinite' }} />
+>>>>>>> juta-crm/main
                   <p className="mt-2 text-gray-600 dark:text-gray-400">
                     {isQRLoading ? "Please wait while QR code is loading..." : "Please wait while QR Code is loading..."}
                   </p>
@@ -522,7 +584,7 @@ function LoadingPage() {
               </>
             )}
             
-            <hr className="w-full my-4 border-t border-gray-300 dark:border-gray-700 p-15" />
+            <hr className="w-full my-4 border-t border-gray-300 dark:border-gray-700" />
             
             <button
               onClick={handleRefresh}

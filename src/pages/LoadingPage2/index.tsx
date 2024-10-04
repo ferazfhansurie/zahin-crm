@@ -82,6 +82,10 @@ function LoadingPage2() {
   const [isFetchingChats, setIsFetchingChats] = useState(false);
   const [qrCodes, setQrCodes] = useState<QRCodeData[]>([]);
   const [currentQrIndex, setCurrentQrIndex] = useState<number | null>(null);
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [isPairingCodeLoading, setIsPairingCodeLoading] = useState(false);
+  const [selectedPhoneIndex, setSelectedPhoneIndex] = useState<number | null>(null);
   
   const fetchQRCode = async () => {
     const auth = getAuth(app);
@@ -386,25 +390,86 @@ function LoadingPage2() {
   
   };
 
+  const requestPairingCode = async () => {
+    setIsPairingCodeLoading(true);
+    setError(null);
+    try {
+      const response = await axios.post(`https://mighty-dane-newly.ngrok-free.app/api/request-pairing-code/${companyId}`, {
+        phoneNumber,
+        phoneIndex: selectedPhoneIndex
+      });
+      setPairingCode(response.data.pairingCode);
+    } catch (error) {
+      console.error('Error requesting pairing code:', error);
+      setError('Failed to request pairing code. Please try again.');
+    } finally {
+      setIsPairingCodeLoading(false);
+    }
+  };
+
+  const unscannedPhones = qrCodes.filter(qr => qr.status !== 'ready');
+
   return (
+<<<<<<< HEAD
     <div className="flex items-center justify-center h-screen bg-white dark:bg-gray-900">
       <div className="flex flex-col items-center w-3/4 max-w-lg text-center p-15">
 
+=======
+    <div className="flex items-center justify-center min-h-screen bg-white dark:bg-gray-900 p-4">
+      <div className="flex flex-col items-center w-full max-w-md text-center">
+        <img alt="Logo" className="w-24 h-24 mb-4" src={logoUrl} />
+>>>>>>> juta-crm/main
         {v2 ? (
-          <>
+          <div className="w-full overflow-y-auto max-h-[calc(100vh-8rem)]">
             {botStatus === 'qr' && currentQrIndex !== null ? (
               <>
-                <div className="mt-2 text-md p-25 text-gray-800 dark:text-gray-200">
-                  Please use your WhatsApp QR scanner to scan the code and proceed.
+                <div className="text-sm mb-2 text-gray-800 dark:text-gray-200">
+                  Please use your WhatsApp QR scanner to scan the code or enter your phone number for a pairing code.
                 </div>
-                <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                  Scanning QR for Phone : {qrCodes[currentQrIndex].phoneIndex+1}
+                <div className="text-xs mb-2 text-gray-600 dark:text-gray-400">
+                  Scanning QR for Phone : {qrCodes[currentQrIndex].phoneIndex + 1}
                 </div>
-                <hr className="w-full my-4 border-t border-gray-300 dark:border-gray-700" />
-                {error && <div className="text-red-500 dark:text-red-400 mt-2">{error}</div>}
+                <hr className="w-full my-2 border-t border-gray-300 dark:border-gray-700" />
+                {error && <div className="text-red-500 dark:text-red-400 mb-2">{error}</div>}
                 {qrCodeImage && (
-                  <div className="bg-white p-4 rounded-lg mt-4">
+                  <div className="bg-white ml-20 rounded-lg mb-2">
                     <img src={qrCodeImage} alt="QR Code" className="max-w-full h-auto" />
+                  </div>
+                )}
+                
+                <div className="mb-2">
+                  <select
+                    value={selectedPhoneIndex !== null ? selectedPhoneIndex : ''}
+                    onChange={(e) => setSelectedPhoneIndex(Number(e.target.value))}
+                    className="w-full px-3 py-2 text-sm border rounded-md text-gray-700 focus:outline-none focus:border-blue-500 mb-2"
+                  >
+                    <option value="">Select Phone</option>
+                    {unscannedPhones.map((phone, index) => (
+                      <option key={index} value={phone.phoneIndex}>
+                        Phone {phone.phoneIndex + 1}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="tel"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    placeholder="Enter phone number with country code eg: 60123456789"
+                    className="w-full px-3 py-2 text-sm border rounded-md text-gray-700 focus:outline-none focus:border-blue-500 mb-2"
+                  />
+                  <button
+                    onClick={requestPairingCode}
+                    disabled={isPairingCodeLoading || !phoneNumber || selectedPhoneIndex === null}
+                    className="px-4 py-2 bg-primary text-white text-sm font-semibold rounded hover:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 w-full disabled:bg-gray-400"
+                  >
+                    {isPairingCodeLoading ? 'Requesting...' : 'Get Pairing Code'}
+                  </button>
+                </div>
+                
+                {pairingCode && (
+                  <div className="mb-2 p-2 bg-green-100 border border-green-400 text-green-700 rounded text-sm">
+                    Your pairing code: <strong>{pairingCode}</strong>
+                    <p className="text-xs mt-1">Enter this code in your WhatsApp app to authenticate.</p>
                   </div>
                 )}
               </>
@@ -445,18 +510,17 @@ function LoadingPage2() {
               </>
             )}
             
-            <hr className="w-full my-4 border-t border-gray-300 dark:border-gray-700 p-15" />
+            <hr className="w-full my-2 border-t border-gray-300 dark:border-gray-700" />
             
             <button
               onClick={handleRefresh}
-              className="mt-4 px-6 py-3 bg-primary text-white text-lg font-semibold rounded hover:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 w-full"
+              className="mt-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded hover:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 w-full"
             >
               Refresh
             </button>
             
-            
-            {error && <div className="mt-2 text-red-500 dark:text-red-400">{error}</div>}
-          </>
+            {error && <div className="mt-2 text-red-500 dark:text-red-400 text-sm">{error}</div>}
+          </div>
         ) : (
           <div className="mt-4">
             <LoadingIcon icon="three-dots" className="w-20 h-20 p-4 text-gray-800 dark:text-gray-200" />
