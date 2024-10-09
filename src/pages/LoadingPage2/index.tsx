@@ -410,9 +410,6 @@ function LoadingPage2() {
   const unscannedPhones = qrCodes.filter(qr => qr.status !== 'ready');
 
   return (
-    <div className="flex items-center justify-center h-screen bg-white dark:bg-gray-900">
-      <div className="flex flex-col items-center w-3/4 max-w-lg text-center p-15">
-
     <div className="flex items-center justify-center min-h-screen bg-white dark:bg-gray-900 p-4">
       <div className="flex flex-col items-center w-full max-w-md text-center">
         <img alt="Logo" className="w-24 h-24 mb-4" src={logoUrl} />
@@ -520,12 +517,12 @@ function LoadingPage2() {
           </div>
         ) : (
           <div className="mt-4">
-            <LoadingIcon icon="three-dots" className="w-20 h-20 p-4 text-gray-800 dark:text-gray-200" />
-          </div>
-        )}
-      </div>
+          <LoadingIcon icon="three-dots" className="w-20 h-20 p-4 text-gray-800 dark:text-gray-200" />
+        </div>
+      )}
     </div>
-  );
+  </div>
+);
 }
 
 export default LoadingPage2;
