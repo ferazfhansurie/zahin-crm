@@ -5,6 +5,7 @@ import Button from "@/components/Base/Button";
 import { getAuth, updateEmail, updatePassword, reauthenticateWithCredential, EmailAuthProvider, updateProfile } from "firebase/auth";
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, getDoc, updateDoc, setDoc, collection, getDocs } from 'firebase/firestore';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { FormInput, FormLabel } from "@/components/Base/Form";
 import { ToastContainer, toast } from 'react-toastify';
@@ -42,6 +43,8 @@ function Main() {
 
   const [phoneOptions, setPhoneOptions] = useState<number[]>([]);
   const [phoneNames, setPhoneNames] = useState<{ [key: number]: string }>({});
+
+  const [imageFile, setImageFile] = useState<File | null>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -90,6 +93,7 @@ function Main() {
     quotaLeads: number;
     invoiceNumber: string | null;
     phone: number;
+    imageUrl: string;
   }>({
     name: "",
     phoneNumber: "",
@@ -103,6 +107,7 @@ function Main() {
     quotaLeads: 0,
     invoiceNumber: null,
     phone: -1,
+    imageUrl: "",
   });
 
   useEffect(() => {
@@ -120,6 +125,7 @@ function Main() {
         quotaLeads: contact.quotaLeads || 0,
         invoiceNumber: contact.invoiceNumber || null,
         phone: contact.phone || -1,
+        imageUrl: contact.imageUrl || "",
       });
       setCategories([contact.role]);
     }
@@ -251,6 +257,20 @@ function Main() {
     return Object.keys(errors).length === 0;
   };
 
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setImageFile(e.target.files[0]);
+    }
+  };
+
+  const uploadImage = async () => {
+    if (!imageFile) return null;
+    const storage = getStorage(app);
+    const storageRef = ref(storage, `employee-images/${userData.email}`);
+    await uploadBytes(storageRef, imageFile);
+    return getDownloadURL(storageRef);
+  };
+
   const saveUser = async () => {
     if (!validateForm()) {
       toast.error("Please fill in all required fields");
@@ -271,6 +291,11 @@ function Main() {
         // User is updating their own password
         await updatePassword(userOri, userData.password);
         toast.success("Password updated successfully");
+      }
+
+      let imageUrl = userData.imageUrl;
+      if (imageFile) {
+        imageUrl = await uploadImage() || "";
       }
 
       // Continue with the rest of the user update logic
@@ -298,6 +323,7 @@ function Main() {
           quotaLeads: userData.quotaLeads || 0,
           invoiceNumber: userData.invoiceNumber || null,
           phone: userData.phone || -1,
+          imageUrl: imageUrl || "",
         };
 
         if (contactId) {
@@ -332,6 +358,7 @@ function Main() {
               quotaLeads: 0,
               invoiceNumber: null,
               phone: -1,
+              imageUrl: "",
             });
         
             const roleMap = {
@@ -565,7 +592,7 @@ function Main() {
               <option value="">Select role</option>
               {currentUserRole === "1" && <option value="1">Admin</option>}
               {currentUserRole === "1" && <option value="4">Manager</option>}
-              <option value="5">Supervisor</option>
+              {currentUserRole === "1" && <option value="5">Supervisor</option>}
               <option value="2">Sales</option>
               <option value="3">Observer</option>
             </select>
@@ -588,6 +615,23 @@ function Main() {
                 </option>
               ))}
             </select>
+          </div>
+          <div>
+            <FormLabel htmlFor="image">Profile Image</FormLabel>
+            <input
+              type="file"
+              id="image"
+              accept="image/*"
+              onChange={handleImageChange}
+              className="w-full p-2 border border-gray-300 rounded-md"
+            />
+            {userData.imageUrl && (
+              <img
+                src={userData.imageUrl}
+                alt="Profile"
+                className="mt-2 w-32 h-32 object-cover rounded-full"
+              />
+            )}
           </div>
           <div>
             <FormLabel htmlFor="password">Password {contactId ? '(Leave blank to keep current)' : '*'}</FormLabel>

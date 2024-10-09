@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { getAuth } from "firebase/auth";
 import { initializeApp } from "firebase/app";
 import logoImage from '@/assets/images/placeholder.svg';
-import { getFirestore,Timestamp,  collection, doc, getDoc, onSnapshot, setDoc, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, arrayRemove,arrayUnion, writeBatch, serverTimestamp, runTransaction, increment } from "firebase/firestore";
+import { getFirestore,Timestamp,  collection, doc, getDoc, onSnapshot, setDoc, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, arrayRemove,arrayUnion, writeBatch, serverTimestamp, runTransaction, increment, getCountFromServer } from "firebase/firestore";
 import {QueryDocumentSnapshot, DocumentData ,Query,CollectionReference, startAfter,limit,deleteField} from 'firebase/firestore'
 import axios, { AxiosError } from "axios";
 import Lucide from "@/components/Base/Lucide";
@@ -466,7 +466,6 @@ function Main() {
   const location = useLocation();
   const [isChatActive, setIsChatActive] = useState(false);
   const [userRole, setUserRole] = useState<string>("");
-  const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState('');
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
   const [newContactNumber, setNewContactNumber] = useState('');
@@ -516,6 +515,8 @@ function Main() {
 
   const [showAllForwardTags, setShowAllForwardTags] = useState(false);
   const [visibleForwardTags, setVisibleForwardTags] = useState<typeof tagList>([]);
+
+  const [totalContacts, setTotalContacts] = useState<number>(0);
 
   // Update this useEffect
   useEffect(() => {
@@ -2830,8 +2831,8 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
     setFilteredContacts(contacts);
   }, [contacts]);
 
-  const handleBinaTag = async (requestType: string, phone: string, first_name: string) => {
-    console.log('Request Payload:', JSON.stringify({ requestType, phone, first_name }));
+  const handleBinaTag = async (requestType: string, phone: string, first_name: string, phoneIndex: number) => {
+    console.log('Request Payload:', JSON.stringify({ requestType, phone, first_name, phoneIndex }));
     
     try {
         const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/bina/tag', {
@@ -2843,6 +2844,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
                 requestType,
                 phone,
                 first_name,
+                phoneIndex,
             }),
         });
 
@@ -2857,6 +2859,34 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
     }
 };
 
+const handleEdwardTag = async (requestType: string, phone: string, first_name: string, phoneIndex: number) => {
+  console.log('Request Payload:', JSON.stringify({ requestType, phone, first_name, phoneIndex }));
+  
+  try {
+      const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/edward/tag', {
+          method: 'POST', // Ensure this is set to POST
+          headers: {
+              'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+              requestType,
+              phone,
+              first_name,
+              phoneIndex,
+          }),
+      });
+
+      if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('Response data:', data);
+  } catch (error) {
+      console.error('Error:', error);
+  }
+};
+
   const addTagBeforeQuote = (contact: Contact) => {
     console.log('Adding tag before quote for contact:', contact.phone);
     console.log('Adding tag before quote for contact:', contact.contactName);
@@ -2864,7 +2894,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('addBeforeQuote', contact.phone, contact.contactName);
+    handleBinaTag('addBeforeQuote', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
   };
 
   const addTagBeforeQuoteEnglish = (contact: Contact) => {
@@ -2874,7 +2904,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('addBeforeQuote', contact.phone, contact.contactName);
+    handleBinaTag('addBeforeQuote', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const addTagBeforeQuoteMalay = (contact: Contact) => {
@@ -2884,7 +2914,7 @@ const addTagBeforeQuoteMalay = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('addBeforeQuote', contact.phone, contact.contactName);
+    handleBinaTag('addBeforeQuote', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const addTagBeforeQuoteChinese = (contact: Contact) => {
@@ -2894,14 +2924,14 @@ const addTagBeforeQuoteChinese = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('addBeforeQuote', contact.phone, contact.contactName);
+    handleBinaTag('addBeforeQuote', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
   
   const addTagAfterQuote = (contact: Contact) => {
     console.log('Adding tag after quote for contact:', contact.phone);
     console.log('Adding tag after quote for contact:', contact.contactName);
     if (contact.phone && contact.contactName) {
-      handleBinaTag('addAfterQuote', contact.phone, contact.contactName);
+      handleBinaTag('addAfterQuote', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
     } else {
       console.error('Phone or firstname is null or undefined');
     }
@@ -2914,7 +2944,7 @@ const addTagBeforeQuoteChinese = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('addAfterQuoteEnglish', contact.phone, contact.contactName);
+    handleBinaTag('addAfterQuoteEnglish', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const addTagAfterQuoteChinese = (contact: Contact) => {
@@ -2924,7 +2954,7 @@ const addTagAfterQuoteChinese = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('addAfterQuoteChinese', contact.phone, contact.contactName);
+    handleBinaTag('addAfterQuoteChinese', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const addTagAfterQuoteMalay = (contact: Contact) => {
@@ -2934,7 +2964,7 @@ const addTagAfterQuoteMalay = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('addAfterQuoteMalay', contact.phone, contact.contactName);
+    handleBinaTag('addAfterQuoteMalay', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const removeTagBeforeQuote = (contact: Contact) => {
@@ -2944,7 +2974,7 @@ const removeTagBeforeQuote = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('removeBeforeQuote', contact.phone, contact.contactName);
+    handleBinaTag('removeBeforeQuote', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const removeTagAfterQuote = (contact: Contact) => {
@@ -2954,7 +2984,37 @@ const removeTagAfterQuote = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('removeAfterQuote', contact.phone, contact.contactName);
+    handleBinaTag('removeAfterQuote', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
+};
+
+const removeTag5Days = (contact: Contact) => {
+    console.log('Removing tag 5 days for contact:', contact.phone);
+    console.log('Removing tag 5 days for contact:', contact.contactName);
+    if (!contact.phone || !contact.contactName) {
+      console.error('Phone or firstname is null or undefined');
+      return;
+    }
+    handleBinaTag('remove5DaysFollowUp', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
+};
+
+const removeTagPause = (contact: Contact) => {
+    console.log('Removing tag pause for contact:', contact.phone);
+    console.log('Removing tag pause for contact:', contact.contactName);
+    if (!contact.phone || !contact.contactName) {
+      console.error('Phone or firstname is null or undefined');
+      return;
+    }
+    handleBinaTag('resumeFollowUp', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
+};
+
+const removeTagEdward = (contact: Contact) => {
+  console.log('Removing tag Edward for contact:', contact.phone);
+  console.log('Removing tag Edward for contact:', contact.contactName);
+  if (!contact.phone || !contact.contactName) {
+    console.error('Phone or firstname is null or undefined');
+    return;
+  }
+  handleEdwardTag('removeFollowUp', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const fiveDaysFollowUpEnglish = (contact: Contact) => {
@@ -2964,7 +3024,7 @@ const fiveDaysFollowUpEnglish = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('5DaysFollowUpEnglish', contact.phone, contact.contactName);
+    handleBinaTag('5DaysFollowUpEnglish', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const fiveDaysFollowUpChinese = (contact: Contact) => {
@@ -2974,7 +3034,7 @@ const fiveDaysFollowUpChinese = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('5DaysFollowUpChinese', contact.phone, contact.contactName);
+    handleBinaTag('5DaysFollowUpChinese', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const fiveDaysFollowUpMalay = (contact: Contact) => {
@@ -2984,8 +3044,19 @@ const fiveDaysFollowUpMalay = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('5DaysFollowUpMalay', contact.phone, contact.contactName);
+    handleBinaTag('5DaysFollowUpMalay', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
+
+const pauseFiveDaysFollowUp = (contact: Contact) => {
+  console.log('Pausing 5 Days Follow Up for contact:', contact.phone);
+  console.log('Pausing 5 Days Follow Up for contact:', contact.contactName);
+  if (!contact.phone || !contact.contactName) {
+    console.error('Phone or firstname is null or undefined');
+    return;
+  }
+  handleBinaTag('pauseFollowUp', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
+};
+
 
 
   const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact) => {
@@ -3060,6 +3131,8 @@ const fiveDaysFollowUpMalay = (contact: Contact) => {
           fiveDaysFollowUpChinese(contact);
         } else if (tagName === '5 Days Follow Up BM') {
           fiveDaysFollowUpMalay(contact);
+        } else if (tagName === 'Pause Follow Up') {
+          pauseFiveDaysFollowUp(contact);
         } else {
           // Check if the tag is an employee's name and send assignment notification
           const employee = employeeList.find(emp => emp.name === tagName);
@@ -3405,15 +3478,23 @@ const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
 const [paginatedContacts, setPaginatedContacts] = useState<Contact[]>([]);
 
 useEffect(() => {
-  setLoadingMessage("Loading contacts...");
-  const timer = setTimeout(() => {
-    if (paginatedContacts.length === 0) {
-      setLoadingMessage("There are a lot of contacts, fetching them might take some time...");
+  if (filteredContacts.length === 0) {
+    if (activeTags.length > 0) {
+      setLoadingMessage(`No contacts found for the ${activeTags[0]} tag.`);
+    } else {
+      setLoadingMessage("No contacts found.");
     }
-  }, 15000);
+  } else {
+    setLoadingMessage("Loading contacts...");
+    const timer = setTimeout(() => {
+      if (paginatedContacts.length === 0) {
+        setLoadingMessage("There are a lot of contacts, fetching them might take some time...");
+      }
+    }, 15000);
 
-  return () => clearTimeout(timer);
-}, [paginatedContacts]);
+    return () => clearTimeout(timer);
+  }
+}, [filteredContacts, paginatedContacts, activeTags]);
 
 useEffect(() => {
   let filtered = contacts;
@@ -3655,6 +3736,12 @@ const sortContacts = (contacts: Contact[]) => {
             !contact.tags?.includes('snooze')
           );
           break;
+        case 'resolved':
+          filteredContacts = filteredContacts.filter(contact => 
+            contact.tags?.includes('resolved') && 
+            !contact.tags?.includes('snooze')
+          );
+          break;
         default:
           filteredContacts = filteredContacts.filter(contact => 
             contact.tags?.some(t => t.toLowerCase() === tag.toLowerCase()) && 
@@ -3765,6 +3852,91 @@ const sortContacts = (contacts: Contact[]) => {
       toast.error('Failed to unsnooze contact');
     }
   };
+
+  const handleResolveContact = async (contact: Contact) => {
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        console.error('No authenticated user');
+        return;
+      }
+  
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.error('No such document for user!');
+        return;
+      }
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+  
+      // Update Firestore
+      if (companyId && contact.id) {
+        const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id);
+        await updateDoc(contactRef, {
+          tags: arrayUnion('resolved')
+        });
+      } else {
+        console.error('Invalid companyId or contact.id');
+      }
+      // Update local state
+      setContacts(prevContacts =>
+        prevContacts.map(c =>
+          c.id === contact.id
+            ? { ...c, tags: [...(c.tags || []), 'resolved'] }
+            : c
+        )
+      );
+  
+      toast.success('Contact marked as resolved');
+    } catch (error) {
+      console.error('Error resolving contact:', error);
+      toast.error('Failed to mark contact as resolved');
+    }
+  };
+
+  const handleUnresolveContact = async (contact: Contact) => {
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        console.error('No authenticated user');
+        return;
+      }
+  
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.error('No such document for user!');
+        return;
+      }
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+  
+      // Update Firestore
+      if (companyId && contact.id) {
+        const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id);
+        await updateDoc(contactRef, {
+          tags: arrayRemove('resolved')
+        });
+      } else {
+        console.error('Invalid companyId or contact.id');
+      }
+      // Update local state
+      setContacts(prevContacts =>
+        prevContacts.map(c =>
+          c.id === contact.id
+            ? { ...c, tags: c.tags?.filter(tag => tag !== 'resolved') }
+            : c
+        )
+      );
+  
+      toast.success('Contact unmarked as resolved');
+    } catch (error) {
+      console.error('Error unresolving contact:', error);
+      toast.error('Failed to unmark contact as resolved');
+    }
+  };
+
   const handleSelectMessage = (message: Message) => {
     setSelectedMessages(prevSelectedMessages =>
         prevSelectedMessages.includes(message)
@@ -3791,12 +3963,23 @@ const sortContacts = (contacts: Contact[]) => {
         for (const message of selectedMessages) {
           try {
             if (message.type === 'image') {
-              // Ensure we have a valid image link
-              const imageLink = message.image?.link || message.image?.url;
-              if (!imageLink) {
-                throw new Error('Invalid image link');
+              let imageUrl = message.image?.link || message.image?.url;
+              
+              if (!imageUrl && message.image?.data) {
+                // If we have base64 data, upload it to get a URL
+                const base64Data = message.image.data.startsWith('data:') 
+                  ? message.image.data 
+                  : `data:${message.image?.mimetype};base64,${message.image?.data}`;
+                imageUrl = await uploadBase64Image(base64Data, message.image?.mimetype || '');
               }
-              await sendImageMessage(contact.chat_id ?? '', imageLink, message.image?.caption ?? '');
+  
+              if (!imageUrl) {
+                console.error('No valid image data found for message:', message);
+                toast.error(`Failed to forward image: No valid image data`);
+                continue;
+              }
+
+              await sendImageMessage(contact.chat_id ?? '', imageUrl, message.image?.caption ?? '');
             } else if (message.type === 'document') {
               // Ensure we have a valid document link
               const documentLink = message.document?.link;
@@ -3842,6 +4025,24 @@ const sortContacts = (contacts: Contact[]) => {
     } catch (error) {
       console.error('Error in forward process:', error);
       toast.error(`Error in forward process: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const uploadBase64Image = async (base64Data: string, mimeType: string): Promise<string> => {
+    try {
+      const response = await fetch(base64Data);
+      const blob = await response.blob();
+  
+      const storage = getStorage();
+      const storageRef = ref(storage, `images/${Date.now()}.${mimeType.split('/')[1]}`);
+      
+      await uploadBytes(storageRef, blob);
+      const downloadURL = await getDownloadURL(storageRef);
+      
+      return downloadURL;
+    } catch (error) {
+      console.error('Error uploading base64 image:', error);
+      throw error;
     }
   };
 
@@ -4264,11 +4465,15 @@ const sortContacts = (contacts: Contact[]) => {
       } else if (tagName === 'After Quote Follow Up BM') {
         removeTagAfterQuote(contact);
       } else if (tagName === '5 Days Follow Up EN') {
-        removeTagAfterQuote(contact);
+        removeTag5Days(contact);
       } else if (tagName === '5 Days Follow Up CN') {
-        removeTagAfterQuote(contact);
+        removeTag5Days(contact);
       } else if (tagName === '5 Days Follow Up BM') {
-        removeTagAfterQuote(contact);
+        removeTag5Days(contact);
+      } else if (tagName === 'Pause Follow Up') {
+        removeTagPause(contact);
+      } else if (tagName === 'Edward Follow Up') {
+        removeTagEdward(contact);
       }
       // Update state
       setContacts(prevContacts => {
@@ -4582,6 +4787,9 @@ const sortContacts = (contacts: Contact[]) => {
         onSnooze: () => handleSnoozeContact(contact),
         onUnsnooze: () => handleUnsnoozeContact(contact),
         isSnooze: contact.tags?.includes('snooze'),
+        onResolve: () => handleResolveContact(contact),
+        onUnresolve: () => handleUnresolveContact(contact),
+        isResolved: contact.tags?.includes('resolved'),
       },
     });
   };
@@ -5045,6 +5253,86 @@ console.log(prompt);
     setBlastMessage(prevMessage => prevMessage + placeholder);
   };
 
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedContact, setEditedContact] = useState<Contact | null>(null);
+
+  const handleEditClick = () => {
+    setIsEditing(true);
+    setEditedContact({ ...selectedContact });
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditedContact(null);
+  };
+
+  const handleSaveContact = async () => {
+    if (!editedContact) return;
+
+    try {
+      const user = auth.currentUser;
+      const docUserRef = doc(firestore, 'user', user?.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document for user!');
+        return;
+      }
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+      const contactsCollectionRef = collection(firestore, `companies/${companyId}/contacts`);
+
+      const updateData: { [key: string]: any } = {};
+      const fieldsToUpdate = [
+        'contactName', 'email', 'lastName', 'phone', 'address1', 'city', 
+        'state', 'postalCode', 'website', 'dnd', 'dndSettings', 'tags', 
+        'customFields', 'source', 'country', 'companyName', 'branch', 
+        'expiryDate', 'vehicleNumber', 'points', 'IC', 'assistantId', 'threadid',
+      ];
+
+      fieldsToUpdate.forEach(field => {
+        if (editedContact[field as keyof Contact] !== undefined) {
+          updateData[field] = editedContact[field as keyof Contact];
+        }
+      });
+
+      const contactDocRef = doc(contactsCollectionRef, editedContact.phone!);
+      await updateDoc(contactDocRef, updateData);
+
+      setSelectedContact({ ...selectedContact, ...updateData });
+      setIsEditing(false);
+      setEditedContact(null);
+      toast.success("Contact updated successfully!");
+    } catch (error) {
+      console.error('Error saving contact:', error);
+      toast.error("Failed to update contact.");
+    }
+  };
+
+  useEffect(() => {
+    const fetchTotalContacts = async () => {
+      try {
+        const user = auth.currentUser;
+        if (!user) return;
+
+        const docUserRef = doc(firestore, 'user', user.email!);
+        const docUserSnapshot = await getDoc(docUserRef);
+        if (!docUserSnapshot.exists()) return;
+
+        const userData = docUserSnapshot.data();
+        const companyId = userData.companyId;
+
+        const contactsRef = collection(firestore, `companies/${companyId}/contacts`);
+        const snapshot = await getCountFromServer(contactsRef);
+        setTotalContacts(snapshot.data().count);
+      } catch (error) {
+        console.error('Error fetching total contacts:', error);
+      }
+    };
+
+    fetchTotalContacts();
+  }, []);
+
   return (
     <div className="flex flex-col md:flex-row overflow-y-auto bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200" style={{ height: '100vh' }}>
       <audio ref={audioRef} src={noti} />
@@ -5055,7 +5343,7 @@ console.log(prompt);
               {userData?.company}
             </div>
             <div className="text-start text-lg font-medium text-gray-600 dark:text-gray-400">
-              Total Contacts: {initialContacts.length}
+              Total Contacts: {totalContacts}
             </div>
           </div>
           {userData?.phone !== undefined && (
@@ -5412,7 +5700,7 @@ console.log(prompt);
 <div className="flex flex-wrap gap-2">
   {['Mine', 'All', 'Unassigned',
     ...(isTagsExpanded ? [
-      'Group', 'Unread', 'Snooze', 'Stop Bot',
+      'Group', 'Unread', 'Snooze', 'Stop Bot', 'Resolved',
       ...(userData?.phone !== undefined && userData.phone !== -1 ? 
         [phoneNames[userData.phone] || `Phone ${userData.phone + 1}`] : 
         Object.values(phoneNames)
@@ -5441,6 +5729,7 @@ console.log(prompt);
         tagLower === 'mine' ? contactTags.includes(currentUserName.toLowerCase()) :
         tagLower === 'unassigned' ? !contactTags.some(t => employeeList.some(e => e.name.toLowerCase() === t)) :
         tagLower === 'snooze' ? contactTags.includes('snooze') :
+        tagLower === 'resolved' ? contactTags.includes('resolved') :
         tagLower === 'group' ? isGroup :
         tagLower === 'stop bot' ? contactTags.includes('stop bot') :
         phoneIndex !== -1 ? contact.phoneIndex === phoneIndex :
@@ -6923,23 +7212,65 @@ console.log(prompt);
       <div className="flex-grow overflow-y-auto p-4 space-y-4">
         <div className="bg-white dark:bg-gray-700 rounded-lg shadow-md overflow-hidden">
           <div className="bg-blue-50 dark:bg-blue-900 px-4 py-3 border-b border-gray-200 dark:border-gray-600">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Contact Information</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Contact Information</h3>
+              {!isEditing ? (
+                <button
+                  onClick={() => {
+                    setIsEditing(true);
+                    setEditedContact({ ...selectedContact });
+                  }}
+                  className="px-3 py-1 bg-primary text-white rounded-md hover:bg-primary-dark transition duration-200"
+                >
+                  Edit
+                </button>
+              ) : (
+                <div className="flex space-x-2">
+                  <button
+                    onClick={handleSaveContact}
+                    className="px-3 py-1 bg-green-500 text-white rounded-md hover:bg-green-600 transition duration-200"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsEditing(false);
+                      setEditedContact(null);
+                    }}
+                    className="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition duration-200"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           <div className="p-4">
             <div className="grid grid-cols-2 gap-4">
               {[
-                { label: "First Name", value: selectedContact.contactName ?? selectedContact.firstName },
-                { label: "Last Name", value: selectedContact.lastName },
-                { label: "Email", value: selectedContact.email },
-                { label: "Company", value: selectedContact.companyName },
-                { label: "Address", value: selectedContact.address1 },
-                { label: "Website", value: selectedContact.website }
+                { label: "First Name", key: "contactName" },
+                { label: "Last Name", key: "lastName" },
+                { label: "Email", key: "email" },
+                { label: "Company", key: "companyName" },
+                { label: "Address", key: "address1" },
+                { label: "Website", key: "website" }
               ].map((item, index) => (
                 <div key={index} className="col-span-1">
                   <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">{item.label}</p>
-                  <p className="text-gray-800 dark:text-gray-200">{item.value || 'N/A'}</p>
+                  {isEditing ? (
+                    <input
+                      type="text"
+                      value={editedContact?.[item.key as keyof Contact] || ''}
+                      onChange={(e) => setEditedContact({ ...editedContact, [item.key]: e.target.value } as Contact)}
+                      className="w-full mt-1 px-2 py-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                    />
+                  ) : (
+                    <p className="text-gray-800 dark:text-gray-200">
+                      {selectedContact[item.key as keyof Contact] || 'N/A'}
+                    </p>
+                  )}
                 </div>
-              ))}      
+              ))}         
             </div>
             <div className="border-t border-gray-200 dark:border-gray-600 mt-4 pt-4"></div>
             {selectedContact.tags.some((tag: string) => employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase())) && (
@@ -7075,6 +7406,10 @@ console.log(prompt);
           onClick={({ props }) => props.isSnooze ? props.onUnsnooze(props.contact) : props.onSnooze(props.contact)}
         >
           Snooze/Unsnooze
+        </Item>
+        <Separator />
+        <Item onClick={({ props }) => props.isResolved ? props.onUnresolve(props.contact) : props.onResolve(props.contact)}>
+          Resolve/Unresolve
         </Item>
       </ContextMenu>
       {isReminderModalOpen && (

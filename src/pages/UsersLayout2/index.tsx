@@ -49,6 +49,7 @@ interface Employee {
   employeeId?: string;
   phoneNumber?: string;
   phoneNames?: { [key: number]: string };
+  imageUrl?: string;
 }
 
 function Main() {
@@ -415,10 +416,21 @@ const paginatedEmployees = filteredEmployees
           {paginatedEmployees.map((employee, index) => (
             <div key={index} className="bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300">
               <div className="p-6">
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between">
+                  {employee.imageUrl ? (
+                    <img
+                      src={employee.imageUrl}
+                      alt={employee.name}
+                      className="w-20 h-20 rounded-full object-cover"
+                    />
+                  ) : (
+                    <div className="w-20 h-20 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
+                      <Lucide icon="User" className="w-16 h-16 text-gray-500 dark:text-gray-400" />
+                    </div>
+                  )}
                   <div>
                     <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
-                      {employee.name.length > 20 ? employee.name.substring(0, 20) + '...' : employee.name}
+                      {employee.name.length > 20 ? employee.name.charAt(0).toUpperCase() + employee.name.substring(1, 20) + '...' : employee.name.charAt(0).toUpperCase() + employee.name.slice(1)}
                       {employee.employeeId && (
                         <span className={`ml-2 text-md font-medium ${
                           employee.role === "1" ? 'text-indigo-600 dark:text-indigo-400' :
