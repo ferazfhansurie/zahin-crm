@@ -1,8 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-<<<<<<< HEAD
-=======
 import logoUrl from "@/assets/images/logo.png";
->>>>>>> 7807fc17da8793b121aca18b95a3e08c20e21aef
 import { useNavigate, useLocation } from "react-router-dom";
 import LoadingIcon from "@/components/Base/LoadingIcon";
 import { useConfig } from '../../config';

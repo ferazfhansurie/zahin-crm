@@ -7,10 +7,7 @@ import { DocumentReference, updateDoc, getDoc, getDocs, deleteDoc } from 'fireba
 import { getFirestore, collection, doc, setDoc, DocumentSnapshot } from 'firebase/firestore';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
-<<<<<<< HEAD
-=======
 import logoUrl from "@/assets/images/logo.png";
->>>>>>> 7807fc17da8793b121aca18b95a3e08c20e21aef
 import LoadingIcon from "@/components/Base/LoadingIcon";
 import { Tab } from '@headlessui/react'
 import { getStorage, ref, uploadBytes, getDownloadURL, listAll } from 'firebase/storage';
