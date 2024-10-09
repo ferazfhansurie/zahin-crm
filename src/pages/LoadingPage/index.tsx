@@ -490,11 +490,8 @@ function LoadingPage() {
                 {error && <div className="text-red-500 dark:text-red-400 mt-2">{error}</div>}
                 {isQRLoading ? (
                   <div className="mt-4">
-<<<<<<< HEAD
                    
-=======
                     <img alt="Logo" className="w-32 h-32 animate-spin mx-auto" src={logoUrl} style={{ animation: 'spin 10s linear infinite' }} />
->>>>>>> juta-crm/main
                     <p className="mt-2 text-gray-600 dark:text-gray-400">Loading QR Code...</p>
                   </div>
                 ) : qrCodeImage ? (
@@ -573,10 +570,7 @@ function LoadingPage() {
                 )}
                 {(isLoading || !processingComplete || isFetchingChats) && (
                 <div className="mt-4 flex flex-col items-center">
-<<<<<<< HEAD
-=======
                   <img alt="Logo" className="w-32 h-32 animate-spin mx-auto" src={logoUrl} style={{ animation: 'spin 3s linear infinite' }} />
->>>>>>> juta-crm/main
                   <p className="mt-2 text-gray-600 dark:text-gray-400">
                     {isQRLoading ? "Please wait while QR code is loading..." : "Please wait while QR Code is loading..."}
                   </p>
