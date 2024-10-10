@@ -77,6 +77,7 @@ interface Contact {
   profilePicUrl?:string;
   phoneIndex?:number |null;
   points?:number |null;
+  status?: 'New' | 'Reach' | 'Qualified' | 'Disqualified' | 'Negotiating' | 'Won' | 'Lost';
 }
 interface GhlConfig {
   ghl_id: string;
@@ -517,6 +518,7 @@ function Main() {
   const [visibleForwardTags, setVisibleForwardTags] = useState<typeof tagList>([]);
 
   const [totalContacts, setTotalContacts] = useState<number>(0);
+  const [statusFilter, setStatusFilter] = useState<Contact['status'] | ''>('');
 
   // Update this useEffect
   useEffect(() => {
@@ -870,54 +872,54 @@ const sendVoiceMessage = async () => {
       phoneCount,
       phoneNames,
       userPhone: userData?.phone,
+      statusFilter,
     });
   
     // Apply role-based filtering first
     let filtered = filterContactsByUserRole(contactsToFilter, userRole, userData?.name || '');
     console.log('After role-based filtering:', { filteredCount: filtered.length });
-
-  // Filter out group chats
-  filtered = filtered.filter(contact => 
-    contact.chat_id && !contact.chat_id.includes('@g.us')
-  );
-  console.log('Filtered out group chats:', { filteredCount: filtered.length });
-
-  // Filter by user's phone if set
-  if (userData?.phone !== null) {
-
-    filtered = filtered.filter(contact => contact.phoneIndex === parseInt(userData?.phone));
-    console.log(`Filtered contacts for user's phone (${phoneNames[userData?.phone]}):`, { filteredCount: filtered.length });
-  }
-
-  // Apply tag-based filtering
-  if (activeTags.includes('all')) {
-    console.log('Showing all contacts');
-  } else if (activeTags.includes('unread')) {
-    filtered = filtered.filter(contact => (contact.unreadCount || 0) > 0);
-    console.log('Filtered unread contacts:', { filteredCount: filtered.length });
-  } else if (activeTags.includes('mine')) {
-    filtered = filtered.filter((contact) => 
-      contact.tags?.some(tag => tag.toLowerCase() === currentUserName.toLowerCase())
+  
+    // Filter out group chats
+    filtered = filtered.filter(contact => 
+      contact.chat_id && !contact.chat_id.includes('@g.us')
     );
-    console.log('Filtered "mine" contacts:', { filteredCount: filtered.length });
-  } else if (userData?.role !== '1') {
-    // Get the user's assigned phone from the employee document
-    const userPhoneNames = userData?.phone && phoneNames[userData.phone] ? [phoneNames[userData.phone]] : [];
-    
-    if (userPhoneNames.length > 0 && userData?.phone !== undefined) {
-      // Only display contacts for the user's assigned phone
-      filtered = filtered.filter(contact => contact.phoneIndex === userData.phone);
-      console.log(`Filtered contacts for ${userPhoneNames[0]}:`, { filteredCount: filtered.length });
-    } else {
-      console.log('User has no assigned phone');
+    console.log('Filtered out group chats:', { filteredCount: filtered.length });
+  
+    // Filter by user's phone if set
+    if (userData?.phone !== null) {
+      filtered = filtered.filter(contact => contact.phoneIndex === parseInt(userData?.phone));
+      console.log(`Filtered contacts for user's phone (${phoneNames[userData?.phone]}):`, { filteredCount: filtered.length });
     }
-  } else if (Object.values(phoneNames).includes(activeTags[0])) {
-    // For role '1', display contacts for the selected phone
-    const phoneIndex = Object.entries(phoneNames).find(([_, name]) => name === activeTags[0])?.[0];
-    if (phoneIndex !== undefined) {
-      filtered = filtered.filter(contact => contact.phoneIndex === parseInt(phoneIndex));
-      console.log(`Filtered contacts for ${activeTags[0]}:`, { filteredCount: filtered.length });
-    }
+  
+    // Apply tag-based filtering
+    if (activeTags.includes('all')) {
+      console.log('Showing all contacts');
+    } else if (activeTags.includes('unread')) {
+      filtered = filtered.filter(contact => (contact.unreadCount || 0) > 0);
+      console.log('Filtered unread contacts:', { filteredCount: filtered.length });
+    } else if (activeTags.includes('mine')) {
+      filtered = filtered.filter((contact) => 
+        contact.tags?.some(tag => tag.toLowerCase() === currentUserName.toLowerCase())
+      );
+      console.log('Filtered "mine" contacts:', { filteredCount: filtered.length });
+    } else if (userData?.role !== '1') {
+      // Get the user's assigned phone from the employee document
+      const userPhoneNames = userData?.phone && phoneNames[userData.phone] ? [phoneNames[userData.phone]] : [];
+      
+      if (userPhoneNames.length > 0 && userData?.phone !== undefined) {
+        // Only display contacts for the user's assigned phone
+        filtered = filtered.filter(contact => contact.phoneIndex === userData.phone);
+        console.log(`Filtered contacts for ${userPhoneNames[0]}:`, { filteredCount: filtered.length });
+      } else {
+        console.log('User has no assigned phone');
+      }
+    } else if (Object.values(phoneNames).includes(activeTags[0])) {
+      // For role '1', display contacts for the selected phone
+      const phoneIndex = Object.entries(phoneNames).find(([_, name]) => name === activeTags[0])?.[0];
+      if (phoneIndex !== undefined) {
+        filtered = filtered.filter(contact => contact.phoneIndex === parseInt(phoneIndex));
+        console.log(`Filtered contacts for ${activeTags[0]}:`, { filteredCount: filtered.length });
+      }
     } else {
       filtered = filtered.filter(contact => 
         activeTags.some(tag => contact.tags?.includes(tag))
@@ -925,10 +927,17 @@ const sendVoiceMessage = async () => {
       console.log('Filtered by active tags:', { filteredCount: filtered.length, activeTags });
     }
   
+    // Apply status filter
+    if (statusFilter) {
+      filtered = filtered.filter(contact => contact.status === statusFilter);
+      console.log('Filtered by status:', { filteredCount: filtered.length, statusFilter });
+    }
+  
     setFilteredContacts(filtered);
     console.log('Final filtered contacts set:', { filteredCount: filtered.length });
-  }, [userRole, userData, activeTags, currentUserName, phoneCount, phoneNames]);
-
+  }, [userRole, userData, activeTags, currentUserName, phoneCount, phoneNames, statusFilter]);
+  
+  // Make sure to add statusFilter to the dependency array of the useEffect hook
   useEffect(() => {
     if (initialContacts.length > 0) {
       const filteredContacts = filterContactsByUserRole(initialContacts, userRole, userData?.name || '');
@@ -938,7 +947,7 @@ const sendVoiceMessage = async () => {
       localStorage.setItem('contacts', LZString.compress(JSON.stringify(filteredContacts)));
       sessionStorage.setItem('contactsFetched', 'true');
     }
-  }, [initialContacts, userRole, userData]);
+  }, [initialContacts, statusFilter, userRole, userData, filterAndSetContacts]);
 
 
 
@@ -5287,7 +5296,7 @@ console.log(prompt);
         'contactName', 'email', 'lastName', 'phone', 'address1', 'city', 
         'state', 'postalCode', 'website', 'dnd', 'dndSettings', 'tags', 
         'customFields', 'source', 'country', 'companyName', 'branch', 
-        'expiryDate', 'vehicleNumber', 'points', 'IC', 'assistantId', 'threadid',
+        'expiryDate', 'vehicleNumber', 'points', 'IC', 'assistantId', 'threadid', 'status'
       ];
 
       fieldsToUpdate.forEach(field => {
@@ -5354,7 +5363,23 @@ console.log(prompt);
               </span>
             </div>
           )}
-  
+          {/* <div className="flex items-center space-x-4 text-lg font-medium opacity-75">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as Contact['status'] | '')}
+              className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+              style={{ width: '150px' }} // Increased width
+            >
+              <option value="">All Statuses</option>
+              <option value="New">New</option>
+              <option value="Reach">Reach</option>
+              <option value="Qualified">Qualified</option>
+              <option value="Disqualified">Disqualified</option>
+              <option value="Negotiating">Negotiating</option>
+              <option value="Won">Won</option>
+              <option value="Lost">Lost</option>
+            </select>
+          </div> */}
         </div>
         <div className="sticky top-20 z-10 bg-gray-100 dark:bg-gray-900 p-2">
           <div className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-900">
@@ -7253,7 +7278,7 @@ console.log(prompt);
                 { label: "Email", key: "email" },
                 { label: "Company", key: "companyName" },
                 { label: "Address", key: "address1" },
-                { label: "Website", key: "website" }
+                { label: "Website", key: "website" },
               ].map((item, index) => (
                 <div key={index} className="col-span-1">
                   <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">{item.label}</p>
@@ -7270,7 +7295,29 @@ console.log(prompt);
                     </p>
                   )}
                 </div>
-              ))}         
+              ))}
+              <div className="col-span-1">
+                <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Status</p>
+                {isEditing ? (
+                  <select
+                  value={editedContact?.status || 'New'}
+                  onChange={(e) => setEditedContact({ ...editedContact!, status: e.target.value as Contact['status'] })}
+                  className="mt-1 block w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                >
+                  <option value="New">New</option>
+                  <option value="Reach">Reach</option>
+                  <option value="Qualified">Qualified</option>
+                  <option value="Disqualified">Disqualified</option>
+                  <option value="Negotiating">Negotiating</option>
+                  <option value="Won">Won</option>
+                  <option value="Lost">Lost</option>
+                </select>
+                ) : (
+                  <p className="text-gray-800 dark:text-gray-200">
+                    {selectedContact.status || 'N/A'}
+                  </p>
+                )}
+              </div>
             </div>
             <div className="border-t border-gray-200 dark:border-gray-600 mt-4 pt-4"></div>
             {selectedContact.tags.some((tag: string) => employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase())) && (

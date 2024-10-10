@@ -85,6 +85,7 @@ function Main() {
     expiryDate?:string | null;
     vehicleNumber?:string | null;
     ic?:string | null;
+    status?: 'New' | 'Reach' | 'Qualified' | 'Disqualified' | 'Negotiating' | 'Won' | 'Lost';
   }
   
   interface Employee {
@@ -179,6 +180,7 @@ function Main() {
       expiryDate:'',
       vehicleNumber:'',
       ic:'',
+      status: 'New' as 'New' | 'Reach' | 'Qualified' | 'Disqualified' | 'Negotiating' | 'Won' | 'Lost',
   });
   const [total, setTotal] = useState(0);
   const [fetched, setFetched] = useState(0);
@@ -686,6 +688,7 @@ const handleSaveNewContact = async () => {
       expiryDate: newContact.expiryDate,
       vehicleNumber: newContact.vehicleNumber,
       ic: newContact.ic,
+      status: newContact.status || 'New',
     };
 
     // Add new contact to Firebase
@@ -707,6 +710,7 @@ const handleSaveNewContact = async () => {
       expiryDate: '',
       vehicleNumber: '',
       ic: '',
+      status: 'New',
     });
 
     await fetchContacts();
@@ -1688,14 +1692,15 @@ const chatId = tempphone + "@c.us"
                 lastName: currentContact.lastName,
                 phone: currentContact.phone,
                 points: currentContact.points || 0,
-                ic: currentContact.ic
+                ic: currentContact.ic,
+                status: currentContact.status || 'New',
             };
 
             const fieldsToUpdate = [
                 'contactName', 'email', 'lastName', 'phone', 'address1', 'city', 
                 'state', 'postalCode', 'website', 'dnd', 'dndSettings', 'tags', 
                 'customFields', 'source', 'country', 'companyName', 'branch', 
-                'expiryDate', 'vehicleNumber', 'points', 'IC',
+                'expiryDate', 'vehicleNumber', 'points', 'IC', 'status',
             ];
 
             fieldsToUpdate.forEach(field => {
@@ -3535,6 +3540,22 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
                   onChange={(e) => setNewContact({ ...newContact, branch: e.target.value })}
                 />
               </div>
+              <div>
+                  <label className="mt-4 block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
+                  <FormSelect
+                    value={newContact.status}
+                    onChange={(e) => setNewContact({ ...newContact, status: (e.target.value as Contact['status']) || 'New' })}
+                    className="mt-1"
+                  >
+                    <option value="New">New</option>
+                    <option value="Reach">Reach</option>
+                    <option value="Qualified">Qualified</option>
+                    <option value="Disqualified">Disqualified</option>
+                    <option value="Negotiating">Negotiating</option>
+                    <option value="Won">Won</option>
+                    <option value="Lost">Lost</option>
+                  </FormSelect>
+                </div>
               {companyId === '079' || companyId === '001' && (
                 <>
                   <div>
@@ -3678,6 +3699,22 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
                     value={currentContact?.branch || ''}
                     onChange={(e) => setCurrentContact({ ...currentContact, branch: e.target.value } as Contact)}
                   />
+                </div>
+                <div>
+                  <label className="mt-4 block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
+                  <FormSelect
+                    value={currentContact?.status || 'New'}
+                    onChange={(e) => setCurrentContact({ ...currentContact!, status: e.target.value as Contact['status'] })}
+                    className="mt-1"
+                  >
+                    <option value="New">New</option>
+                    <option value="Reach">Reach</option>
+                    <option value="Qualified">Qualified</option>
+                    <option value="Disqualified">Disqualified</option>
+                    <option value="Negotiating">Negotiating</option>
+                    <option value="Won">Won</option>
+                    <option value="Lost">Lost</option>
+                  </FormSelect>
                 </div>
                 {companyId === '079' || companyId === '001' && (
                   <>
