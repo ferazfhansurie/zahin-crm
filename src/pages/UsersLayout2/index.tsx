@@ -300,7 +300,10 @@ const paginatedEmployees = filteredEmployees
 
   return (
     <div className="flex flex-col h-full overflow-auto">
-      <h2 className="ml-4 mt-10 text-2xl font-bold intro-y text-gray-800 dark:text-gray-200">Users Directory</h2>
+      <div className="flex justify-between items-center ml-4 mt-10">
+        <h2 className="text-2xl font-bold intro-y text-gray-800 dark:text-gray-200">Users Directory</h2>
+        <ThemeSwitcher />
+      </div>
       <div className="flex items-center justify-between px-4 py-2 bg-gray-100 dark:bg-gray-900">
         <div className="text-lg font-medium text-gray-800 dark:text-gray-200 intro-y">
           Total Users: {employeeList.length}
@@ -411,12 +414,11 @@ const paginatedEmployees = filteredEmployees
             </div>
           </div>
         </div>
-        <ThemeSwitcher />
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-5">
           {paginatedEmployees.map((employee, index) => (
             <div key={index} className="bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300">
-              <div className="p-6">
-                <div className="flex items-center justify-between">
+              <div className="p-4">
+                <div className="flex items-center justify-between mr-4">
                   {employee.imageUrl ? (
                     <img
                       src={employee.imageUrl}
@@ -428,11 +430,17 @@ const paginatedEmployees = filteredEmployees
                       <Lucide icon="User" className="w-16 h-16 text-gray-500 dark:text-gray-400" />
                     </div>
                   )}
-                  <div>
+                  <div className="flex-grow ml-4">
                     <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
-                      {employee.name.length > 20 ? employee.name.charAt(0).toUpperCase() + employee.name.substring(1, 20) + '...' : employee.name.charAt(0).toUpperCase() + employee.name.slice(1)}
+                      {employee.name.length > 15 ? employee.name.charAt(0).toUpperCase() + employee.name.substring(1, 15) + '...' : employee.name.charAt(0).toUpperCase() + employee.name.slice(1)}
+                    </h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      {employee.email}
+                    </p>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      {employee.role === "1" ? 'Admin' : employee.role === "2" ? 'Sales' : employee.role === "3" ? 'Observer' : employee.role === "4" ? 'Manager' : employee.role === "5" ? 'Supervisor' : 'Other'}
                       {employee.employeeId && (
-                        <span className={`ml-2 text-md font-medium ${
+                        <span className={`ml-2 text-md font-semibold ${
                           employee.role === "1" ? 'text-indigo-600 dark:text-indigo-400' :
                           employee.role === "2" ? 'text-teal-600 dark:text-teal-400' :
                           employee.role === "3" ? 'text-purple-600 dark:text-purple-400' :
@@ -443,12 +451,6 @@ const paginatedEmployees = filteredEmployees
                           {employee.employeeId}
                         </span>
                       )}
-                    </h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {employee.email}
-                    </p>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {employee.role === "1" ? 'Admin' : employee.role === "2" ? 'Sales' : employee.role === "3" ? 'Observer' : employee.role === "4" ? 'Manager' : employee.role === "5" ? 'Supervisor' : 'Other'}
                     </p>
                     {/* {employee.group && (
                       <p className="text-sm text-gray-600 dark:text-gray-400">

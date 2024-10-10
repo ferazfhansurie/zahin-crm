@@ -18,7 +18,7 @@ module.exports = {
           1: "rgb(var(--color-theme-1) / <alpha-value>)",
           2: "rgb(var(--color-theme-2) / <alpha-value>)",
         },
-        primary: "rgb(var(--color-primary) / <alpha-value>)",
+        primary: "rgb(111 29 223 / <alpha-value>)",
         secondary: "rgb(var(--color-secondary) / <alpha-value>)",
         success: "rgb(var(--color-success) / <alpha-value>)",
         info: "rgb(var(--color-info) / <alpha-value>)",
@@ -79,7 +79,7 @@ module.exports = {
         ":root": {
           "--color-theme-1": toRGB(colors.blue["800"]),
           "--color-theme-2": toRGB(colors.blue["900"]),
-          "--color-primary": toRGB(colors.blue["900"]),
+          "--color-primary": toRGB("#6f1ddf"),
           "--color-secondary": toRGB(colors.slate["200"]),
           "--color-success": toRGB(colors.lime["500"]),
           "--color-info": toRGB(colors.cyan["500"]),
@@ -91,7 +91,7 @@ module.exports = {
         },
         // Default dark-mode colors
         ".dark": {
-          "--color-primary": toRGB(colors.blue["700"]),
+          "--color-primary": toRGB("#6f1ddf"),
           "--color-darkmode-50": "87 103 132",
           "--color-darkmode-100": "74 90 121",
           "--color-darkmode-200": "65 81 114",
@@ -107,7 +107,7 @@ module.exports = {
         ".theme-1": {
           "--color-theme-1": toRGB(colors.emerald["800"]),
           "--color-theme-2": toRGB(colors.emerald["900"]),
-          "--color-primary": toRGB(colors.emerald["900"]),
+          "--color-primary": toRGB("#6f1ddf"),
           "--color-secondary": toRGB(colors.slate["200"]),
           "--color-success": toRGB(colors.emerald["600"]),
           "--color-info": toRGB(colors.cyan["500"]),
@@ -117,14 +117,14 @@ module.exports = {
           "--color-light": toRGB(colors.slate["100"]),
           "--color-dark": toRGB(colors.slate["800"]),
           "&.dark": {
-            "--color-primary": toRGB(colors.emerald["800"]),
+            "--color-primary": toRGB("#6f1ddf"),
           },
         },
         // Theme 2 colors
         ".theme-2": {
           "--color-theme-1": toRGB(colors.blue["900"]),
           "--color-theme-2": toRGB(colors.blue["950"]),
-          "--color-primary": toRGB(colors.blue["950"]),
+          "--color-primary": toRGB("#6f1ddf"),
           "--color-secondary": toRGB(colors.slate["200"]),
           "--color-success": toRGB(colors.teal["600"]),
           "--color-info": toRGB(colors.cyan["500"]),
@@ -134,14 +134,14 @@ module.exports = {
           "--color-light": toRGB(colors.slate["100"]),
           "--color-dark": toRGB(colors.slate["800"]),
           "&.dark": {
-            "--color-primary": toRGB(colors.blue["800"]),
+            "--color-primary": toRGB("#6f1ddf"),
           },
         },
         // Theme 3 colors
         ".theme-3": {
           "--color-theme-1": toRGB(colors.cyan["800"]),
           "--color-theme-2": toRGB(colors.cyan["900"]),
-          "--color-primary": toRGB(colors.cyan["900"]),
+          "--color-primary": toRGB("#6f1ddf"),
           "--color-secondary": toRGB(colors.slate["200"]),
           "--color-success": toRGB(colors.teal["600"]),
           "--color-info": toRGB(colors.cyan["500"]),
@@ -151,14 +151,14 @@ module.exports = {
           "--color-light": toRGB(colors.slate["100"]),
           "--color-dark": toRGB(colors.slate["800"]),
           "&.dark": {
-            "--color-primary": toRGB(colors.cyan["800"]),
+            "--color-primary": toRGB("#6f1ddf"),
           },
         },
         // Theme 4 colors
         ".theme-4": {
           "--color-theme-1": toRGB(colors.indigo["800"]),
           "--color-theme-2": toRGB(colors.indigo["900"]),
-          "--color-primary": toRGB(colors.indigo["900"]),
+          "--color-primary": toRGB("#6f1ddf"),
           "--color-secondary": toRGB(colors.slate["200"]),
           "--color-success": toRGB(colors.emerald["600"]),
           "--color-info": toRGB(colors.cyan["500"]),
@@ -168,7 +168,7 @@ module.exports = {
           "--color-light": toRGB(colors.slate["100"]),
           "--color-dark": toRGB(colors.slate["800"]),
           "&.dark": {
-            "--color-primary": toRGB(colors.indigo["700"]),
+            "--color-primary": toRGB("#6f1ddf"),
           },
         },
       });
