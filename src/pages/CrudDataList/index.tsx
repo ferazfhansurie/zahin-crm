@@ -84,13 +84,9 @@ function Main() {
     branch?:string | null;
     expiryDate?:string | null;
     vehicleNumber?:string | null;
-<<<<<<< HEAD
-    ic?:string | null;
     status?: 'New' | 'Reach' | 'Qualified' | 'Disqualified' | 'Negotiating' | 'Won' | 'Lost';
-=======
     ic?: string | null;
     createdAt?: string | null;
->>>>>>> 30794054bbb001f93a92b2cd6728908016e60dce
   }
   
   interface Employee {
@@ -1232,10 +1228,8 @@ const handleConfirmDeleteTag = async () => {
       }
       const companyData = docSnapshot.data();
   
-      let message = `Hello ${assignedEmployee.name}, a new contact has been assigned to you:\n\nName: ${contact.contactName || contact.firstName || 'N/A'}\nPhone: ${contact.phone}\n\nPlease follow up with them as soon as possible.`;
-      if(companyId == '042'){
-        message = `Hi ${assignedEmployee.employeeId || assignedEmployee.phoneNumber} ${assignedEmployee.name}.\n\nAnda telah diberi satu prospek baharu\n\nSila masuk ke https://web.jutasoftware.co/login untuk melihat perbualan di antara Zahin Travel dan prospek.\n\nTerima kasih.\n\nIkhlas,\nZahin Travel Sdn. Bhd. (1276808-W)\nNo. Lesen Pelancongan: KPK/LN 9159\nNo. MATTA: MA6018\n\n#zahintravel - Nikmati setiap detik..\n#diyakini\n#responsif\n#budibahasa`;
-      }
+      let message = `Hi ${assignedEmployee.employeeId} ${assignedEmployee.name},\n\nA new contact has been assigned to you:\n\nName: ${contact.contactName || contact.firstName || 'N/A'}\nPhone: ${contact.phone}\n\nKindly login to https://www.zahintravel.chat/login to chat with the contact.\n\nThank you.`;
+
       let phoneIndex;
       if (userData?.phone !== undefined) {
           if (userData.phone === 0) {
