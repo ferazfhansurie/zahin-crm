@@ -94,6 +94,7 @@ function Main() {
     invoiceNumber: string | null;
     phone: number;
     imageUrl: string;
+    weightage: number;
   }>({
     name: "",
     phoneNumber: "",
@@ -108,6 +109,7 @@ function Main() {
     invoiceNumber: null,
     phone: -1,
     imageUrl: "",
+    weightage: 0,
   });
 
   useEffect(() => {
@@ -126,6 +128,7 @@ function Main() {
         invoiceNumber: contact.invoiceNumber || null,
         phone: contact.phone || -1,
         imageUrl: contact.imageUrl || "",
+        weightage: contact.weightage || 0,
       });
       setCategories([contact.role]);
     }
@@ -324,6 +327,7 @@ function Main() {
           invoiceNumber: userData.invoiceNumber || null,
           phone: userData.phone || -1,
           imageUrl: imageUrl || "",
+          weightage: userData.weightage || 0,
         };
 
         if (contactId) {
@@ -359,6 +363,7 @@ function Main() {
               invoiceNumber: null,
               phone: -1,
               imageUrl: "",
+              weightage: 0,
             });
         
             const roleMap = {
@@ -476,18 +481,12 @@ function Main() {
             <FormLabel htmlFor="phoneNumber">Phone Number *</FormLabel>
             <div className="flex">
               <FormInput
-                type="text"
-                value="+6"
-                readOnly
-                className="w-12 mr-2"
-              />
-              <FormInput
                 id="phoneNumber"
                 name="phoneNumber"
                 type="text"
                 value={userData.phoneNumber}
                 onChange={handleChange}
-                placeholder="Phone Number"
+                placeholder="+60123456789"
                 className="flex-grow"
                 disabled={isFieldDisabled("phoneNumber")}
                 required
@@ -593,6 +592,8 @@ function Main() {
               {currentUserRole === "1" && <option value="1">Admin</option>}
               {currentUserRole === "1" && <option value="4">Manager</option>}
               {currentUserRole === "1" && <option value="5">Supervisor</option>}
+              {currentUserRole === "4" && <option value="4">Manager</option>}
+              {currentUserRole === "5" && <option value="5">Supervisor</option>}
               <option value="2">Sales</option>
               <option value="3">Observer</option>
             </select>
@@ -684,6 +685,20 @@ function Main() {
               disabled={isFieldDisabled("invoiceNumber")}
             />
           </div>
+          {currentUserRole === "1" && (
+            <div>
+              <FormLabel htmlFor="weightage">Weightage</FormLabel>
+              <FormInput
+                id="weightage"
+                name="weightage"
+                type="number"
+                value={userData.weightage}
+                onChange={(e) => setUserData(prev => ({ ...prev, weightage: parseInt(e.target.value) || 0 }))}
+                placeholder="Weightage"
+                min="0"
+              />
+            </div>
+          )}
         </div>
         <div className="mt-4">
           <FormLabel htmlFor="notes">Notes</FormLabel>

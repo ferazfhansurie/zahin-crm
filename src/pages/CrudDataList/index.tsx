@@ -23,7 +23,7 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import LZString from 'lz-string';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
-import { format, compareAsc } from 'date-fns';
+import { format, compareAsc, parseISO } from 'date-fns';
 import { saveAs } from 'file-saver';
 import Papa from 'papaparse';
 import ReactPaginate from 'react-paginate';
@@ -84,8 +84,13 @@ function Main() {
     branch?:string | null;
     expiryDate?:string | null;
     vehicleNumber?:string | null;
+<<<<<<< HEAD
     ic?:string | null;
     status?: 'New' | 'Reach' | 'Qualified' | 'Disqualified' | 'Negotiating' | 'Won' | 'Lost';
+=======
+    ic?: string | null;
+    createdAt?: string | null;
+>>>>>>> 30794054bbb001f93a92b2cd6728908016e60dce
   }
   
   interface Employee {
@@ -221,7 +226,8 @@ function Main() {
   const [phoneIndex, setPhoneIndex] = useState<number>(0);
   const [phoneOptions, setPhoneOptions] = useState<number[]>([]);
   const [phoneNames, setPhoneNames] = useState<{ [key: number]: string }>({});
-
+  const [employeeSearch, setEmployeeSearch] = useState('');
+  const [selectedPhoneIndex, setSelectedPhoneIndex] = useState<number | null>(null);
 
  
 
@@ -298,6 +304,7 @@ function Main() {
   };
   
   const fetchContacts = useCallback(async () => {
+    setLoading(true);
     try {
       const auth = getAuth();
       const firestore = getFirestore();
@@ -321,19 +328,34 @@ function Main() {
       const userName = userData.name;
   
       const contactsRef = collection(firestore, `companies/${companyId}/contacts`);
-      const q = query(contactsRef, orderBy('contactName'));
+      const q = query(contactsRef, orderBy('createdAt', 'desc'));
   
       const querySnapshot = await getDocs(q);
       const fetchedContacts = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Contact));
-
-      const filteredContacts = filterContactsByUserRole(fetchedContacts, userRole, userName);
+  
+      // Function to check if a chat_id is for an individual contact
+      const isIndividual = (chat_id: string | undefined) => {
+        return chat_id?.endsWith('@c.us') || false;
+      };
+  
+      // Separate contacts into categories
+      const individuals = fetchedContacts.filter(contact => isIndividual(contact.chat_id || ''));
+      const groups = fetchedContacts.filter(contact => !isIndividual(contact.chat_id || ''));
+  
+      // Combine all contacts in the desired order
+      const allSortedContacts = [
+        ...individuals,
+        ...groups
+      ];
+  
+      const filteredContacts = filterContactsByUserRole(allSortedContacts, userRole, userName);
   
       setContacts(filteredContacts);
       setFilteredContacts(filteredContacts);
-      setLoading(false);
     } catch (error) {
       console.error('Error fetching contacts:', error);
       toast.error('Failed to fetch contacts');
+    } finally {
       setLoading(false);
     }
   }, []);
@@ -341,29 +363,6 @@ function Main() {
   useEffect(() => {
     fetchContacts();
   }, [fetchContacts]);
-
-  const sortedContacts = useMemo(() => {
-    return filteredContacts.sort((a, b) => {
-      // First, prioritize contacts with names
-      const aHasName = !!(a.contactName || a.phone);
-      const bHasName = !!(b.contactName || b.phone);
-      
-      if (aHasName && !bHasName) return -1;
-      if (!aHasName && bHasName) return 1;
-      
-      // If both have names or both don't have names, sort by dateAdded
-      const aDate = a.dateAdded ? new Date(a.dateAdded).getTime() : 0;
-      const bDate = b.dateAdded ? new Date(b.dateAdded).getTime() : 0;
-      
-      return bDate - aDate; // Sort in descending order (most recent first)
-    });
-  }, [filteredContacts]);
-
-  useEffect(() => {
-    if (initialContacts.length > 0) {
-      loadMoreContacts();
-    }
-  }, [initialContacts]);
 
 
   useEffect(() => {
@@ -1831,7 +1830,7 @@ const clearAllFilters = () => {
 };
 
 const filteredContactsSearch = useMemo(() => {
-  return sortedContacts.filter((contact) => {
+  return contacts.filter((contact) => {
     const name = (contact.contactName || '').toLowerCase();
     const phone = (contact.phone || '').toLowerCase();
     const tags = (contact.tags || []).map(tag => tag.toLowerCase());
@@ -1848,7 +1847,7 @@ const filteredContactsSearch = useMemo(() => {
 
     return matchesSearch && matchesTagFilters && matchesUserFilters && notExcluded;
   });
-}, [sortedContacts, searchQuery, selectedTagFilters, selectedUserFilters, excludedTags]);
+}, [contacts, searchQuery, selectedTagFilters, selectedUserFilters, excludedTags]);
 
 const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
   setSearchQuery(e.target.value);
@@ -2580,31 +2579,51 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
                       <Lucide icon="Plus" className="w-5 h-5 mr-2" />
                       <span className="font-medium">Add Contact</span>
                     </button>
-                    <Menu>
-                      <Menu.Button as={Button} className={`flex items-center justify-start p-2 !box bg-white text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 ${userRole === "3" ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                    <Menu as="div" className="relative inline-block text-left">
+                      <Menu.Button as={Button} className="flex items-center justify-start p-2 !box bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
                         <Lucide icon="User" className="w-5 h-5 mr-2" />
                         <span>Assign User</span>
                       </Menu.Button>
-                      <Menu.Items className="w-full bg-white text-gray-800 dark:text-gray-200">
-                        {employeeList.map((employee) => (
-                          <Menu.Item key={employee.id}>
-                            <span
-                              className="flex items-center p-2"
-                              onClick={() => {
-                                if (userRole !== "3") {
-                                  selectedContacts.forEach(contact => {
-                                    handleAddTagToSelectedContacts(employee.name, contact);
-                                  });
-                                } else {
-                                  toast.error("You don't have permission to assign users to contacts.");
-                                }
-                              }}
-                            >
-                              <Lucide icon="User" className="w-4 h-4" />
-                              <span className="truncate">{employee.name}</span>
-                            </span>
-                          </Menu.Item>
-                        ))}
+                      <Menu.Items className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10 overflow-y-auto max-h-96">
+                        <div className="mb-2">
+                          <input
+                            type="text"
+                            placeholder="Search employees..."
+                            value={employeeSearch}
+                            onChange={(e) => setEmployeeSearch(e.target.value)}
+                            className="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                          />
+                        </div>
+                        {employeeList
+                          .filter(employee => {
+                            if (userRole === '4' || userRole === '2') {
+                              return employee.role === '2' && employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                            }
+                            return employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                          })
+                          .map((employee) => (
+                            <Menu.Item key={employee.id}>
+                              {({ active }) => (
+                                <button
+                                  className={`${
+                                    active ? 'bg-gray-100 dark:bg-gray-700' : ''
+                                  } group flex w-full items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 transition-colors duration-200`}
+                                  onClick={() => {
+                                    if (userRole !== "3") {
+                                      selectedContacts.forEach(contact => {
+                                        handleAddTagToSelectedContacts(employee.name, contact);
+                                      });
+                                    } else {
+                                      toast.error("You don't have permission to assign users to contacts.");
+                                    }
+                                  }}
+                                >
+                                  <Lucide icon="User" className="mr-3 h-5 w-5" />
+                                  <span className="truncate">{employee.name}</span>
+                                </button>
+                              )}
+                            </Menu.Item>
+                          ))}
                       </Menu.Items>
                     </Menu>
                     <Menu>

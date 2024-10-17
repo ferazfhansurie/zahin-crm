@@ -164,6 +164,7 @@ interface Employee {
   phone?: string;
   quotaLeads?: number;
   assignedContacts?: number;
+  group?: string;
   // Add other properties as needed
 }
 interface Tag {
@@ -1104,6 +1105,7 @@ const closePDFModal = () => {
       const user = auth.currentUser;
       if (!user) {
         console.error('No authenticated user');
+        toast.error('Authentication error. Please try logging in again.');
         return;
       }
   
@@ -1111,39 +1113,59 @@ const closePDFModal = () => {
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
         console.error('No such document for user!');
+        toast.error('User data not found. Please contact support.');
         return;
       }
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
   
+      let successCount = 0;
+      let failureCount = 0;
+
+      const phoneIndex = selectedContact?.phoneIndex || 0;
+  
       for (const message of selectedMessages) {
         try {
+          console.log(`Attempting to delete message: ${message.id}`);
           const response = await axios.delete(
             `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/${companyId}/${selectedChatId}/${message.id}`,
             {
-              data: { deleteForEveryone: true } // Set this to false if you want to delete only for the current user
+              data: { deleteForEveryone: true, phoneIndex: phoneIndex },
+              headers: {
+                'Authorization': `Bearer ${userData.accessToken}` // Ensure you're sending the correct authorization token
+              }
             }
           );
   
           if (response.data.success) {
+            console.log(`Successfully deleted message: ${message.id}`);
             setMessages((prevMessages) => prevMessages.filter((msg) => msg.id !== message.id));
+            successCount++;
           } else {
-            console.error(`Failed to delete message: ${message.id}`);
+            console.error(`Failed to delete message: ${message.id}`, response.data);
+            failureCount++;
           }
         } catch (error) {
-          console.error('Error deleting message:', error);
+          console.error('Error deleting message:', message.id, error);
           if (axios.isAxiosError(error) && error.response) {
             console.error('Error details:', error.response.status, error.response.data);
           }
+          failureCount++;
         }
       }
   
-      toast.success('Messages deleted successfully');
+      if (successCount > 0) {
+        toast.success(`Successfully deleted ${successCount} message(s)`);
+      }
+      if (failureCount > 0) {
+        toast.error(`Failed to delete ${failureCount} message(s)`);
+      }
+  
       setSelectedMessages([]);
       closeDeletePopup();
     } catch (error) {
       console.error('Error in delete operation:', error);
-      toast.error('Failed to delete messages');
+      toast.error('Failed to delete messages. Please try again.');
     }
   };
 
@@ -3506,7 +3528,22 @@ useEffect(() => {
 }, [filteredContacts, paginatedContacts, activeTags]);
 
 useEffect(() => {
+  console.log('Filtering contacts', { 
+    contactsLength: contacts.length, 
+    userRole, 
+    userName: userData?.name,
+    activeTags,
+    searchQuery
+  });
+
   let filtered = contacts;
+
+  // Apply role-based filtering
+  if (userRole === "3") {
+    filtered = filtered.filter(contact => 
+      contact.assignedTo?.toLowerCase() === userData?.name?.toLowerCase()
+    );
+  }
 
   // Apply tag filter
   if (activeTags.length > 0) {
@@ -3543,7 +3580,7 @@ useEffect(() => {
   }
 
   console.log('Filtered contacts updated:', filtered);
-}, [contacts, searchQuery, activeTags, currentUserName, employeeList]);
+}, [contacts, searchQuery, activeTags, currentUserName, employeeList, userRole, userData]);
 
 // Update the pagination logic
 useEffect(() => {
@@ -4486,20 +4523,12 @@ const sortContacts = (contacts: Contact[]) => {
       }
       // Update state
       setContacts(prevContacts => {
-        if (userData?.role === '3') {
-          // For role 3, remove the contact if the removed tag matches their name
-          return prevContacts.filter(contact => 
-            contact.id !== contactId || 
-            (contact.tags && contact.tags.some(tag => tag.toLowerCase() === userData.name.toLowerCase()))
-          );
-        } else {
-          // For other roles, just update the tags
-          return prevContacts.map(contact =>
-            contact.id === contactId
-              ? { ...contact, tags: contact.tags!.filter(tag => tag !== tagName), assignedTo: undefined }
-              : contact
-          );
-        }
+        // For all roles, just update the tags
+        return prevContacts.map(contact =>
+          contact.id === contactId
+            ? { ...contact, tags: contact.tags!.filter(tag => tag !== tagName), assignedTo: undefined }
+            : contact
+        );
       });
   
       const updatedContacts = contacts.map((contact: Contact) =>
@@ -6093,33 +6122,52 @@ console.log(prompt);
                 </span>
               </Menu.Button>
               <Menu.Items className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10 max-h-60 overflow-y-auto">
-  <div className="mb-2">
-    <input
-      type="text"
-      placeholder="Search employees..."
-      value={employeeSearch}
-      onChange={(e) => setEmployeeSearch(e.target.value)}
-      className="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-    />
-  </div>
-  {employeeList
-    .filter(employee => employee.name.toLowerCase().includes(employeeSearch.toLowerCase()))
-    .map((employee) => (
-      <Menu.Item key={employee.id}>
-        <button
-          className="flex items-center justify-between w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
-          onClick={() => handleAddTagToSelectedContacts(employee.name, selectedContact)}
-        >
-          <span className="text-gray-800 dark:text-gray-200 truncate flex-grow mr-2" style={{ maxWidth: '70%' }}>
-            {employee.name}
-          </span>
-          <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-            Leads Quota: {employee.quotaLeads}
-          </span>
-        </button>
-      </Menu.Item>
-    ))}
-</Menu.Items>
+                <div className="mb-2">
+                  <input
+                    type="text"
+                    placeholder="Search employees..."
+                    value={employeeSearch}
+                    onChange={(e) => setEmployeeSearch(e.target.value)}
+                    className="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                  />
+                </div>
+                {employeeList
+                  .filter(employee => {
+                    if (userRole === '4') {
+                      if (userData?.group) {
+                        return employee.role === '2' && 
+                              employee.group === userData.group && 
+                              employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                      } else {
+                        return employee.role === '2' && 
+                              employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                      }
+                    } else if (userRole === '1' || userRole === '5') {
+                      return employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                    } else if (userRole === '2' || userRole === '3') {
+                      return employee.role === userRole && 
+                            employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                    }
+                    return false;
+                  })
+                  .map((employee) => {
+                    return (
+                      <Menu.Item key={employee.id}>
+                        <button
+                          className="flex items-center justify-between w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                          onClick={() => handleAddTagToSelectedContacts(employee.name, selectedContact)}
+                        >
+                          <span className="text-gray-800 dark:text-gray-200 truncate flex-grow mr-2" style={{ maxWidth: '70%' }}>
+                            {employee.name}
+                          </span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                            Leads Quota: {employee.quotaLeads}
+                          </span>
+                        </button>
+                      </Menu.Item>
+                    );
+                  })}
+              </Menu.Items>
             </Menu>
             <Menu as="div" className="relative inline-block text-left">
               <Menu.Button as={Button} className="p-2 !box m-0">
@@ -6168,43 +6216,52 @@ console.log(prompt);
                 </button>
               </Menu.Item>
               <Menu.Item>
-  <Menu as="div" className="relative inline-block text-left w-full">
-    <Menu.Button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
-      <Lucide icon="Users" className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
-      <span className="text-gray-800 dark:text-gray-200">Assign Employee</span>
-    </Menu.Button>
-    <Menu.Items className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10">
-      <div className="mb-2">
-        <input
-          type="text"
-          placeholder="Search employees..."
-          value={employeeSearch}
-          onChange={(e) => setEmployeeSearch(e.target.value)}
-          className="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-        />
-      </div>
-      {employeeList
-        .filter(employee => employee.name.toLowerCase().includes(employeeSearch.toLowerCase()))
-        .map((employee) => (
-          <Menu.Item key={employee.id}>
-            <button
-              className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
-              onClick={() => handleAddTagToSelectedContacts(employee.name, selectedContact)}
-            >
-              <span className="text-gray-800 dark:text-gray-200">{employee.name}</span>
-            </button>
-          </Menu.Item>
-        ))}
-    </Menu.Items>
-  </Menu>
-</Menu.Item>
+                <Menu as="div" className="relative inline-block text-left w-full">
+                  <Menu.Button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
+                    <Lucide icon="Users" className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
+                    <span className="text-gray-800 dark:text-gray-200">Assign Employee</span>
+                  </Menu.Button>
+                  <Menu.Items className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10 overflow-y-auto max-h-96">
+                    <div className="mb-2">
+                      <input
+                        type="text"
+                        placeholder="Search employees..."
+                        value={employeeSearch}
+                        onChange={(e) => setEmployeeSearch(e.target.value)}
+                        className="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                      />
+                    </div>
+                    {employeeList
+                      .filter(employee => {
+                        if (userRole === '4' || userRole === '2') {
+                          const shouldInclude = employee.role === '2' && employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                          return shouldInclude;
+                        }
+                        const shouldInclude = employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                        return shouldInclude;
+                      })
+                      .map((employee) => {
+                        return (
+                          <Menu.Item key={employee.id}>
+                            <button
+                              className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                              onClick={() => handleAddTagToSelectedContacts(employee.name, selectedContact)}
+                            >
+                              <span className="text-gray-800 dark:text-gray-200">{employee.name}</span>
+                            </button>
+                          </Menu.Item>
+                        );
+                      })}
+                  </Menu.Items>
+                </Menu>
+              </Menu.Item>
               <Menu.Item>
                 <Menu as="div" className="relative inline-block text-left w-full">
                   <Menu.Button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
                     <Lucide icon="Tag" className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
                     <span className="text-gray-800 dark:text-gray-200">Add Tag</span>
                   </Menu.Button>
-                  <Menu.Items className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10">
+                  <Menu.Items className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10 max-h-60 overflow-y-auto">
                     {tagList.map((tag) => (
                       <Menu.Item key={tag.id}>
                         <button
