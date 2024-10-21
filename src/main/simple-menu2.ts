@@ -12,11 +12,7 @@ const menu: Array<Menu | "divider"> = [
     pathname: "/crud-data-list",
     title: "Contacts",
   },
-  {
-    icon: "Globe",
-    pathname: "/opp",
-    title: "Opportunities",
-  },
+
   /* {
     icon: "Bot",
     pathname: "/dashboard/inbox",

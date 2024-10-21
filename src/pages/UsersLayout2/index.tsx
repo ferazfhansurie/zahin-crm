@@ -331,6 +331,11 @@ const paginatedEmployees = filteredEmployees
                 </Button>
               )}
             </Link>
+            <Link to="quick-replies">
+            <Button variant="primary" className="mr-2 shadow-md">
+                  Quick Replies
+                </Button>
+            </Link>
             {/* Add a dropdown to show phone names */}
             {phoneCount >= 2 && (
               <Menu className="mr-2">

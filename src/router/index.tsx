@@ -67,6 +67,7 @@ import Chart from "../pages/Chart";
 import Slider from "../pages/Slider";
 import ImageZoom from "../pages/ImageZoom";
 import Opportunities from "../pages/Opportunities";
+import QuickReplies from "../pages/QuickReplies";
 
 import Layout from "../themes";
 import { getAuth } from "firebase/auth";
@@ -101,6 +102,7 @@ function Router() {
         { path: "/", element: <Chat /> },
         { path: "chat", element: <Chat /> },
         { path: "/dashboard", element: <DashboardOverview1 /> },
+        { path: "users-layout-2/quick-replies", element: <QuickReplies /> },
         { path: "dashboard-overview-3", element: <DashboardOverview3 /> },
         { path: "dashboard-overview-4", element: <DashboardOverview4 /> },
         { path: "profile", element: <ProfileOverview1 /> },
