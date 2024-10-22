@@ -77,6 +77,8 @@ interface Contact {
   profilePicUrl?:string;
   phoneIndex?:number |null;
   points?:number |null;
+  leadNumber?: string | null;
+  createdAt?: Timestamp | null;
   status?: 'New' | 'Reach' | 'Qualified' | 'Disqualified' | 'Negotiating' | 'Won' | 'Lost';
 }
 interface GhlConfig {
@@ -2729,16 +2731,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
       const chatId = `${newContactNumber}@c.us`;
       const contactId = `+${newContactNumber}`; // This will be used as the document ID
       console.log('contactId:', contactId);
-      const newContact: Contact = {
-        id: contactId, // Ensure the id is set here
-        chat_id: chatId,
-        contactName: contactId,
-        phone: newContactNumber,
-        tags: [],
-        unreadCount: 0,
-      };
   
-      // Add the new contact to Firestore
       const user = auth.currentUser;
       if (!user) {
         console.error('No authenticated user');
@@ -2753,6 +2746,25 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
       }
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
+  
+      // Get the total number of contacts
+      const contactsRef = collection(firestore, 'companies', companyId, 'contacts');
+      const contactsSnapshot = await getDocs(contactsRef);
+      const totalContacts = contactsSnapshot.size;
+  
+      // Generate the lead number
+      const leadNumber = `Lead ${(totalContacts + 1).toString().padStart(3, '0')}`;
+  
+      const newContact: Contact = {
+        id: contactId,
+        chat_id: chatId,
+        contactName: contactId,
+        phone: newContactNumber,
+        tags: [],
+        unreadCount: 0,
+        leadNumber: leadNumber,
+        createdAt: Timestamp.fromDate(new Date()),
+      };
   
       // Use setDoc with merge option to add or update the document with the specified ID
       await setDoc(doc(firestore, 'companies', companyId, 'contacts', contactId), newContact, { merge: true });
@@ -2771,11 +2783,52 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
       // Select the new chat
       selectChat(chatId, contactId, newContact);
   
+      toast.success(`New contact created with Lead Number: ${leadNumber}`);
+  
     } catch (error) {
       console.error('Error creating new chat:', error);
       toast.error('Failed to create new chat');
     }
   };
+
+  const updateExistingContactsWithLeadNumbers = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+  
+    const docUserRef = doc(firestore, 'user', user.email!);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) return;
+  
+    const userData = docUserSnapshot.data();
+    const companyId = userData.companyId;
+  
+    const contactsRef = collection(firestore, 'companies', companyId, 'contacts');
+    const contactsSnapshot = await getDocs(contactsRef);
+  
+    const contactsToUpdate = contactsSnapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() as Contact }))
+      .filter(contact => !contact.leadNumber)
+      .sort((a, b) => (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0));
+  
+    for (let i = 0; i < contactsToUpdate.length; i++) {
+      const contact = contactsToUpdate[i];
+      if (contact.id) {
+        const leadNumber = `Lead ${(i + 1).toString().padStart(3, '0')}`;
+        const contactDocRef = doc(firestore, 'companies', companyId, 'contacts', contact.id);
+        await updateDoc(contactDocRef, { leadNumber });
+      } else {
+        console.error('Contact ID is null or undefined');
+      }
+    }
+  
+    console.log(`Updated ${contactsToUpdate.length} contacts with lead numbers.`);
+  };
+  
+  // Call this function when the component mounts or when you want to update existing contacts
+  useEffect(() => {
+    updateExistingContactsWithLeadNumbers();
+  }, []);
+
   const actionPerformedRef = useRef(false);
   const toggleStopBotLabel = useCallback(async (contact: Contact, index: number, event: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
     event.preventDefault();
@@ -5901,8 +5954,12 @@ console.log(prompt);
         <div className="flex justify-between items-center">
           <div className="flex flex-col">
             <span className="font-semibold capitalize truncate w-25 text-gray-800 dark:text-gray-200">
-              {((contact.contactName ?? contact.firstName ?? contact.phone ?? "").slice(0, 20))}
-              {((contact.contactName ?? contact.firstName ?? contact.phone ?? "").length > 20 ? '...' : '')}
+              {userRole === '1' 
+                ? ((contact.contactName ?? contact.firstName ?? contact.phone ?? "").slice(0, 20))
+                : (contact.leadNumber ?? "").slice(0, 20)}
+              {userRole === '1' 
+                ? ((contact.contactName ?? contact.firstName ?? contact.phone ?? "").length > 20 ? '...' : '')
+                : (contact.leadNumber ?? "").length > 20 ? '...' : ''}
             </span>
             {!contact.chat_id?.includes('@g.us') && userData?.role === '1' && (
               <span className="text-xs text-gray-600 dark:text-gray-400 truncate" style={{ 
