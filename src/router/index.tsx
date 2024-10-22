@@ -68,7 +68,6 @@ import Slider from "../pages/Slider";
 import ImageZoom from "../pages/ImageZoom";
 import Opportunities from "../pages/Opportunities";
 import QuickReplies from "../pages/QuickReplies";
-
 import Layout from "../themes";
 import { getAuth } from "firebase/auth";
 import { useState, useEffect } from "react";

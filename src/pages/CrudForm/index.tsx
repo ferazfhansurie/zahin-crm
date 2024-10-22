@@ -269,7 +269,7 @@ function Main() {
   const uploadImage = async () => {
     if (!imageFile) return null;
     const storage = getStorage(app);
-    const storageRef = ref(storage, `employee-images/${userData.email}`);
+    const storageRef = ref(storage, `${imageFile.name}`);
     await uploadBytes(storageRef, imageFile);
     return getDownloadURL(storageRef);
   };

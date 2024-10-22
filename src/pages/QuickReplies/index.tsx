@@ -16,6 +16,8 @@ interface QuickReply {
     type:string;
     document?: string | null;
     image?: string | null;
+    showImage?: boolean;
+    showDocument?: boolean;
 }
 
 const QuickRepliesPage: React.FC = () => {
@@ -30,6 +32,8 @@ const QuickRepliesPage: React.FC = () => {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
+  const [expandedItems, setExpandedItems] = useState<{ [key: string]: { image: boolean, document: boolean } }>({});
+
   const firebaseConfig = {
     apiKey: "AIzaSyCc0oSHlqlX7fLeqqonODsOIC3XA8NI7hc",
     authDomain: "onboarding-a5fcb.firebaseapp.com",
@@ -242,6 +246,16 @@ const QuickRepliesPage: React.FC = () => {
     }
   };
 
+  const toggleItem = (id: string, type: 'image' | 'document') => {
+    setExpandedItems(prev => ({
+      ...prev,
+      [id]: {
+        ...prev[id],
+        [type]: !prev[id]?.[type]
+      }
+    }));
+  };
+
   const filteredQuickReplies = quickReplies
     .filter(reply => activeTab === 'all' || reply.type === activeTab)
     .filter(reply => 
@@ -347,85 +361,107 @@ const QuickRepliesPage: React.FC = () => {
                     
                     {/* New File Inputs for Editing */}
                     <div className="flex items-center mb-2">
-                      <input
-                        type="file"
-                        id="editQuickReplyFile"
-                        className="hidden"
-                        onChange={(e) => setEditingDocument(e.target.files ? e.target.files[0] : null)}
-                      />
-                      <label htmlFor="editQuickReplyFile" className="mr-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg cursor-pointer">
-                        {editingReply.document ? 'Replace Document' : 'Attach Document'}
-                      </label>
-                      
-                      <input
-                        type="file"
-                        id="editQuickReplyImage"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => setEditingImage(e.target.files ? e.target.files[0] : null)}
-                      />
-                      <label htmlFor="editQuickReplyImage" className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg cursor-pointer">
-                        {editingReply.image ? 'Replace Image' : 'Attach Image'}
-                      </label>
+                      <div className="flex-1">
+                        <input
+                          type="file"
+                          id="editQuickReplyFile"
+                          className="hidden"
+                          onChange={(e) => setEditingDocument(e.target.files ? e.target.files[0] : null)}
+                        />
+                        <label htmlFor="editQuickReplyFile" className="mr-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg cursor-pointer">
+                          {editingReply.document ? 'Replace Document' : 'Attach Document'}
+                        </label>
+                        <input
+                          type="file"
+                          id="editQuickReplyImage"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => setEditingImage(e.target.files ? e.target.files[0] : null)}
+                        />
+                        <label htmlFor="editQuickReplyImage" className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg cursor-pointer">
+                          {editingReply.image ? 'Replace Image' : 'Attach Image'}
+                        </label>
+                      </div>
+                      <div className="flex-shrink-0 ml-4">
+                        <button
+                          className="ml-2 px-4 py-2 bg-green-500 text-white rounded-lg"
+                          onClick={() => updateQuickReply(reply.id, editingReply.keyword, editingReply.text, editingReply.type as "all" | "self")}
+                        >
+                          Save
+                        </button>
+                        <button
+                          className="ml-2 px-4 py-2 bg-gray-500 text-white rounded-lg"
+                          onClick={() => {
+                            setEditingReply(null);
+                            setEditingDocument(null);
+                            setEditingImage(null);
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
                     </div>
-                    
-                    <button
-                      className="px-4 py-2 bg-green-500 text-white rounded-lg mr-2"
-                      onClick={() => updateQuickReply(reply.id, editingReply.keyword, editingReply.text, editingReply.type as "all" | "self")}
-                    >
-                      Save
-                    </button>
-                    <button
-                      className="px-4 py-2 bg-gray-500 text-white rounded-lg"
-                      onClick={() => {
-                        setEditingReply(null);
-                        setEditingDocument(null);
-                        setEditingImage(null);
-                      }}
-                    >
-                      Cancel
-                    </button>
                   </>
                 ) : (
-                  <>
-                    <h3 className="font-bold mb-2">{reply.keyword}</h3>
-                    <p className="mb-2">{reply.text}</p>
-                    {reply.image && (
-                        <div className="message-content image-message flex justify-center items-center">
-                          <img
-                            src={reply.image}
-                            alt="Quick Reply Image"
-                            className="rounded-lg message-image cursor-pointer max-w-full h-auto object-contain"
-                            onClick={() => reply.image && window.open(reply.image, '_blank')}
-                          />
-                        </div>
-                    )}
-                    {reply.document && (
-                      <div className="document-content flex flex-col items-center p-4 rounded-md shadow-md bg-white dark:bg-gray-800 mb-2">
-                        <iframe
-                          src={reply.document}
-                          title="Document"
-                          className="border rounded cursor-pointer w-full"
-                          style={{ aspectRatio: '16/9' }}
-                          onClick={() => reply.document && window.open(reply.document, '_blank')}
-                        />
+                  <div className="flex flex-col">
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex-grow">
+                        <h3 className="text-xl font-bold">{reply.keyword}</h3>
+                        <p className="text-base text-gray-600 dark:text-gray-300 mt-1">{reply.text}</p>
                       </div>
-                    )}
-                    <div className="mt-2">
-                      <button
-                        className="px-4 py-2 bg-blue-500 text-white rounded-lg mr-2"
-                        onClick={() => setEditingReply(reply)}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="px-4 py-2 bg-red-500 text-white rounded-lg"
-                        onClick={() => deleteQuickReply(reply.id, reply.type as "all" | "self")}
-                      >
-                        Delete
-                      </button>
+                      <div className="flex-shrink-0 ml-4">
+                        <button
+                          className="ml-2 px-4 py-2 bg-blue-500 text-white rounded-lg mr-2 text-sm"
+                          onClick={() => setEditingReply(reply)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="ml-2 px-4 py-2 bg-red-500 text-white rounded-lg text-sm"
+                          onClick={() => deleteQuickReply(reply.id, reply.type as "all" | "self")}
+                        >
+                          Delete
+                        </button>
+                      </div>
                     </div>
-                  </>
+                    {reply.image && (
+              <div className="mt-2">
+                <button
+                  onClick={() => toggleItem(reply.id, 'image')}
+                  className="text-blue-500 underline mb-2"
+                >
+                  {expandedItems[reply.id]?.image ? 'Hide Image' : 'Show Image'}
+                </button>
+                {expandedItems[reply.id]?.image && (
+                  <img
+                    src={reply.image}
+                    alt="Quick Reply Image"
+                    className="rounded-lg cursor-pointer w-full h-full object-contain"
+                    onClick={() => window.open(reply.image ?? '', '_blank')}
+                  />
+                )}
+              </div>
+            )}
+            {reply.document && (
+              <div className="mt-2">
+                <button
+                  onClick={() => toggleItem(reply.id, 'document')}
+                  className="text-blue-500 underline mb-2"
+                >
+                  {expandedItems[reply.id]?.document ? 'Hide Document' : 'Show Document'}
+                </button>
+                {expandedItems[reply.id]?.document && (
+                  <iframe
+                    src={reply.document}
+                    title="Document"
+                    className="border rounded cursor-pointer w-full"
+                    style={{ height: '100vh' }}
+                    onClick={() => window.open(reply.document ?? '', '_blank')}
+                  />
+                )}
+              </div>
+            )}
+                  </div>
                 )}
               </div>
             ))}

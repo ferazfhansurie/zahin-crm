@@ -838,31 +838,25 @@ const sendVoiceMessage = async () => {
     console.log('Initial contacts:', initialContacts);
   }, []);
 
-  const filterContactsByUserRole = (contacts: Contact[], userRole: string, userName: string) => {
+  const filterContactsByUserRole = useCallback((contacts: Contact[], userRole: string, userName: string) => {
+    console.log('Filtering contacts by user role', { userRole, userName, contactsCount: contacts.length });
     switch (userRole) {
-      case '1':
+      case '1': // Admin
         return contacts; // Admin sees all contacts
-      case '2':
-        // Sales sees only contacts assigned to them
+      case '2': // Sales
+      case '3': // Observer
+      case '4': // Manager
+        // Sales, Observer, and Manager see only contacts assigned to them
         return contacts.filter(contact => 
           contact.tags?.some(tag => tag.toLowerCase() === userName.toLowerCase())
         );
-      case '3':
-        // Observer sees only contacts assigned to them
-        return contacts.filter(contact => 
-          contact.tags?.some(tag => tag.toLowerCase() === userName.toLowerCase())
-        );
-      case '4':
-        // Manager sees only contacts assigned to them
-        return contacts.filter(contact => 
-          contact.tags?.some(tag => tag.toLowerCase() === userName.toLowerCase())
-        );
-      case '5':
+      case '5': // Other role
         return contacts;
       default:
+        console.warn(`Unknown user role: ${userRole}`);
         return [];
     }
-  };
+  }, []);
 
   const filterAndSetContacts = useCallback((contactsToFilter: Contact[]) => {
     console.log('Filtering contacts', { 
@@ -923,7 +917,7 @@ const sendVoiceMessage = async () => {
       }
     } else {
       filtered = filtered.filter(contact => 
-        activeTags.some(tag => contact.tags?.includes(tag))
+        contact.tags?.some(tag => activeTags.includes(tag))
       );
       console.log('Filtered by active tags:', { filteredCount: filtered.length, activeTags });
     }
@@ -941,11 +935,10 @@ const sendVoiceMessage = async () => {
   // Make sure to add statusFilter to the dependency array of the useEffect hook
   useEffect(() => {
     if (initialContacts.length > 0) {
-      const filteredContacts = filterContactsByUserRole(initialContacts, userRole, userData?.name || '');
-      console.log('Filtered contacts:', { count: filteredContacts.length });
-      setContacts(filteredContacts.slice(0, 200));
-      filterAndSetContacts(filteredContacts.slice(0, 200));
-      localStorage.setItem('contacts', LZString.compress(JSON.stringify(filteredContacts)));
+      console.log('Initial contacts:', initialContacts.length);
+      setContacts(initialContacts);
+      filterAndSetContacts(initialContacts);
+      localStorage.setItem('contacts', LZString.compress(JSON.stringify(initialContacts)));
       sessionStorage.setItem('contactsFetched', 'true');
     }
   }, [initialContacts, statusFilter, userRole, userData, filterAndSetContacts]);
@@ -1988,9 +1981,18 @@ const fetchContactsBackground = async (whapiToken: string, locationId: string, g
     console.log('Active tag:', activeTags[0]);
     console.log('Total contacts:', allContacts.length);
 
-    setContacts(allContacts.slice(0, 200));
+    // Set all contacts to state instead of just the first 200
+    setContacts(allContacts);
+
+    // Store all contacts in localStorage
     localStorage.setItem('contacts', LZString.compress(JSON.stringify(allContacts)));
     sessionStorage.setItem('contactsFetched', 'true');
+    
+    // If you need to limit the displayed contacts, implement pagination in the UI component
+    // For example, you could add a state variable for the current page:
+    // const [currentPage, setCurrentPage] = useState(1);
+    // const contactsPerPage = 200;
+    // const displayedContacts = allContacts.slice((currentPage - 1) * contactsPerPage, currentPage * contactsPerPage);
     
   } catch (error) {
     console.error('Error fetching contacts:', error);
@@ -3538,7 +3540,8 @@ useEffect(() => {
   // Apply role-based filtering
   if (userRole === "3") {
     filtered = filtered.filter(contact => 
-      contact.assignedTo?.toLowerCase() === userData?.name?.toLowerCase()
+      contact.assignedTo?.toLowerCase() === userData?.name?.toLowerCase() ||
+      contact.tags?.some(tag => tag.toLowerCase() === userData?.name?.toLowerCase())
     );
   }
 
@@ -3546,10 +3549,11 @@ useEffect(() => {
   if (activeTags.length > 0) {
     filtered = filtered.filter((contact) => {
       if (activeTags.includes('Mine')) {
-        return contact.tags?.includes(currentUserName);
+        return contact.assignedTo?.toLowerCase() === userData?.name?.toLowerCase() ||
+               contact.tags?.some(tag => tag.toLowerCase() === userData?.name?.toLowerCase());
       }
       if (activeTags.includes('Unassigned')) {
-        return !contact.tags?.some(tag => employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase()));
+        return !contact.assignedTo && !contact.tags?.some(tag => employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase()));
       }
       if (activeTags.includes('All')) {
         return true;
@@ -3710,14 +3714,26 @@ const sortContacts = (contacts: Contact[]) => {
   const totalPages = Math.ceil(filteredContactsSearch.length / contactsPerPage);
   
   useEffect(() => {
-    const tag = activeTags[0].toLowerCase();
+    console.log('Filtering contacts - Start', { 
+      contactsLength: contacts.length, 
+      activeTags,
+      searchQuery,
+      userRole,
+      userData
+    });
+  
+    const tag = activeTags[0]?.toLowerCase() || 'all';
     let filteredContacts = filterContactsByUserRole(contacts, userRole, userData?.name || '');
     setMessageMode('reply');
-
+  
+    console.log('After filterContactsByUserRole:', filteredContacts.length);
+  
     // First, filter contacts based on the employee's assigned phone
     if (userData?.phone !== undefined && userData.phone !== -1) {
       const userPhoneIndex = parseInt(userData.phone, 10);
       setMessageMode(`phone${userPhoneIndex + 1}`);
+      filteredContacts = filteredContacts.filter(contact => contact.phoneIndex === userPhoneIndex);
+      console.log('After phone filter:', filteredContacts.length);
     }
   
     // Filtering logic
@@ -3730,6 +3746,7 @@ const sortContacts = (contacts: Contact[]) => {
         filteredContacts = filteredContacts.filter(contact => 
           contact.phoneIndex === phoneIndex
         );
+        console.log('After phone name filter:', filteredContacts.length);
       }
     } else {
       // Existing filtering logic for other tags
@@ -3740,7 +3757,7 @@ const sortContacts = (contacts: Contact[]) => {
               !contact.chat_id?.endsWith('@g.us') && 
               !contact.tags?.includes('snooze')
             );
-          }else{
+          } else {
             filteredContacts = filteredContacts.filter(contact => 
               !contact.tags?.includes('snooze')
             );
@@ -3791,13 +3808,14 @@ const sortContacts = (contacts: Contact[]) => {
             !contact.tags?.includes('snooze')
           );
       }
+      console.log('After tag filter:', filteredContacts.length);
     }
+  
     filteredContacts = sortContacts(filteredContacts);
-    console.log("MESSAGE MODE", messageMode)
-    let filtered = filteredContacts;
+    console.log("MESSAGE MODE", messageMode);
   
     if (searchQuery) {
-      filtered = filteredContacts.filter((contact) => {
+      filteredContacts = filteredContacts.filter((contact) => {
         const name = (contact.contactName || contact.firstName || '').toLowerCase();
         const phone = (contact.phone || '').toLowerCase();
         const tags = (contact.tags || []).join(' ').toLowerCase();
@@ -3806,11 +3824,12 @@ const sortContacts = (contacts: Contact[]) => {
               phone.includes(searchQuery.toLowerCase()) || 
               tags.includes(searchQuery.toLowerCase());
       });
+      console.log('After search filter:', filteredContacts.length);
     }
-
-    const filteredAndSortedContacts = sortContacts(filteredContacts);
-    setFilteredContacts(filteredAndSortedContacts);
-    // Don't reset the current page here
+  
+    console.log('Final filtered contacts:', filteredContacts.length);
+    setFilteredContacts(filteredContacts);
+  
   }, [contacts, searchQuery, activeTags, showAllContacts, showUnreadContacts, showMineContacts, showUnassignedContacts, showSnoozedContacts, showGroupContacts, currentUserName, employeeList, userData, userRole]);
   
   const handleSnoozeContact = async (contact: Contact) => {
