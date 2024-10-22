@@ -3420,6 +3420,18 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
                                 {contact.leadNumber}
                               </p>
                             )}
+                            {userRole === '1' ? (
+                              <>
+                                <h3 className="font-medium text-lg text-gray-900 dark:text-white truncate">
+                                  {contact.contactName ? (contact.lastName ? `${contact.contactName} ${contact.lastName}` : contact.contactName) : (contact.contactName || contact.phone)}
+                                </h3>
+                                <p className="text-sm text-gray-600 dark:text-gray-400 truncate">{contact.phone ?? contact.source}</p>
+                              </>
+                            ) : (
+                              <p className="font-medium text-lg text-gray-900 dark:text-white truncate">
+                                {contact.leadNumber}
+                              </p>
+                            )}
                           </div>
                         </div>
                         <Menu as="div" className="relative inline-block text-left ml-2">
