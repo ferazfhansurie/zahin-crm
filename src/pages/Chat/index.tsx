@@ -2729,7 +2729,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
   
     try {
       const chatId = `${newContactNumber}@c.us`;
-      const contactId = `+${newContactNumber}`; // This will be used as the document ID
+      const contactId = `+${newContactNumber}`;
       console.log('contactId:', contactId);
   
       const user = auth.currentUser;
@@ -2747,14 +2747,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
   
-      // Get the total number of contacts
-      const contactsRef = collection(firestore, 'companies', companyId, 'contacts');
-      const contactsSnapshot = await getDocs(contactsRef);
-      const totalContacts = contactsSnapshot.size;
-  
-      // Generate the lead number
-      const leadNumber = `Lead ${(totalContacts + 1).toString().padStart(3, '0')}`;
-  
+      // Create the new contact without a lead number initially
       const newContact: Contact = {
         id: contactId,
         chat_id: chatId,
@@ -2762,17 +2755,22 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
         phone: newContactNumber,
         tags: [],
         unreadCount: 0,
-        leadNumber: leadNumber,
-        createdAt: Timestamp.fromDate(new Date()),
+        createdAt: serverTimestamp() as unknown as Timestamp,
       };
   
-      // Use setDoc with merge option to add or update the document with the specified ID
+      // Add the new contact to Firestore
       await setDoc(doc(firestore, 'companies', companyId, 'contacts', contactId), newContact, { merge: true });
+  
+      // After adding the new contact, update all lead numbers
+      await updateLeadNumbers(companyId);
+  
+      // Fetch the updated contact to get its lead number
+      const updatedContactSnapshot = await getDoc(doc(firestore, 'companies', companyId, 'contacts', contactId));
+      const updatedContact = updatedContactSnapshot.data() as Contact;
   
       // Update local state
       setContacts(prevContacts => {
-        const updatedContacts = [...prevContacts, newContact];
-        // Update local storage
+        const updatedContacts = [...prevContacts, updatedContact];
         localStorage.setItem('contacts', LZString.compress(JSON.stringify(updatedContacts)));
         return updatedContacts;
       });
@@ -2781,16 +2779,44 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
       closeNewChatModal();
   
       // Select the new chat
-      selectChat(chatId, contactId, newContact);
+      selectChat(chatId, contactId, updatedContact);
   
-      toast.success(`New contact created with Lead Number: ${leadNumber}`);
+      toast.success(`New contact created with Lead Number: ${updatedContact.leadNumber}`);
   
     } catch (error) {
       console.error('Error creating new chat:', error);
       toast.error('Failed to create new chat');
     }
   };
-
+  
+  const updateLeadNumbers = async (companyId: string) => {
+    const contactsRef = collection(firestore, 'companies', companyId, 'contacts');
+    const contactsSnapshot = await getDocs(contactsRef);
+  
+    const contacts = contactsSnapshot.docs
+      .map(doc => ({ id: doc.id, ...doc.data() as Contact }))
+      .sort((a, b) => {
+        const aTime = a.createdAt instanceof Timestamp ? a.createdAt.toMillis() : 0;
+        const bTime = b.createdAt instanceof Timestamp ? b.createdAt.toMillis() : 0;
+        return aTime - bTime;
+      });
+  
+    const batch = writeBatch(firestore);
+  
+    contacts.forEach((contact, index) => {
+      const leadNumber = `Lead ${(index + 1).toString().padStart(3, '0')}`;
+      if (companyId && contact.id) {
+        const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id);
+        batch.update(contactRef, { leadNumber });
+      } else {
+        console.error('Invalid companyId or contact.id');
+      }
+    });
+  
+    await batch.commit();
+    console.log(`Updated ${contacts.length} contacts with lead numbers.`);
+  };
+  
   const updateExistingContactsWithLeadNumbers = async () => {
     const user = auth.currentUser;
     if (!user) return;
@@ -2802,26 +2828,9 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
     const userData = docUserSnapshot.data();
     const companyId = userData.companyId;
   
-    const contactsRef = collection(firestore, 'companies', companyId, 'contacts');
-    const contactsSnapshot = await getDocs(contactsRef);
+    await updateLeadNumbers(companyId);
   
-    const contactsToUpdate = contactsSnapshot.docs
-      .map(doc => ({ id: doc.id, ...doc.data() as Contact }))
-      .filter(contact => !contact.leadNumber)
-      .sort((a, b) => (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0));
-  
-    for (let i = 0; i < contactsToUpdate.length; i++) {
-      const contact = contactsToUpdate[i];
-      if (contact.id) {
-        const leadNumber = `Lead ${(i + 1).toString().padStart(3, '0')}`;
-        const contactDocRef = doc(firestore, 'companies', companyId, 'contacts', contact.id);
-        await updateDoc(contactDocRef, { leadNumber });
-      } else {
-        console.error('Contact ID is null or undefined');
-      }
-    }
-  
-    console.log(`Updated ${contactsToUpdate.length} contacts with lead numbers.`);
+    toast.success(`Updated lead numbers for all contacts.`);
   };
   
   // Call this function when the component mounts or when you want to update existing contacts
