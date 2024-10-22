@@ -6156,28 +6156,32 @@ console.log(prompt);
             <Lucide icon="ChevronLeft" className="w-6 h-6" />
           </button>
           <div className="w-10 h-10 overflow-hidden rounded-full shadow-lg bg-gray-700 flex items-center justify-center text-white mr-3 ml-2">
-  {selectedContact?.profilePicUrl ? (
-    <img 
-      src={selectedContact.profilePicUrl} 
-      alt={selectedContact.contactName || "Profile"} 
-      className="w-10 h-10 rounded-full object-cover"
-    />
-  ) : (
-    <span className="text-2xl font-bold">
-      {selectedContact?.contactName ? selectedContact.contactName.charAt(0).toUpperCase() : "?"}
-    </span>
-  )}
-</div>
-          <div>
-            <div className="font-semibold text-gray-800 dark:text-gray-200 capitalize">{selectedContact.contactName || selectedContact.firstName || selectedContact.phone}</div>
-            {userRole === '1' && (
-              <div className="text-sm text-gray-600 dark:text-gray-400">{selectedContact.phone}</div>
+            {selectedContact?.profilePicUrl ? (
+              <img 
+                src={selectedContact.profilePicUrl} 
+                alt={selectedContact.contactName || "Profile"} 
+                className="w-10 h-10 rounded-full object-cover"
+              />
+            ) : (
+              <span className="text-2xl font-bold">
+                {selectedContact?.contactName ? selectedContact.contactName.charAt(0).toUpperCase() : "?"}
+              </span>
             )}
           </div>
-        </div>
-        <div className="flex items-center space-x-3">
-          <div className="hidden sm:flex space-x-3">
-          <button 
+          <div>
+            {userRole === '1' ? (
+              <>
+                <div className="font-semibold text-gray-800 dark:text-gray-200 capitalize">{selectedContact.contactName || selectedContact.firstName || selectedContact.phone}</div>
+                <div className="text-sm text-gray-600 dark:text-gray-400">{selectedContact.phone}</div>
+              </>
+            ) : (
+              <div className="font-semibold text-gray-800 dark:text-gray-200 capitalize">{selectedContact.leadNumber}</div>
+            )}
+          </div>
+</div>
+<div className="flex items-center space-x-3">
+<div className="hidden sm:flex space-x-3">
+<button 
   className="p-2 m-0 !box" 
   onClick={() => {
     if (userRole !== "3") {
