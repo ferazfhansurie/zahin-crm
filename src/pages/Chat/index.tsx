@@ -1380,40 +1380,7 @@ const fetchFileFromURL = async (url: string): Promise<File | null> => {
     setIsQuickRepliesOpen(false);
   };
 
-  
-  // Modify the notification listener
-  useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(firestore, 'user', auth.currentUser?.email!, 'notifications'),
-      async (snapshot) => {
-        const currentNotifications = snapshot.docs.map(doc => doc.data() as Notification);
 
-        // Prevent running on initial mount
-        if (isInitialMount.current) {
-          isInitialMount.current = false;
-          prevNotificationsRef.current = currentNotifications.length;
-          return;
-        }
-
-        // Check if a new notification has been added
-        if (prevNotificationsRef.current !== null && currentNotifications.length > prevNotificationsRef.current) {
-          // Sort notifications by timestamp to ensure the latest one is picked
-          currentNotifications.sort((a, b) => b.timestamp - a.timestamp);
-          const latestNotification = currentNotifications[0];
-
-          // Update the contact's last_message
-          updateContactLastMessage(latestNotification);
-
-          // ... rest of the existing notification handling code ...
-        }
-
-        // Update the previous notifications count
-        prevNotificationsRef.current = currentNotifications.length;
-      }
-    );
-
-    return () => unsubscribe();
-  }, [companyId, selectedChatId, whapiToken]);
 
   const updateContactLastMessage = async (notification: Notification) => {
     if (!userData?.companyId) return;
@@ -1514,50 +1481,7 @@ const showNotificationToast = (notification: Notification, index: number) => {
 };
 
 // Update the useEffect for notifications
-useEffect(() => {
-  const unsubscribe = onSnapshot(
-    collection(firestore, 'user', auth.currentUser?.email!, 'notifications'),
-    async (snapshot) => {
-      const currentNotifications = snapshot.docs.map(doc => doc.data() as Notification);
 
-      // Prevent running on initial mount
-      if (isInitialMount.current) {
-        isInitialMount.current = false;
-        prevNotificationsRef.current = currentNotifications.length;
-        return;
-      }
-
-      // Check if a new notification has been added
-      if (prevNotificationsRef.current !== null && currentNotifications.length > prevNotificationsRef.current) {
-        // Sort notifications by timestamp to ensure the latest one is picked
-        currentNotifications.sort((a, b) => b.timestamp - a.timestamp);
-        const latestNotification = currentNotifications[0];
-
-        // Check for duplicate notifications
-        setNotifications(prev => {
-          const isDuplicate = prev.some(notification => notification.timestamp === latestNotification.timestamp && notification.from === latestNotification.from);
-          if (isDuplicate) {
-            return prev;
-          }
-          return [...prev, latestNotification];
-        });
-        
-        // Play notification sound
-        if (audioRef.current) {
-          audioRef.current.play();
-        }
-
-        // Show toast notification
-        showNotificationToast(latestNotification, notifications.length);
-      }
-
-      // Update the previous notifications count
-      prevNotificationsRef.current = currentNotifications.length;
-    }
-  );
-
-  return () => unsubscribe();
-}, [companyId, selectedChatId, whapiToken]);
 
 
 // New separate useEffect for message listener
@@ -1865,36 +1789,7 @@ async function fetchConfigFromDatabase() {
     setIsChatActive(true);
     setSelectedChatId(chatId);
     
-    try {
-      const user = auth.currentUser;
-      if (user) {
-        console.log('Fetching notifications for user:', user.email);
-        const notificationsRef = collection(firestore, 'user', user.email!, 'notifications');
-        console.log('Notifications Reference Path:', notificationsRef.path);
-  
-        const notificationsSnapshot = await getDocs(notificationsRef);
-        if (notificationsSnapshot.empty) {
-          console.log('No notifications found for user:', user.email);
-        } else {
-          const notifications = notificationsSnapshot.docs.map(doc => ({
-            docId: doc.id,
-            ...doc.data()
-          }));
-          console.log('Fetched Notifications:', notifications);
-  
-          const notificationsToDelete = notifications.filter((notification: any) => notification.chat_id === chatId);
-  
-          // Delete each notification document in the subcollection
-          for (const notification of notificationsToDelete) {
-            const notificationDocRef = doc(firestore, 'user', user.email!, 'notifications', notification.docId);
-            await deleteDoc(notificationDocRef);
-            console.log('Deleted notification:', notification.docId);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('Error deleting notifications:', error);
-    }
+
   };
 const getTimestamp = (timestamp: any): number => {
   if (typeof timestamp === 'number') {
