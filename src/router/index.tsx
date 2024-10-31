@@ -68,6 +68,9 @@ import Slider from "../pages/Slider";
 import ImageZoom from "../pages/ImageZoom";
 import Opportunities from "../pages/Opportunities";
 import QuickReplies from "../pages/QuickReplies";
+import Automations from "../pages/Automations";
+import Builder from "../pages/Builder";
+import FollowUps from "../pages/FollowUps";
 import Layout from "../themes";
 import { getAuth } from "firebase/auth";
 import { useState, useEffect } from "react";
@@ -102,6 +105,9 @@ function Router() {
         { path: "chat", element: <Chat /> },
         { path: "/dashboard", element: <DashboardOverview1 /> },
         { path: "users-layout-2/quick-replies", element: <QuickReplies /> },
+        { path: "users-layout-2/automations", element: <Automations /> },
+        { path: "users-layout-2/follow-ups", element: <FollowUps /> },
+        { path: "users-layout-2/builder", element: <Builder /> },
         { path: "dashboard-overview-3", element: <DashboardOverview3 /> },
         { path: "dashboard-overview-4", element: <DashboardOverview4 /> },
         { path: "profile", element: <ProfileOverview1 /> },

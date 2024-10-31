@@ -238,8 +238,8 @@ interface Tag {
   const [error, setError] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<any[]>([]);
   const { contacts: initialContacts} = useContacts();
-  const [contacts, setContacts] = useState<Contact[]>(initialContacts);
-  const [totalContacts, setTotalContacts] = useState(initialContacts.length);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [totalContacts, setTotalContacts] = useState(0);
   const [closed, setClosed] = useState(0);
   const [unclosed, setUnclosed] = useState(0);
   const [numReplies, setReplies] = useState(0);
@@ -259,12 +259,86 @@ interface Tag {
   const [engagementScore, setEngagementScore] = useState(0);
   // Add this new state variable for the search query
   const [employeeSearchQuery, setEmployeeSearchQuery] = useState("");
-
+  const [monthlyTokens, setMonthlyTokens] = useState<number>(0);
+  const [monthlyPrice, setMonthlyPrice] = useState<number>(0);
+  const [monthlySpendData, setMonthlySpendData] = useState<{ labels: string[], datasets: any[] }>({ labels: [], datasets: [] });
   const filteredEmployees = useMemo(() => {
     return employees.filter(employee => 
       employee.name.toLowerCase().includes(employeeSearchQuery.toLowerCase())
     );
   }, [employees, employeeSearchQuery]);
+  useEffect(() => {
+    fetchMonthlyTokens();
+  }, []);
+
+  const fetchMonthlyTokens = async () => {
+    try {
+      const auth = getAuth(app);
+      const user = auth.currentUser;
+      if (!user) {
+        console.error('User not authenticated');
+        return;
+      }
+
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.error('User document does not exist');
+        return;
+      }
+
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+
+      // Fetch all usage documents for the company
+      const usageCollectionRef = collection(firestore, 'companies', companyId, 'usage');
+      const usageSnapshot = await getDocs(usageCollectionRef);
+
+      const labels: string[] = [];
+      const data: number[] = [];
+
+      usageSnapshot.forEach(doc => {
+        const usageData = doc.data();
+        const tokens = usageData.total_tokens || 0;
+        const price = (tokens / 1000) * 0.003;
+
+        console.log('Document ID:', doc.id);
+        console.log('Tokens:', tokens);
+        console.log('Price:', price);
+
+        labels.push(doc.id); // Assuming doc.id is in the format 'YYYY-MM'
+        data.push(price);
+      });
+
+      console.log('Labels:', labels);
+      console.log('Data:', data);
+
+      if (labels.length === 0) {
+        console.warn('No usage data available');
+      }
+
+      setMonthlySpendData({
+        labels,
+        datasets: [
+          {
+            label: 'Monthly Spend',
+            data,
+            backgroundColor: '#82ca9d',
+          },
+        ],
+      });
+    } catch (error) {
+      console.error('Error fetching monthly tokens:', error);
+    }
+  };
+
+
+  const calculateMonthlyPrice = (tokens: number) => {
+    const price = (tokens / 1000) * 0.003;
+    console.log(price);
+    setMonthlyPrice(price);
+  };
+
 
   useEffect(() => {
     fetchCompanyData();
@@ -1108,6 +1182,58 @@ const getEarliestContactDate = async () => {
         closedContactsChartOptions
       }
     },
+    {
+      id: 'monthly-spend',
+      title: 'Monthly Spend',
+      content: (
+        <div className="h-full flex flex-col">
+          {monthlySpendData.labels.length > 0 ? (
+            <Bar 
+              data={monthlySpendData} 
+              options={{ 
+                responsive: true, 
+                maintainAspectRatio: false,
+                scales: {
+                  y: {
+                    beginAtZero: true,
+                    title: {
+                      display: true,
+                      text: 'Price (MYR)',
+                    },
+                  },
+                  x: {
+                    title: {
+                      display: true,
+                      text: 'Month',
+                    },
+                  },
+                },
+              }} 
+            />
+          ) : (
+            <p className="text-center text-gray-600 dark:text-gray-400">No data available</p>
+          )}
+         <div className="mt-4">
+      {monthlySpendData.labels.length > 0 && (
+        <>
+          <p className="text-sm text-gray-600 dark:text-gray-400">This Month's Tokens:</p>
+          <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+            {Math.round(monthlySpendData.datasets[0].data[monthlySpendData.datasets[0].data.length - 1] / 0.003 * 1000).toLocaleString()}
+          </p>
+          <p className="text-sm text-gray-600 dark:text-gray-400">This Month's Price:</p>
+          <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+            ${monthlySpendData.datasets[0].data[monthlySpendData.datasets[0].data.length - 1].toFixed(2)}
+          </p>
+          <p className="text-sm text-gray-600 dark:text-gray-400">Calculation:</p>
+          <p className="text-md text-gray-700 dark:text-gray-300">
+            ({Math.round(monthlySpendData.datasets[0].data[monthlySpendData.datasets[0].data.length - 1] / 0.003 * 1000).toLocaleString()} tokens / 1000) * $0.003 per 1k tokens
+          </p>
+        </>
+      )}
+    </div>
+        </div>
+      )
+    }
     // Add more cards here as needed
   ];
 
@@ -1176,6 +1302,58 @@ const getEarliestContactDate = async () => {
                         )}
                       </div>
                     </div>
+                  ) :  card.id === 'monthly-spend' ? (
+                    <div>
+                    <div className="mb-4">
+                      {/* You can add any controls or filters here if needed */}
+                    </div>
+                    <div className="h-64">
+                      {monthlySpendData.labels.length > 0 ? (
+                        <Bar 
+                          data={monthlySpendData} 
+                          options={{ 
+                            responsive: true, 
+                            maintainAspectRatio: false,
+                            scales: {
+                              y: {
+                                beginAtZero: true,
+                                title: {
+                                  display: true,
+                                  text: 'Price (MYR)',
+                                },
+                              },
+                              x: {
+                                title: {
+                                  display: true,
+                                  text: 'Month',
+                                },
+                              },
+                            },
+                          }} 
+                        />
+                      ) : (
+                        <div className="text-center text-gray-600 dark:text-gray-400">No monthly spend data available</div>
+                      )}
+                    </div>
+                    <div className="mt-4">
+      {monthlySpendData.labels.length > 0 && (
+        <>
+          <p className="text-sm text-gray-600 dark:text-gray-400">This Month's Tokens:</p>
+          <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+            {Math.round(monthlySpendData.datasets[0].data[monthlySpendData.datasets[0].data.length - 1] / 0.003 * 1000).toLocaleString()}
+          </p>
+          <p className="text-sm text-gray-600 dark:text-gray-400">This Month's Price:</p>
+          <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+            RM {monthlySpendData.datasets[0].data[monthlySpendData.datasets[0].data.length - 1].toFixed(2)}
+          </p>
+          <p className="text-sm text-gray-600 dark:text-gray-400">Calculation:</p>
+          <p className="text-md text-gray-700 dark:text-gray-300">
+            ({Math.round(monthlySpendData.datasets[0].data[monthlySpendData.datasets[0].data.length - 1] / 0.003 * 1000).toLocaleString()} tokens / 1000) * $0.003 per 1k tokens
+          </p>
+        </>
+      )}
+    </div>
+                  </div>
                   ) : (
                     <div className="text-center text-gray-600 dark:text-gray-400">No data available</div>
                   )}

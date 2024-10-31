@@ -1159,33 +1159,7 @@ const handleConfirmDeleteTag = async () => {
     }
   };
 
-  // Add this function to handle adding notifications
-  const addNotificationToUser = async (companyId: string, employeeName: string, notificationData: any) => {
-    try {
-      // Find the user with the specified companyId and name
-      const usersRef = collection(firestore, 'user');
-      const q = query(usersRef, 
-        where('companyId', '==', companyId),
-        where('name', '==', employeeName)
-      );
-      const querySnapshot = await getDocs(q);
 
-      if (querySnapshot.empty) {
-        console.log('No matching user found for:', employeeName);
-        return;
-      }
-
-      // Add the new notification to the notifications subcollection of the user's document
-      querySnapshot.forEach(async (doc) => {
-        const userRef = doc.ref;
-        const notificationsRef = collection(userRef, 'notifications');
-        await addDoc(notificationsRef, notificationData);
-        console.log(`Notification added for user: ${employeeName}`);
-      });
-    } catch (error) {
-      console.error('Error adding notification: ', error);
-    }
-  };
 
   const sendAssignmentNotification = async (assignedEmployeeName: string, contact: Contact) => {
     try {
@@ -2144,71 +2118,148 @@ const sendBlastMessage = async () => {
   
     try {
       setLoading(true);
-      // Upload CSV file to Firebase Storage
-      const storage = getStorage();
-      const storageRef = ref(storage, `csv_imports/${selectedCsvFile.name}`);
-      await uploadBytes(storageRef, selectedCsvFile);
-      const csvUrl = await getDownloadURL(storageRef);
   
-      // Get company ID
+      // Read CSV data
+      const parseCSV = async (): Promise<Array<any>> => {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const text = event.target?.result as string;
+            const lines = text.split('\n');
+            const headers = lines[0].toLowerCase().trim().split(',');
+            const data = lines.slice(1)
+              .filter(line => line.trim()) // Skip empty lines
+              .map(line => {
+                const values = line.split(',');
+                return headers.reduce((obj: any, header, index) => {
+                  obj[header.trim()] = values[index]?.trim() || '';
+                  return obj;
+                }, {});
+              });
+            resolve(data);
+          };
+          reader.onerror = () => reject(new Error('Failed to read CSV'));
+          reader.readAsText(selectedCsvFile);
+        });
+      };
+  
+      // Get user and company data
       const user = auth.currentUser;
-      const docUserRef = doc(firestore, 'user', user?.email!);
+      if (!user?.email) throw new Error('User not authenticated');
+  
+      const docUserRef = doc(firestore, 'user', user.email);
       const docUserSnapshot = await getDoc(docUserRef);
-      if (!docUserSnapshot.exists()) {
-        throw new Error('No such document for user!');
-      }
+      if (!docUserSnapshot.exists()) throw new Error('User document not found');
+  
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
   
-      // Combine selected tags and new tags
-      const allTags = [...new Set([...selectedImportTags, ...importTags])];
+      // Parse CSV data
+      const contacts = await parseCSV();
+      console.log('Parsed contacts:', contacts);
   
-      console.log(`Sending request to: https://mighty-dane-newly.ngrok-free.app/api/import-csv/${companyId}`);
-      console.log('CSV URL:', csvUrl);
-      console.log('Name:', userData.name);
-      console.log('Email:', userData.email);
-      console.log('Phone:', userData.phone);
-      console.log('Company ID:', userData.companyId);
-      console.log('Branch:', userData.branch);
-      console.log('Expiry Date:', userData.expiryDate);
-      console.log('Vehicle Number:', userData.vehicleNumber);
-      console.log('Tags:', allTags);
-  
-      // Call server API to process CSV
-      const response = await axios.post(`https://mighty-dane-newly.ngrok-free.app/api/import-csv/${companyId}`, { 
-        csvUrl,
-        name: userData.name,
-        email: userData.email,
-        phone: userData.phone,
-        companyId: userData.companyId,
-        branch: userData.branch,
-        expiryDate: userData.expiryDate,
-        vehicleNumber: userData.vehicleNumber,
-        tags: allTags
+      // Validate contacts
+      const validContacts = contacts.filter(contact => {
+        const isValid = contact.contactname && contact.phone;
+        if (!isValid) {
+          console.warn('Invalid contact:', contact);
+        }
+        return isValid;
       });
   
-      console.log('Server response:', response);
+      if (validContacts.length === 0) {
+        throw new Error('No valid contacts found in CSV');
+      }
   
-      if (response.status === 200) {
-        toast.success("CSV imported successfully!");
+      // Create contacts in batches of 500 (Firestore limit)
+      const batchSize = 500;
+      const batches = [];
+      
+      for (let i = 0; i < validContacts.length; i += batchSize) {
+        const batch = writeBatch(firestore);
+        const batchContacts = validContacts.slice(i, i + batchSize);
+  
+        for (const contact of batchContacts) {
+          // Format phone number (remove any non-digit characters and ensure it starts with country code)
+          const phoneNumber = contact.phone.replace(/\D/g, '');
+          if (!phoneNumber.match(/^\d{10,15}$/)) {
+            console.warn('Invalid phone number:', contact.phone);
+            continue;
+          }
+  
+          const contactRef = doc(firestore, `companies/${companyId}/contacts`, phoneNumber);
+          
+          // Prepare contact data
+          const contactData = {
+            contactName: contact.contactname,
+            phone: phoneNumber,
+            email: contact.email || '',
+            lastName: contact.lastname || '',
+            companyName: contact.companyname || '',
+            address1: contact.address1 || '',
+            city: contact.city || '',
+            state: contact.state || '',
+            postalCode: contact.postalcode || '',
+            country: contact.country || '',
+            branch: contact.branch || userData.branch || '',
+            expiryDate: contact.expirydate || userData.expiryDate || '',
+            vehicleNumber: contact.vehiclenumber || userData.vehicleNumber || '',
+            points: contact.points || '0',
+            IC: contact.ic || '',
+            tags: [...new Set([...selectedImportTags, ...importTags])],
+            createdAt: Timestamp.now(),
+            updatedAt: Timestamp.now(),
+            createdBy: user.email,
+            updatedBy: user.email
+          };
+  
+          // Log each contact being added
+          console.log('Adding contact:', contactData);
+          
+          batch.set(contactRef, contactData, { merge: true });
+        }
+  
+        batches.push(batch.commit());
+      }
+  
+      // Execute all batches
+      console.log(`Committing ${batches.length} batches...`);
+      await Promise.all(batches);
+      console.log('All batches committed successfully');
+  
+      // Verify the import
+      const verifyImport = async (): Promise<boolean> => {
+        const contactsRef = collection(firestore, `companies/${companyId}/contacts`);
+        const snapshot = await getDocs(contactsRef);
+        
+        // Log verification results
+        console.log('Verification - Total contacts in Firestore:', snapshot.size);
+        console.log('Verification - Recent contacts:');
+        snapshot.docs.slice(-5).forEach(doc => {
+          console.log(doc.id, doc.data());
+        });
+  
+        return snapshot.size > 0;
+      };
+  
+      if (await verifyImport()) {
+        // Clear cache and fetch updated contacts
+        localStorage.removeItem('contacts');
+        sessionStorage.removeItem('contactsFetched');
+        await fetchContacts();
+  
+        toast.success(`Successfully imported ${validContacts.length} contacts!`);
         setShowCsvImportModal(false);
         setSelectedCsvFile(null);
         setSelectedImportTags([]);
         setImportTags([]);
-        
-        // Fetch updated contacts and store them in local storage
-        await refetchContacts();
-        
-        toast.info("Contacts updated and stored in local storage.");
       } else {
-        throw new Error(`Failed to import CSV: ${response.statusText}`);
+        throw new Error('Failed to verify contact import');
       }
+  
     } catch (error) {
-      console.error('Error importing CSV:', error);
-      if (axios.isAxiosError(error)) {
-        console.error('Axios error details:', error.response?.data);
-      }
-      toast.error("An error occurred while importing the CSV.");
+      console.error('CSV Import Error:', error);
+      toast.error(error instanceof Error ? error.message : "Failed to import contacts");
     } finally {
       setLoading(false);
     }
@@ -2556,6 +2607,14 @@ const sendBlastMessage = async () => {
     } else {
       setSelectedContacts([...filteredContactsSearch]);
     }
+  };
+
+  const handleDeselectPage = () => {
+    // Deselect all contacts from current page
+    const currentContactIds = new Set(currentContacts.map(contact => contact.id));
+    setSelectedContacts(prevSelected => 
+      prevSelected.filter(contact => !currentContactIds.has(contact.id))
+    );
   };
 
   const renderTags = (tags: string[] | undefined, contact: Contact) => {
@@ -3247,6 +3306,22 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
                       Select All
                     </span>
                   </button>
+                  {selectedContacts.length > 0 && currentContacts.some(contact => 
+                    selectedContacts.map(c => c.id).includes(contact.id)
+                  ) && (
+                    <button
+                      onClick={handleDeselectPage}
+                      className="inline-flex items-center p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg cursor-pointer transition-colors duration-200"
+                    >
+                      <Lucide 
+                        icon="X" 
+                        className="w-4 h-4 mr-1 text-gray-600 dark:text-gray-300" 
+                      />
+                      <span className="text-xs text-gray-700 dark:text-gray-300 whitespace-nowrap font-medium">
+                        Deselect Page
+                      </span>
+                    </button>
+                  )}
                   {selectedTagFilter && (
                     <span className="px-2 py-1 text-sm font-semibold rounded-lg bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200">
                       {selectedTagFilter}

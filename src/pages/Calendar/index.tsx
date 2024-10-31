@@ -120,7 +120,7 @@ function Main() {
   const [filterDate, setFilterDate] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const { contacts: initialContacts } = useContacts();
-  const [contacts, setContacts] = useState<Contact[]>(initialContacts);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedStaff, setSelectedStaff] = useState<string>('');
   const [selectedContacts, setSelectedContacts] = useState<Contact[]>([]);
   const [contactSessions, setContactSessions] = useState<{ [key: string]: number }>({});

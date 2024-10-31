@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { getAuth } from "firebase/auth";
 import { initializeApp } from "firebase/app";
 import logoImage from '@/assets/images/placeholder.svg';
@@ -32,6 +32,7 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import ReactPaginate from 'react-paginate';
 import { getFileTypeFromMimeType } from '../../utils/fileUtils';
+import { Transition } from "@headlessui/react";
 
 interface Label {
   id: string;
@@ -335,30 +336,34 @@ const ImageModal: React.FC<ImageModalProps> = ({ isOpen, onClose, imageUrl }) =>
     </div>
   );
 };
-const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose, pdfUrl }) => {
-  if (!isOpen) return null;
 
+const PDFModal = ({ isOpen, onClose, pdfUrl }: PDFModalProps) => {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75" onClick={onClose}>
-      <div
-        className="relative mt-10 p-2 bg-white rounded-lg shadow-lg w-full max-w-5xl h-4/5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          className="absolute top-4 right-4 text-white bg-gray-800 hover:bg-gray-900 rounded-full p-2"
-          onClick={onClose}
-        >
-          <Lucide icon="X" className="w-6 h-6" />
-        </button>
-        <iframe
-          src={pdfUrl}
-          width="100%"
-          height="100%"
-          title="PDF Document"
-          className="border rounded"
-        />
-      </div>
-    </div>
+    <Dialog
+      open={isOpen}
+      onClose={onClose}
+    >
+      <Dialog.Panel className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed flex inset-0 bg-black/70 transition-opacity" onClick={onClose} />
+        
+        <div className="relative mt-10 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg w-full max-w-5xl h-4/5">
+          <button
+            className="absolute top-4 right-4 text-white bg-gray-800 hover:bg-gray-900 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-full p-2 transition-colors"
+            onClick={onClose}
+          >
+            <Lucide icon="X" className="w-6 h-6" />
+          </button>
+
+          <iframe
+            src={pdfUrl}
+            width="100%"
+            height="100%"
+            title="PDF Document"
+            className="border rounded"
+          />
+        </div>
+      </Dialog.Panel>
+    </Dialog>
   );
 };
 
@@ -380,8 +385,20 @@ const firestore = getFirestore(app);
 const auth = getAuth(app);
 
 function Main() {
-  const { contacts: initialContacts, isLoading } = useContacts();
-  const [contacts, setContacts] = useState<Contact[]>([]);
+   // Initial state setup with localStorage
+  const { contacts: contextContacts, isLoading: contextLoading } = useContacts();
+  const [contacts, setContacts] = useState<Contact[]>(() => {
+    const storedContacts = localStorage.getItem('contacts');
+    if (storedContacts) {
+      try {
+        return JSON.parse(LZString.decompress(storedContacts)!);
+      } catch (error) {
+        console.error('Error parsing stored contacts:', error);
+        return [];
+      }
+    }
+    return [];
+  });
 
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [whapiToken, setToken] = useState<string | null>(null);
@@ -515,13 +532,78 @@ function Main() {
   const [isRecordingPopupOpen, setIsRecordingPopupOpen] = useState(false);
   const [selectedDocumentURL, setSelectedDocumentURL] = useState<string | null>(null);
   const [documentCaption, setDocumentCaption] = useState('');
-  
+  const [isPhoneDropdownOpen, setIsPhoneDropdownOpen] = useState(false);
 
   const [showAllForwardTags, setShowAllForwardTags] = useState(false);
   const [visibleForwardTags, setVisibleForwardTags] = useState<typeof tagList>([]);
 
   const [totalContacts, setTotalContacts] = useState<number>(0);
   const [statusFilter, setStatusFilter] = useState<Contact['status'] | ''>('');
+
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [reactionMessage, setReactionMessage] = useState<any>(null);
+
+  useEffect(() => {
+    if (contextContacts.length > 0) {
+      setContacts(contextContacts as Contact[]);
+    }
+  }, [contextContacts]);
+
+
+  useEffect(() => {
+    let filteredResults = contacts;
+  
+    // Only keep filtering logic
+    if (searchQuery) {
+      filteredResults = filteredResults.filter((contact) => {
+        const searchLower = searchQuery.toLowerCase();
+        return (
+          contact.contactName?.toLowerCase().includes(searchLower) ||
+          contact.phone?.toLowerCase().includes(searchLower) ||
+          contact.tags?.some((tag: string) => tag.toLowerCase().includes(searchLower))
+        );
+      });
+    }
+  
+    if (activeTags.length > 0) {
+      filteredResults = filteredResults.filter((contact) => {
+        return activeTags.every((tag) => {
+          const tagLower = tag.toLowerCase();
+          const isGroup = contact.chat_id?.endsWith('@g.us');
+          const phoneIndex = Object.entries(phoneNames).findIndex(([_, name]) => name.toLowerCase() === tagLower);
+          
+          return (
+            tagLower === 'all' ? !isGroup :
+            tagLower === 'unread' ? contact.unreadCount && contact.unreadCount > 0 :
+            tagLower === 'mine' ? contact.tags?.includes(currentUserName) :
+            tagLower === 'unassigned' ? !contact.tags?.some(t => employeeList.some(e => e.name.toLowerCase() === t.toLowerCase())) :
+            tagLower === 'snooze' ? contact.tags?.includes('snooze') :
+            tagLower === 'resolved' ? contact.tags?.includes('resolved') :
+            tagLower === 'group' ? isGroup :
+            tagLower === 'stop bot' ? contact.tags?.includes('stop bot') :
+            phoneIndex !== -1 ? contact.phoneIndex === phoneIndex :
+            contact.tags?.map(t => t.toLowerCase()).includes(tagLower)
+          );
+        });
+      });
+    }
+
+    setFilteredContacts(filteredResults);
+  }, [contacts, searchQuery, activeTags, currentUserName, employeeList, phoneNames]);
+
+  // Initial chat selection from URL
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const chatIdFromUrl = params.get('chatId');
+    
+    if (chatIdFromUrl && contacts.length > 0) {
+      const fullChatId = `${chatIdFromUrl}@c.us`;
+      const contact = contacts.find(c => c.chat_id === fullChatId);
+      if (contact && contact.id) {
+        selectChat(fullChatId, contact.id, contact);
+      }
+    }
+  }, [location.search, contacts]);
 
   // Update this useEffect
   useEffect(() => {
@@ -629,6 +711,91 @@ const sendVoiceMessage = async () => {
       toast.error("Error sending voice message");
     }
   }
+};
+
+const handleReaction = async (message: any, emoji: string) => {
+  try {
+    // Ensure we have all required data
+    if (!userData?.companyId || !message.id) {
+      throw new Error('Missing required data: companyId or messageId');
+    }
+
+    // Use the full message ID from Firebase
+    const messageId = message.id;
+    
+    console.log('Reaction details:', {
+      emoji,
+      messageId,
+      companyId: userData.companyId,
+      phoneIndex: selectedContact?.phoneIndex
+    });
+    
+    // Construct the endpoint with the full message ID
+    const endpoint = `https://mighty-dane-newly.ngrok-free.app/api/messages/react/${userData.companyId}/${messageId}`;
+    
+    const payload = {
+      reaction: emoji,
+      phoneIndex: selectedContact?.phoneIndex || 0
+    };
+
+    console.log('Sending reaction request:', {
+      endpoint,
+      payload
+    });
+
+    const response = await axios.post(endpoint, payload);
+
+    if (response.data.success) {
+      setMessages(prevMessages => prevMessages.map(msg => {
+        if (msg.id === message.id) {
+          return {
+            ...msg,
+            reactions: [...(msg.reactions || []), { emoji, from_name: userData.name }]
+          };
+        }
+        return msg;
+      }));
+      
+      toast.success('Reaction added successfully');
+    }
+  } catch (error) {
+    console.error('Error adding reaction:', error);
+    if (axios.isAxiosError(error) && error.response?.data) {
+      console.error('Error response:', error.response.data);
+      const errorMessage = error.response.data.details || error.response.data.error || 'Failed to add reaction';
+      toast.error(errorMessage);
+    } else {
+      toast.error('Failed to add reaction. Please try again.');
+    }
+  } finally {
+    setShowReactionPicker(false);
+  }
+};
+
+const ReactionPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => void, onClose: () => void }) => {
+  const commonEmojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+  
+  return (
+    <div className="absolute bottom-40 right-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-2 z-50">
+      <div className="flex items-center justify-between align-middle space-x-2">
+        {commonEmojis.map((emoji) => (
+          <button
+            key={emoji}
+            onClick={() => onSelect(emoji)}
+            className="hover:bg-gray-100 dark:hover:bg-gray-700 p-2 rounded-full transition-colors text-2xl"
+          >
+            {emoji}
+          </button>
+        ))}
+        <button
+          onClick={onClose}
+          className="p-2 rounded-full transition-colors text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+        >
+          <Lucide icon="X" className="w-5 h-5" />
+        </button>
+      </div>
+    </div>
+  );
 };
 
 
@@ -836,9 +1003,9 @@ const sendVoiceMessage = async () => {
     setIsPrivateNotesMentionOpen(false);
   };
 
-  useEffect(() => {
-    console.log('Initial contacts:', initialContacts);
-  }, []);
+  // useEffect(() => {
+  //   console.log('Initial contacts:', initialContacts);
+  // }, []);
 
   const filterContactsByUserRole = useCallback((contacts: Contact[], userRole: string, userName: string) => {
     console.log('Filtering contacts by user role', { userRole, userName, contactsCount: contacts.length });
@@ -859,7 +1026,39 @@ const sendVoiceMessage = async () => {
         return [];
     }
   }, []);
+// Add this function to handle phone change
+const handlePhoneChange = async (newPhoneIndex: number) => {
+  try {
+    const user = auth.currentUser;
+    if (!user) {
+      console.error('No authenticated user');
+      return;
+    }
 
+    const docUserRef = doc(firestore, 'user', user.email!);
+    await updateDoc(docUserRef, { phone: newPhoneIndex });
+    // Update local state
+    setUserData(prevState => {
+      if (prevState === null) {
+        return {
+          phone: newPhoneIndex,
+          companyId: '',
+          name: '',
+          role: ''
+        };
+      }
+      return {
+        ...prevState,
+        phone: newPhoneIndex
+      };
+    });
+
+    toast.success('Phone updated successfully');
+  } catch (error) {
+    console.error('Error updating phone:', error);
+    toast.error('Failed to update phone');
+  }
+};
   const filterAndSetContacts = useCallback((contactsToFilter: Contact[]) => {
     console.log('Filtering contacts', { 
       contactsLength: contactsToFilter.length, 
@@ -932,18 +1131,43 @@ const sendVoiceMessage = async () => {
   
     setFilteredContacts(filtered);
     console.log('Final filtered contacts set:', { filteredCount: filtered.length });
-  }, [userRole, userData, activeTags, currentUserName, phoneCount, phoneNames, statusFilter]);
-  
-  // Make sure to add statusFilter to the dependency array of the useEffect hook
+  }, [userRole, userData, activeTags, filterContactsByUserRole]);
+
   useEffect(() => {
-    if (initialContacts.length > 0) {
-      console.log('Initial contacts:', initialContacts.length);
-      setContacts(initialContacts);
-      filterAndSetContacts(initialContacts);
-      localStorage.setItem('contacts', LZString.compress(JSON.stringify(initialContacts)));
-      sessionStorage.setItem('contactsFetched', 'true');
-    }
-  }, [initialContacts, statusFilter, userRole, userData, filterAndSetContacts]);
+    const fetchContacts = async () => {
+      if (!userData?.companyId) {
+        console.log('No company ID available, skipping contact fetch');
+        return;
+      }
+  
+      console.log('Fetching contacts for company:', userData.companyId);
+      const contactsRef = collection(firestore, `companies/${userData.companyId}/contacts`);
+      const q = query(contactsRef, orderBy("last_message.timestamp", "desc"));
+  
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const updatedContacts = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Contact));
+        console.log('Fetched contacts:', updatedContacts.length);
+        setContacts(updatedContacts);
+        filterAndSetContacts(updatedContacts);
+      }, (error) => {
+        console.error('Error fetching contacts:', error);
+      });
+  
+      return () => unsubscribe();
+    };
+  
+    fetchContacts();
+  }, [userData, filterAndSetContacts]);
+
+  // useEffect(() => {
+  //   if (initialContacts.length > 0) {
+  //     console.log('Initial contacts:', initialContacts.length);
+  //     setContacts(initialContacts);
+  //     filterAndSetContacts(initialContacts);
+  //     localStorage.setItem('contacts', LZString.compress(JSON.stringify(initialContacts)));
+  //     sessionStorage.setItem('contactsFetched', 'true');
+  //   }
+  // }, [initialContacts, userRole, userData, filterAndSetContacts]);
 
 
 
@@ -990,21 +1214,21 @@ useEffect(() => {
   }
 }, [activeTags, employeeList]);
 
-const loadMoreContacts = () => {
-  if (initialContacts.length <= contacts.length) return;
+// const loadMoreContacts = () => {
+//   if (initialContacts.length <= contacts.length) return;
 
-  const nextPage = currentPage + 1;
-  const newContacts = initialContacts.slice(
-    contacts.length,
-    nextPage * contactsPerPage
-  );
+//   const nextPage = currentPage + 1;
+//   const newContacts = initialContacts.slice(
+//     contacts.length,
+//     nextPage * contactsPerPage
+//   );
 
-  setContacts((prevContacts) => {
-    const updatedContacts = [...prevContacts, ...newContacts];
-    return filterContactsByUserRole(updatedContacts, userRole, userData?.name || '');
-  });
-  setCurrentPage(nextPage);
-};
+//   setContacts((prevContacts) => {
+//     const updatedContacts = [...prevContacts, ...newContacts];
+//     return filterContactsByUserRole(updatedContacts, userRole, userData?.name || '');
+//   });
+//   setCurrentPage(nextPage);
+// };
 
 const handleEmojiClick = (emojiObject: EmojiClickData) => {
   setNewMessage(prevMessage => prevMessage + emojiObject.emoji);
@@ -1116,7 +1340,7 @@ const closePDFModal = () => {
   
       let successCount = 0;
       let failureCount = 0;
-
+  
       const phoneIndex = selectedContact?.phoneIndex || 0;
   
       for (const message of selectedMessages) {
@@ -1125,9 +1349,14 @@ const closePDFModal = () => {
           const response = await axios.delete(
             `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/${companyId}/${selectedChatId}/${message.id}`,
             {
-              data: { deleteForEveryone: true, phoneIndex: phoneIndex },
+              data: { 
+                deleteForEveryone: true, 
+                phoneIndex: phoneIndex,
+                messageId: message.id, // Add the message ID to ensure it's passed to the API
+                chatId: selectedChatId // Add the chat ID for additional context
+              },
               headers: {
-                'Authorization': `Bearer ${userData.accessToken}` // Ensure you're sending the correct authorization token
+                'Authorization': `Bearer ${userData.accessToken}`
               }
             }
           );
@@ -1151,6 +1380,8 @@ const closePDFModal = () => {
   
       if (successCount > 0) {
         toast.success(`Successfully deleted ${successCount} message(s)`);
+        // Refresh the chat to ensure WhatsApp changes are reflected
+        await fetchMessages(selectedChatId!, whapiToken!);
       }
       if (failureCount > 0) {
         toast.error(`Failed to delete ${failureCount} message(s)`);
@@ -1480,7 +1711,6 @@ const showNotificationToast = (notification: Notification, index: number) => {
   setActiveNotifications(prev => [...prev, toastId]);
 };
 
-// Update the useEffect for notifications
 
 
 
@@ -1575,9 +1805,9 @@ useEffect(() => {
   
         let contact;
         if (companyData.v2) {
-          contact = initialContacts.find(c => c.phone === phone || c.chat_id === chatIdFromUrl);
-          if (!contact) throw new Error('Contact not found in initialContacts');
-        } 
+          contact = contacts.find(c => c.phone === phone || c.chat_id === chatIdFromUrl);
+          if (!contact) throw new Error('Contact not found in contacts');
+        }
   
         setSelectedContact(contact);
         setSelectedChatId(chatIdFromUrl);
@@ -1712,96 +1942,99 @@ async function fetchConfigFromDatabase() {
     }
   };
 
-  const selectChat = async (chatId: string, contactId?: string, contactSelect?: Contact) => {
+  const selectChat = useCallback(async (chatId: string, contactId?: string, contactSelect?: Contact) => {
     console.log('Attempting to select chat:', { chatId, userRole, userName: userData?.name });
-    if (userRole === "3" && contactSelect && contactSelect.assignedTo?.toLowerCase() !== userData?.name.toLowerCase()) {
-      console.log('Permission denied for role 3 user');
-      toast.error("You don't have permission to view this chat.");
-      return;
-    }
-
-    const updatedContacts = contacts.map(contact =>
-      contact.chat_id === chatId ? { ...contact, unreadCount: 0 } : contact
-    );
-    console.log('Updated Contacts:', updatedContacts);
-    setContacts(updatedContacts);
-  
-    console.log('Updating local storage');
-    localStorage.setItem('contacts', LZString.compress(JSON.stringify(updatedContacts)));
-    sessionStorage.setItem('contactsFetched', 'true');
-
-    let contact = contacts.find(contact => contact.chat_id === chatId || contact.id === contactId);
-    console.log('Selected Contact:', contact);
-
-    if(contactSelect){
-      contact = contactSelect;
-      console.log('Using provided contactSelect:', contact);
-    }
     
-    if (contact) {
-      // Update unreadCount in Firebase
-      try {
-        const user = auth.currentUser;
-        if (user) {
-          const docUserRef = doc(firestore, 'user', user.email!);
-          const docUserSnapshot = await getDoc(docUserRef);
-          if (docUserSnapshot.exists()) {
-            const userData = docUserSnapshot.data();
-            const companyId = userData.companyId;
-            
-            const contactRef = doc(firestore, `companies/${companyId}/contacts`, contact.id!);
-            await updateDoc(contactRef, { unreadCount: 0 });
-            console.log('Updated unreadCount in Firebase for contact:', contact.id);
-          }
-        }
-
-        setContacts(prevContacts => {
-          const updatedContacts = prevContacts.map(c =>
-            c.chat_id === chatId ? { ...c, unreadCount: 0 } : c
-          );
-          
-          // Sort contacts: pinned first, then by last message timestamp
-          return updatedContacts.sort((a, b) => {
-            if (a.pinned && !b.pinned) return -1;
-            if (!a.pinned && b.pinned) return 1;
-            
-            const timestampA = getTimestamp(a.last_message?.timestamp || a.last_message?.createdAt);
-            const timestampB = getTimestamp(b.last_message?.timestamp || b.last_message?.createdAt);
-            
-            return timestampB - timestampA;
-          });
-        });
-
-        console.log('Setting state variables');
-        setSelectedContact(contact);
-        setSelectedChatId(chatId);
-        setIsChatActive(true);
-
-        console.log('Deleting notifications');
-        deleteNotifications(chatId);
-      } catch (error) {
-        console.error('Error updating unreadCount in Firebase:', error);
+    try {
+      // Permission check
+      if (userRole === "3" && contactSelect && contactSelect.assignedTo?.toLowerCase() !== userData?.name.toLowerCase()) {
+        console.log('Permission denied for role 3 user');
+        toast.error("You don't have permission to view this chat.");
+        return;
       }
+  
+      // Find contact - prioritize contactSelect if provided
+      let contact = contactSelect || contacts.find(c => c.chat_id === chatId || c.id === contactId);
+      if (!contact) {
+        console.error('Contact not found');
+        return;
+      }
+  
+      // Update local state first for immediate UI response
+      setContacts(prevContacts => {
+        const updatedContacts = prevContacts.map(c =>
+          c.chat_id === chatId ? { ...c, unreadCount: 0 } : c
+        ).sort((a, b) => {
+          if (a.pinned && !b.pinned) return -1;
+          if (!a.pinned && b.pinned) return 1;
+          
+          const timestampA = getTimestamp(a.last_message?.timestamp || a.last_message?.createdAt);
+          const timestampB = getTimestamp(b.last_message?.timestamp || b.last_message?.createdAt);
+          
+          return timestampB - timestampA;
+        });
+  
+        // Update localStorage with new contacts
+        localStorage.setItem('contacts', LZString.compress(JSON.stringify(updatedContacts)));
+        return updatedContacts;
+      });
+  
+      // Update Firebase in parallel
+      const updateFirebasePromise = (async () => {
+        const user = auth.currentUser;
+        if (!user?.email) return;
+  
+        const docUserRef = doc(firestore, 'user', user.email);
+        const docUserSnapshot = await getDoc(docUserRef);
+        
+        if (docUserSnapshot.exists()) {
+          const userData = docUserSnapshot.data();
+          const contactRef = doc(firestore, `companies/${userData.companyId}/contacts`, contact.id!);
+          await updateDoc(contactRef, { unreadCount: 0 });
+          console.log('Updated unreadCount in Firebase for contact:', contact.id);
+        }
+      })();
+  
+      // Delete notifications in parallel
+      const deleteNotificationsPromise = (async () => {
+        const user = auth.currentUser;
+        if (!user?.email) return;
+
+        console.log('Deleted notifications for chat:', chatId);
+      })();
+  
+      // Update UI state
+      setSelectedContact(contact);
+      setSelectedChatId(chatId);
+      setIsChatActive(true);
+  
+      // Wait for background operations to complete
+      await Promise.all([
+        updateFirebasePromise,
+        deleteNotificationsPromise
+      ]);
+  
+      // Update URL without triggering a page reload
+      const newUrl = `/chat?chatId=${chatId.replace('@c.us', '')}`;
+      window.history.pushState({ path: newUrl }, '', newUrl);
+  
+    } catch (error) {
+      console.error('Error in selectChat:', error);
+      toast.error('An error occurred while loading the chat. Please try again.');
     }
+  }, [contacts, userRole, userData?.name]);
 
-    setSelectedContact(contact);
-    setSelectedChatId(chatId);
-    setIsChatActive(true);
-    setSelectedChatId(chatId);
-    
-
+  const getTimestamp = (timestamp: any): number => {
+    if (typeof timestamp === 'number') {
+      return timestamp < 10000000000 ? timestamp * 1000 : timestamp;
+    } else if (typeof timestamp === 'object' && timestamp.seconds) {
+      return timestamp.seconds * 1000;
+    } else if (typeof timestamp === 'string') {
+      return new Date(timestamp).getTime();
+    } else {
+      return 0;
+    }
   };
-const getTimestamp = (timestamp: any): number => {
-  if (typeof timestamp === 'number') {
-    return timestamp < 10000000000 ? timestamp * 1000 : timestamp;
-  } else if (typeof timestamp === 'object' && timestamp.seconds) {
-    return timestamp.seconds * 1000;
-  } else if (typeof timestamp === 'string') {
-    return new Date(timestamp).getTime();
-  } else {
-    return 0;
-  }
-};
 
 const fetchContactsBackground = async (whapiToken: string, locationId: string, ghlToken: string, user_name: string, role: string, userEmail: string | null | undefined) => {
   try {
@@ -3187,6 +3420,7 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
 
     const userData = docUserSnapshot.data();
     const companyId = userData.companyId;
+    console.log('Company ID:', companyId); // New log
 
     if (!companyId || typeof companyId !== 'string') {
       console.error('Invalid companyId:', companyId);
@@ -3225,19 +3459,36 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
       return;
     }
     const companyData = docSnapshot.data();
+    console.log('Company Data:', companyData); // New log
+    console.log('User Phone:', userData.phone);
+    console.log('WhatsApp API Token:', companyData.whapiToken); // New log
+    console.log('Using API v2:', companyData.v2); // New log
 
     // Function to send WhatsApp message
     const sendWhatsAppMessage = async (phoneNumber: string, message: string) => {
       const chatId = `${phoneNumber.replace(/[^\d]/g, '')}@c.us`;
+      console.log('Employee Phone Number:', phoneNumber); // New log
+      console.log('Formatted Chat ID:', chatId); // New log
+
+      let userPhoneIndex = userData?.phone >= 0 ? userData?.phone : 0;
+      if (userPhoneIndex === -1) {
+        userPhoneIndex = 0;
+      }
       let url;
       let requestBody;
       if (companyData.v2 === true) {
         url = `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${chatId}`;
-        requestBody = { message };
+        requestBody = { 
+          message,
+          phoneIndex: userPhoneIndex,
+          userName: userData.name || ''
+        };
       } else {
         url = `https://mighty-dane-newly.ngrok-free.app/api/messages/text/${chatId}/${companyData.whapiToken}`;
         requestBody = { message };
       }
+      console.log('API URL:', url); // New log
+      console.log('Request Body:', requestBody); // New log
 
       const response = await fetch(url, {
         method: 'POST',
@@ -3247,7 +3498,7 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Error response:', response.status, errorText);
+        console.error('Full error response:', errorText); // Updated log
         throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
       }
 
@@ -3278,13 +3529,6 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
     toast.success("Assignment notifications sent successfully!");
   } catch (error) {
     console.error('Error sending assignment notifications:', error);
-    
-    if (error instanceof TypeError && error.message === 'Failed to fetch') {
-      toast.error('Network error. Please check your connection and try again.');
-    } else {
-      toast.error('Failed to send assignment notifications. Please try again.');
-    }
-    
     console.log('Assigned Employee Name:', assignedEmployeeName);
     console.log('Contact:', contact);
     console.log('Employee List:', employeeList);
@@ -3357,7 +3601,7 @@ const sendDailyLeadsSummary = async (companyId: string) => {
 
     // Get all admin users
     const usersRef = collection(firestore, 'user');
-    const adminQuery = query(usersRef, where('companyId', '==', companyId), where('role', 'in', ['1', '2']));
+    const adminQuery = query(usersRef, where('companyId', '==', companyId), where('role', '==', '1'));
     const adminSnapshot = await getDocs(adminQuery);
     const adminUsers = adminSnapshot.docs.map(doc => doc.data());
 
@@ -3388,34 +3632,50 @@ const sendDailyLeadsSummary = async (companyId: string) => {
   }
 };
 
+
 const sendWhatsAppMessage = async (phoneNumber: string, message: string, companyId: string, companyData: any) => {
-  const chatId = `${phoneNumber.replace(/[^\d]/g, '')}@c.us`;
-  let url;
-  let requestBody;
-  if (companyData.v2 === true) {
-    url = `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${chatId}`;
-    requestBody = { message };
-  } else {
-    url = `https://mighty-dane-newly.ngrok-free.app/api/messages/text/${chatId}/${companyData.whapiToken}`;
-    requestBody = { message };
+  try {
+    const chatId = `${phoneNumber.replace(/[^\d]/g, '')}@c.us`;
+    
+    // Get current user's phone index, defaulting to 0 if invalid
+    let userPhoneIndex = userData?.phone >= 0 ? userData?.phone : 0;
+    const userName = userData?.name || userData?.email || '';
+
+    if (userPhoneIndex === -1) {
+      userPhoneIndex = 0;
+    }
+
+    console.log('Sending WhatsApp message:', {
+      url: `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${chatId}`,
+      phoneIndex: userPhoneIndex, // Using adjusted phone index
+      userName,
+      chatId
+    });
+
+    const response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${chatId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message,
+        phoneIndex: userPhoneIndex, // Using adjusted phone index
+        userName
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error sending WhatsApp message:', error);
+    throw error;
   }
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestBody),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Error response:', response.status, errorText);
-    throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-  }
-
-  return await response.json();
 };
 
-//end of sending daily summary code
  
 const formatText = (text: string) => {
   const parts = text.split(/(\*[^*]+\*|\*\*[^*]+\*\*)/g);
@@ -3466,13 +3726,9 @@ const [paginatedContacts, setPaginatedContacts] = useState<Contact[]>([]);
 
 useEffect(() => {
   if (filteredContacts.length === 0) {
-    if (activeTags.length > 0) {
-      setLoadingMessage(`No contacts found for the ${activeTags[0]} tag.`);
-    } else {
-      setLoadingMessage("No contacts found.");
-    }
+    setLoadingMessage("Fetching contacts...");
   } else {
-    setLoadingMessage("Loading contacts...");
+    setLoadingMessage("Fetching contacts...");
     const timer = setTimeout(() => {
       if (paginatedContacts.length === 0) {
         setLoadingMessage("There are a lot of contacts, fetching them might take some time...");
@@ -4593,37 +4849,6 @@ const sortContacts = (contacts: Contact[]) => {
     }
   };
   
-  const DeleteConfirmationPopup = () => (
-    <div className="fixed inset-0 bg-gray-500 bg-opacity-75 dark:bg-gray-900 dark:bg-opacity-75 flex items-center justify-center z-50 rounded-lg">
-      <div className="bg-white dark:bg-gray-800 rounded-lg text-left shadow-xl transform transition-all sm:my-8 sm:max-w-lg sm:w-full">
-        <div className="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4 rounded-lg">
-          <div className="sm:flex sm:items-start">
-            <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-              <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100 mb-4">Delete message</h3>
-              <p className="text-gray-700 dark:text-gray-300">Are you sure you want to delete this message?</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse rounded-b-lg">
-          <Button
-            type="button"
-            className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 dark:focus:ring-red-600 sm:ml-3 sm:w-auto sm:text-sm"
-           onClick={deleteMessages}
-          >
-            Delete
-          </Button>
-          <Button
-            type="button"
-            className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-indigo-600 sm:mt-0 sm:w-auto sm:text-sm"
-            onClick={closeDeletePopup}
-          >
-            Cancel
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-  
   const sendDocument = async (file: File, caption: string) => {
     setLoading(true);
     try {
@@ -5040,9 +5265,10 @@ const sortContacts = (contacts: Contact[]) => {
         status: "scheduled",
         v2: isV2,
         whapiToken: isV2 ? null : whapiToken,
-    
       };
-
+  
+      console.log('Sending scheduledMessageData:', JSON.stringify(scheduledMessageData, null, 2));
+  
       // Make API call to schedule the message
       const response = await axios.post(`https://mighty-dane-newly.ngrok-free.app/api/schedule-message/${companyId}`, scheduledMessageData);
 
@@ -5050,6 +5276,7 @@ const sortContacts = (contacts: Contact[]) => {
 
       toast.success('Reminder set successfully');
       setIsReminderModalOpen(false);
+      setReminderText('');
       setReminderDate(null);
 
     } catch (error) {
@@ -5057,6 +5284,7 @@ const sortContacts = (contacts: Contact[]) => {
       toast.error("An error occurred while setting the reminder. Please try again.");
     }
   };
+  
   const handleGenerateAIResponse = async () => {
     if (messages.length === 0) return;
   
@@ -5358,35 +5586,82 @@ console.log(prompt);
             </div>
           </div>
           {userData?.phone !== undefined && (
-            <div className="flex items-center space-x-2 text-lg font-semibold opacity-75">
-              <Lucide icon="Phone" className="w-5 h-5 text-gray-800 dark:text-white" />
-              <span className="text-gray-800 font-medium dark:text-white">
-                {phoneNames[userData.phone] || 'No phone assigned'}
-              </span>
-            </div>
+            <Menu as="div" className="relative inline-block text-left">
+              <div>
+                <Menu.Button className="flex items-center space-x-2 text-lg font-semibold opacity-75 bg-white dark:bg-gray-800 px-3 py-2 rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 focus:ring-blue-500">
+                  <Lucide icon="Phone" className="w-5 h-5 text-gray-800 dark:text-white" />
+                  <span className="text-gray-800 font-medium dark:text-white">
+                    {phoneNames[userData.phone] || 'No phone assigned'}
+                  </span>
+                  <Lucide icon="ChevronDown" className="w-4 h-4 text-gray-500" />
+                </Menu.Button>
+              </div>
+           
+                <Menu.Items className="absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white dark:bg-gray-800 ring-1 ring-black ring-opacity-5 z-50">
+                  <div className="py-1 max-h-60 overflow-y-auto" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
+                    {Object.entries(phoneNames).map(([index, phoneName]) => (
+                      <Menu.Item key={index}>
+                        {({ active }) => (
+                          <button
+                            onClick={() => handlePhoneChange(parseInt(index))}
+                            className={`${
+                              active ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-200'
+                            } block w-full text-left px-4 py-2 text-sm`}
+                          >
+                            {phoneName}
+                          </button>
+                        )}
+                      </Menu.Item>
+                    ))}
+                  </div>
+                </Menu.Items>
+           
+            </Menu>
           )}
-          {/* <div className="flex items-center space-x-4 text-lg font-medium opacity-75">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as Contact['status'] | '')}
-              className="mt-1 block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              style={{ width: '150px' }} // Increased width
-            >
-              <option value="">All Statuses</option>
-              <option value="New">New</option>
-              <option value="Reach">Reach</option>
-              <option value="Qualified">Qualified</option>
-              <option value="Disqualified">Disqualified</option>
-              <option value="Negotiating">Negotiating</option>
-              <option value="Won">Won</option>
-              <option value="Lost">Lost</option>
-            </select>
-          </div> */}
+  
         </div>
-        <div className="sticky top-20 z-10 bg-gray-100 dark:bg-gray-900 p-2">
+        <div className="sticky top-20 z-5 bg-gray-100 dark:bg-gray-900 p-2">
           <div className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-900">
             {notifications.length > 0 && <NotificationPopup notifications={notifications} />}
-            {isDeletePopupOpen && <DeleteConfirmationPopup />}
+
+            <Dialog
+              open={isDeletePopupOpen}
+              onClose={closeDeletePopup}
+              className="fixed inset-0 z-100 overflow-y-auto"
+            >
+              <div className="flex items-center justify-center min-h-screen">
+                <div className="fixed inset-0 bg-black opacity-30" />
+                <div className="bg-white dark:bg-gray-800 rounded-lg text-left shadow-xl transform transition-all sm:my-8 sm:max-w-lg sm:w-full">
+                  <Dialog.Title
+                    as="h3"
+                    className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-200 px-4 pt-5"
+                  >
+                    Delete Messages
+                  </Dialog.Title>
+                  <div className="px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Are you sure you want to delete {selectedMessages.length} message(s)? This action cannot be undone.
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse rounded-b-lg">
+                    <Button
+                      type="button"
+                      className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm"
+                      onClick={deleteMessages}
+                    >
+                      Delete
+                    </Button>
+                    <Button
+                      type="button"
+                      className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 sm:mt-0 sm:w-auto sm:text-sm"
+                      onClick={closeDeletePopup}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </Dialog>
             <Dialog open={blastMessageModal} onClose={() => setBlastMessageModal(false)}>
             <div className="fixed inset-0 flex items-center justify-center p-4 bg-black bg-opacity-50">
               <Dialog.Panel className="w-full max-w-md p-6 bg-white dark:bg-gray-800 rounded-md mt-40 text-gray-900 dark:text-white">
@@ -5512,139 +5787,154 @@ console.log(prompt);
               </div>
             </Dialog>
             <PDFModal isOpen={isPDFModalOpen} onClose={closePDFModal} pdfUrl={pdfUrl} />
-            {editingMessage && (
-              <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-                <div className="bg-white dark:bg-gray-800 rounded-lg text-left shadow-xl transform transition-all sm:my-8 sm:max-w-lg sm:w-full">
-                  <div className="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                    <div className="sm:flex sm:items-start">
-                      <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-                        <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-200 mb-4">Edit message</h3>
-                        <textarea
-                          className="w-full h-24 px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-info text-md resize-none overflow-hidden bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-                          placeholder="Edit your message"
-                          value={editedMessageText}
-                          onChange={(e) => setEditedMessageText(e.target.value)}
-                          style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                    <Button
-                      type="button"
-                      className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-500 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
-                      onClick={handleEditMessage}
-                    >
-                      Save
-                    </Button>
-                    <Button
-                      type="button"
-                      className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 sm:mt-0 sm:w-auto sm:text-sm"
-                      onClick={cancelEditMessage}
-                    >
-                      Cancel
-                    </Button>
-              </div>
-              </div>
-              </div>
-            )}
+            <Dialog
+  open={editingMessage !== null}
+  onClose={cancelEditMessage}
+  className="fixed inset-0 z-100 overflow-y-auto"
+>
+  <div className="flex items-center justify-center min-h-screen">
+    <div className="fixed inset-0 bg-black opacity-30" />
+    <div className="bg-white dark:bg-gray-800 rounded-lg text-left shadow-xl transform transition-all sm:my-8 sm:max-w-lg sm:w-full">
+      <Dialog.Title
+        as="h3"
+        className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-200 px-4 pt-5"
+      >
+        Edit message
+      </Dialog.Title>
+      <div className="px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+        <textarea
+          className="w-full h-24 px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-info text-md resize-none overflow-hidden bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+          placeholder="Edit your message"
+          value={editedMessageText}
+          onChange={(e) => setEditedMessageText(e.target.value)}
+          style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+        />
+      </div>
+      <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+        <Button
+          type="button"
+          className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-500 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
+          onClick={handleEditMessage}
+        >
+          Save
+        </Button>
+        <Button
+          type="button"
+          className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 sm:mt-0 sm:w-auto sm:text-sm"
+          onClick={cancelEditMessage}
+        >
+          Cancel
+        </Button>
+      </div>
+    </div>
+  </div>
+</Dialog>
 
-            {isForwardDialogOpen && (
-              <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-                <div className="bg-white dark:bg-gray-800 rounded-lg text-left shadow-xl transform transition-all sm:my-8 sm:max-w-lg sm:w-full">
-                  <div className="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                    <div className="sm:flex sm:items-start">
-                      <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-                        <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-200 mb-4">Forward message to</h3>
-                        <div className="relative mb-4">
-                          <input
-                            type="text"
-                            className="w-full py-2 px-4 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-                            placeholder="Search..."
-                            value={searchQuery2}
-                            onChange={handleSearchChange2}
-                          />
-                          <Lucide
-                            icon="Search"
-                            className="absolute top-2 right-3 w-5 h-5 text-gray-500 dark:text-gray-400"
-                          />
-                        </div>
-                        <div className="mb-4">
-                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Filter by tags:</h4>
-                          <div className="flex flex-wrap gap-2">
-                            {visibleForwardTags.map((tag) => (
-                              <button
-                                key={tag.id}
-                                onClick={() => filterForwardDialogContacts(tag.name)}
-                                className={`px-3 py-1 rounded-full text-sm flex-shrink-0 ${
-                                  forwardDialogTags.includes(tag.name)
-                                    ? 'bg-primary text-white dark:bg-primary dark:text-white'
-                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
-                                } transition-colors duration-200`}
-                              >
-                                {tag.name}
-                              </button>
-                            ))}
-                          </div>
-                          {tagList.length > 5 && (
-                            <button
-                              onClick={toggleForwardTagsVisibility}
-                              className="mt-2 text-sm text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
-                            >
-                              {showAllForwardTags ? 'Show Less' : 'Show More'}
-                            </button>
-                          )}
-                        </div>
-                        <div className="max-h-60 overflow-y-auto">
-                          {getFilteredForwardingContacts().map((contact, index) => (
-                            <div
-                              key={contact.id || `${contact.phone}-${index}`}
-                              className="flex items-center p-2 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
-                            >
-                              <input
-                                type="checkbox"
-                                className="mr-3"
-                                checked={selectedContactsForForwarding.includes(contact)}
-                                onChange={() => handleSelectContactForForwarding(contact)}
-                              />
-                              <div className="flex items-center">
-                                <div className="w-8 h-8 flex items-center justify-center bg-gray-300 dark:bg-gray-600 rounded-full mr-3 text-white">
-                                  {contact.contactName ? contact.contactName.charAt(0).toUpperCase() : "?"}
-                                </div>
-                                <div className="flex-grow">
-                                  <div className="font-semibold capitalize">{contact.contactName || contact.firstName || contact.phone}</div>
-                                  {contact.tags && contact.tags.length > 0 && (
-                                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                                      Tags: {contact.tags.join(', ')}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+
+
+<Dialog
+  open={isForwardDialogOpen}
+  onClose={() => handleCloseForwardDialog()}
+  className="fixed inset-0 z-50 overflow-y-auto"
+>
+  <div className="flex items-center justify-center min-h-screen">
+    <div className="fixed inset-0 bg-gray-500 bg-opacity-75" />
+    <div className="bg-white dark:bg-gray-800 rounded-lg text-left shadow-xl transform transition-all sm:my-8 sm:max-w-lg sm:w-full relative z-10">
+      <div className="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+        <div className="sm:flex sm:items-start">
+          <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+            <Dialog.Title as="h3" className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-200 mb-4">
+              Forward message to
+            </Dialog.Title>
+            <div className="relative mb-4">
+              <input
+                type="text"
+                className="w-full py-2 px-4 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                placeholder="Search..."
+                value={searchQuery2}
+                onChange={handleSearchChange2}
+              />
+              <Lucide
+                icon="Search"
+                className="absolute top-2 right-3 w-5 h-5 text-gray-500 dark:text-gray-400"
+              />
+            </div>
+            <div className="mb-4">
+              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Filter by tags:</h4>
+              <div className="flex flex-wrap gap-2">
+                {visibleForwardTags.map((tag) => (
+                  <button
+                    key={tag.id}
+                    onClick={() => filterForwardDialogContacts(tag.name)}
+                    className={`px-3 py-1 rounded-full text-sm flex-shrink-0 ${
+                      forwardDialogTags.includes(tag.name)
+                        ? 'bg-primary text-white dark:bg-primary dark:text-white'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
+                    } transition-colors duration-200`}
+                  >
+                    {tag.name}
+                  </button>
+                ))}
+              </div>
+              {tagList.length > 5 && (
+                <button
+                  onClick={toggleForwardTagsVisibility}
+                  className="mt-2 text-sm text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                >
+                  {showAllForwardTags ? 'Show Less' : 'Show More'}
+                </button>
+              )}
+            </div>
+            <div className="max-h-60 overflow-y-auto">
+              {getFilteredForwardingContacts().map((contact, index) => (
+                <div
+                  key={contact.id || `${contact.phone}-${index}`}
+                  className="flex items-center p-2 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  <input
+                    type="checkbox"
+                    className="mr-3"
+                    checked={selectedContactsForForwarding.includes(contact)}
+                    onChange={() => handleSelectContactForForwarding(contact)}
+                  />
+                  <div className="flex items-center">
+                    <div className="w-8 h-8 flex items-center justify-center bg-gray-300 dark:bg-gray-600 rounded-full mr-3 text-white">
+                      {contact.contactName ? contact.contactName.charAt(0).toUpperCase() : "?"}
                     </div>
-                  </div>
-                  <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                    <Button
-                      type="button"
-                      className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary text-base font-medium text-white hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
-                      onClick={handleForwardMessage}
-                    >
-                      Forward
-                    </Button>
-                    <Button
-                      type="button"
-                      className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white dark:bg-gray-600 text-base font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm"
-                      onClick={() => handleCloseForwardDialog()}
-                    >
-                      Cancel
-                    </Button>
+                    <div className="flex-grow">
+                      <div className="font-semibold capitalize">{contact.contactName || contact.firstName || contact.phone}</div>
+                      {contact.tags && contact.tags.length > 0 && (
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          Tags: {contact.tags.join(', ')}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+        <Button
+          type="button"
+          className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary text-base font-medium text-white hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
+          onClick={handleForwardMessage}
+        >
+          Forward
+        </Button>
+        <Button
+          type="button"
+          className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white dark:bg-gray-600 text-base font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm"
+          onClick={() => handleCloseForwardDialog()}
+        >
+          Cancel
+        </Button>
+      </div>
+    </div>
+  </div>
+</Dialog>
 
     <div className="flex justify-end space-x-3">
     {(
@@ -5799,8 +6089,20 @@ console.log(prompt);
   <div className="bg-gray-100 dark:bg-gray-900 flex-1 overflow-y-scroll h-full" ref={contactListRef}>
   {paginatedContacts.length === 0 ? ( // Check if paginatedContacts is empty
     <div className="flex items-center justify-center h-full">
-    {loadingMessage && <span className="text-gray-500 dark:text-gray-400 ml-2">{loadingMessage}</span>}
-  </div>
+      {loadingMessage && (
+        <>
+          <div className="flex flex-col items-center">
+            <div>
+              <svg className="animate-spin h-10 w-10 text-gray-500 dark:text-gray-400 mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+              </svg>
+            </div>
+            <div className="text-gray-500 dark:text-gray-400 mt-2">{loadingMessage}</div>
+          </div>
+        </>
+      )}
+    </div>
   ) : ((paginatedContacts).map((contact, index) => (
     <React.Fragment key={`${contact.id}-${index}` || `${contact.phone}-${index}`}>
     <div
@@ -5865,7 +6167,7 @@ console.log(prompt);
                 ? ((contact.contactName ?? contact.firstName ?? contact.phone ?? "").length > 20 ? '...' : '')
                 : (contact.leadNumber ?? "").length > 20 ? '...' : ''}
             </span>
-            {!contact.chat_id?.includes('@g.us') && userData?.role === '1' && (
+            {!contact.chat_id?.includes('@g.us') && (userData?.role === '1' || userData?.role === '2') && (
               <span className="text-xs text-gray-600 dark:text-gray-400 truncate" style={{ 
                 visibility: (contact.contactName === contact.phone || contact.firstName === contact.phone) ? 'hidden' : 'visible',
                 display: (contact.contactName === contact.phone || contact.firstName === contact.phone) ? 'flex' : 'block',
@@ -6091,11 +6393,11 @@ console.log(prompt);
     <Lucide icon="Send" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
   </span>
 </button>
-            <button className="p-2 m-0 !box" onClick={handleReminderClick}>
+            {/* <button className="p-2 m-0 !box" onClick={handleReminderClick}>
               <span className="flex items-center justify-center w-5 h-5">
                 <Lucide icon="BellRing" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
               </span>
-            </button>
+            </button> */}
             <Menu as="div" className="relative inline-block text-left">
               <Menu.Button as={Button} className="p-2 !box m-0">
                 <span className="flex items-center justify-center w-5 h-5">
@@ -6190,12 +6492,12 @@ console.log(prompt);
               </span>
             </Menu.Button>
             <Menu.Items className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10">
-              <Menu.Item>
+              {/* <Menu.Item>
                 <button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md" onClick={handleReminderClick}>
                   <Lucide icon="BellRing" className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
                   <span className="text-gray-800 dark:text-gray-200">Reminder</span>
                 </button>
-              </Menu.Item>
+              </Menu.Item> */}
               <Menu.Item>
                 <Menu as="div" className="relative inline-block text-left w-full">
                   <Menu.Button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
@@ -6286,7 +6588,7 @@ console.log(prompt);
               <div role="status">
                 <div className="flex flex-col items-center justify-end col-span-6 sm:col-span-3 xl:col-span-2">
                   <LoadingIcon icon="three-dots" className="w-20 h-20 p-4 text-gray-800 dark:text-gray-200" />
-                  <div className="mt-2 text-xs text-center text-gray-800 dark:text-gray-200">Fetching Data...</div>
+                  <div className="mt-2 text-xs text-center text-gray-800 dark:text-gray-200">Fetching Conversation...</div>
                 </div>
               </div>
             </div>
@@ -6359,6 +6661,18 @@ console.log(prompt);
                       onMouseEnter={() => setHoveredMessageId(message.id)}
                       onMouseLeave={() => setHoveredMessageId(null)}
                     >
+                      {hoveredMessageId === message.id && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setReactionMessage(message);
+                            setShowReactionPicker(true);
+                          }}
+                          className="absolute top-0 right-0 -mt-2 -mr-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Lucide icon="Smile" className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                        </button>
+                      )}
                       {message.isPrivateNote && (
                         <div className="flex items-center mb-1">
                           <Lock size={16} className="mr-1" />
@@ -6437,8 +6751,8 @@ console.log(prompt);
                             }}
                           />
                             {message.image?.caption && (
-                <p className="mt-2 text-sm">{message.image.caption}</p>
-              )}
+                              <p className="mt-2 text-sm">{message.image.caption}</p>
+                            )}
                         </div>
                       )}
                       {message.type === 'video' && message.video && (
@@ -6607,19 +6921,24 @@ console.log(prompt);
                           )}
                         </div>
                       )}
+
+                      {showReactionPicker && reactionMessage?.id === message.id && (
+                        <ReactionPicker
+                          onSelect={(emoji) => handleReaction(message, emoji)}
+                          onClose={() => setShowReactionPicker(false)}
+                        />
+                      )}
                       {message.reactions && message.reactions.length > 0 && (
-                        <div className="flex items-center space-x-2 mt-1">
-                          {message.reactions.map((reaction, index) => (
-                            <div key={index} className="text-gray-500 dark:text-gray-400 text-sm flex items-center space-x-1">
-                              <span
-                                className="inline-flex items-center justify-center border border-white rounded-full bg-gray-200 dark:bg-gray-700"
-                                style={{ padding: '10px' }}
-                              >
-                                {reaction.emoji}
-                              </span>
-            </div>
-          ))}
-        </div>
+                        <div className="flex flex-wrap gap-1 mt-1 rounded-full px-2 py-0.5 w-fit">
+                          {message.reactions.map((reaction: any, index: number) => (
+                            <span 
+                              key={index}
+                              className="text-lg"
+                            >
+                              {reaction.emoji}
+                            </span>
+                          ))}
+                        </div>
                       )}
                       <div className="flex justify-between items-center mt-1">
                       
@@ -6627,11 +6946,25 @@ console.log(prompt);
                           <div className="flex items-center mr-2">
                             {(hoveredMessageId === message.id || selectedMessages.includes(message)) && (
                               <>
-                                <input type="checkbox" className="form-checkbox h-5 w-5 text-blue-500 transition duration-150 ease-in-out rounded-full" checked={selectedMessages.includes(message)} onChange={() => handleSelectMessage(message)} />
-                                <button className="ml-2 text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 transition-colors duration-200 mr-2" onClick={() => setReplyToMessage(message)}><Lucide icon="MessageSquare" className="w-5 h-5 fill-current" /></button>
-                                {message.from_me && message.createdAt && new Date().getTime() - new Date(message.createdAt).getTime() < 15 * 60 * 1000 && userRole !== "3" && (
-                                  <button className="ml-2 mr-2 text-black hover:text-black dark:text-gray-300 dark:hover:text-black transition-colors duration-200" onClick={() => openEditMessage(message)}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M21.731 2.269a2.625 2.625 0 00-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 000-3.712zM19.513 8.199l-3.712-3.712-12.15 12.15a5.25 5.25 0 00-1.32 2.214l-.8 2.685a.75.75 0 00.933.933l2.685-.8a5.25 5.25 0 002.214-1.32L19.513 8.2z" /></svg></button>
+                                <button className="ml-2 text-white hover:text-blue-600 dark:text-white dark:hover:text-blue-300 transition-colors duration-200 mr-2" onClick={() => setReplyToMessage(message)}><Lucide icon="MessageCircleReply" className="w-6 h-6" /></button>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setReactionMessage(message);
+                                    setShowReactionPicker(true);
+                                  }}
+                                  className="mr-2 p-1 text-white hover:text-blue-500 dark:text-white dark:hover:text-blue-300"
+                                ><Lucide icon="Heart" className="w-6 h-6" /></button>
+                                {showReactionPicker && reactionMessage?.id === message.id && (
+                                  <ReactionPicker
+                                    onSelect={(emoji) => handleReaction(message, emoji)}
+                                    onClose={() => setShowReactionPicker(false)}
+                                  />
                                 )}
+                                {message.from_me && message.createdAt && new Date().getTime() - new Date(message.createdAt).getTime() < 15 * 60 * 1000 && userRole !== "3" && (
+                                  <button className="ml-2 mr-2 text-white hover:text-blue-500 dark:text-white dark:hover:text-blue-300 transition-colors duration-200" onClick={() => openEditMessage(message)}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M21.731 2.269a2.625 2.625 0 00-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 000-3.712zM19.513 8.199l-3.712-3.712-12.15 12.15a5.25 5.25 0 00-1.32 2.214l-.8 2.685a.75.75 0 00.933.933l2.685-.8a5.25 5.25 0 002.214-1.32L19.513 8.2z" /></svg></button>
+                                )}
+                                <input type="checkbox" className="mr-2 form-checkbox h-5 w-5 text-blue-500 transition duration-150 ease-in-out rounded-full" checked={selectedMessages.includes(message)} onChange={() => handleSelectMessage(message)} />
                               </>
                             )}
                             {message.name && <span className="ml-2 text-gray-400 dark:text-gray-600">{message.name}</span>}
@@ -7498,51 +7831,51 @@ console.log(prompt);
         </Item>
       </ContextMenu>
       {isReminderModalOpen && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setIsReminderModalOpen(false)}>
-    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl" onClick={(e) => e.stopPropagation()}>
-      <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-200">Set Reminder</h2>
-      <textarea
-        placeholder="Enter reminder message..."
-        className="w-full md:w-96 lg:w-120 p-2 border rounded text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-700 mb-4"
-        rows={3}
-        onChange={(e) => setReminderText(e.target.value)}
-        value={reminderText}
-      />
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          Reminder Date and Time
-        </label>
-        <DatePicker
-          selected={reminderDate}
-          onChange={(date: Date) => setReminderDate(date)}
-          showTimeSelect
-          timeFormat="HH:mm"
-          timeIntervals={15}
-          dateFormat="MMMM d, yyyy h:mm aa"
-          className="w-full md:w-96 lg:w-120 p-2 border rounded text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-700"
-          placeholderText="Select date and time"
-        />
-      </div>
-      <div className="flex justify-end space-x-2 mt-4">
-        <button
-          onClick={() => {
-            setIsReminderModalOpen(false);
-            setReminderText('');
-          }}
-          className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-400 dark:hover:bg-gray-500 transition duration-200"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={() => handleSetReminder(reminderText)}
-          className="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded transition duration-200"
-        >
-          Set Reminder
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setIsReminderModalOpen(false)}>
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-200">Set Reminder</h2>
+            <textarea
+              placeholder="Enter reminder message..."
+              className="w-full md:w-96 lg:w-120 p-2 border rounded text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-700 mb-4"
+              rows={3}
+              onChange={(e) => setReminderText(e.target.value)}
+              value={reminderText}
+            />
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Reminder Date and Time
+              </label>
+              <DatePicker
+                selected={reminderDate}
+                onChange={(date: Date) => setReminderDate(date)}
+                showTimeSelect
+                timeFormat="HH:mm"
+                timeIntervals={15}
+                dateFormat="MMMM d, yyyy h:mm aa"
+                className="w-full md:w-96 lg:w-120 p-2 border rounded text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-700"
+                placeholderText="Select date and time"
+              />
+            </div>
+            <div className="flex justify-end space-x-2 mt-4">
+              <button
+                onClick={() => {
+                  setIsReminderModalOpen(false);
+                  setReminderText('');
+                }}
+                className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-400 dark:hover:bg-gray-500 transition duration-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSetReminder(reminderText)}
+                className="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded transition duration-200"
+              >
+                Set Reminder
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

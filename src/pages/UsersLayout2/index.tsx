@@ -331,9 +331,19 @@ const paginatedEmployees = filteredEmployees
                 </Button>
               )}
             </Link>
+            <Link to="builder">
+              <Button variant="primary" className="mr-2 shadow-md">
+                Prompt Builder
+              </Button>
+            </Link>
             <Link to="quick-replies">
             <Button variant="primary" className="mr-2 shadow-md">
                   Quick Replies
+                </Button>
+            </Link>
+            <Link to="follow-ups">
+            <Button variant="primary" className="mr-2 shadow-md">
+                  Follow Ups
                 </Button>
             </Link>
             {/* Add a dropdown to show phone names */}
