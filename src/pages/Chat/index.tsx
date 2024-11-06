@@ -2966,7 +2966,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
   
     await updateLeadNumbers(companyId);
   
-    toast.success(`Updated lead numbers for all contacts.`);
+    console.log(`Updated lead numbers for all contacts.`);
   };
   
   // Call this function when the component mounts or when you want to update existing contacts
