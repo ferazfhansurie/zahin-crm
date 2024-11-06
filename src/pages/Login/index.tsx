@@ -65,7 +65,7 @@ const firebaseConfig = {
       }
     };
   
-    const handleStartFreeTrial = () => {
+    const handleRegister = () => {
       navigate('/register');
     };
     return (
@@ -125,9 +125,9 @@ const firebaseConfig = {
                   <Button
                       variant="secondary"
                       className="w-full px-4 py-3 align-top xl:mr-3"
-                      onClick={handleStartFreeTrial}
+                      onClick={handleRegister}
                     >
-                      Start Free Trial
+                      Register
                     </Button>
                     
                   </div>

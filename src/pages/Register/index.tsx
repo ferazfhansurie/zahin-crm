@@ -35,17 +35,12 @@ function Main() {
   const [password, setPassword] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [registerResult, setRegisterResult] = useState<string | null>(null);
-  const [selectedPlan, setSelectedPlan] = useState<'blaster' | 'enterprise' | null>(null);
   const navigate = useNavigate();
 
   const handleRegister = async () => {
     try {
-      // Validate plan selection
-      if (!selectedPlan) {
-        toast.error("Please select a plan to continue");
-        return;
-      }
 
+ 
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       await signInWithEmailAndPassword(auth, email, password);  
@@ -53,32 +48,22 @@ function Main() {
       const querySnapshot = await getDocs(collection(firestore, "companies"));
       const companyCount = querySnapshot.size;
       const newCompanyId = `0${companyCount + 1}`;
-    // Save user data to Firestore
-    const trialStartDate = new Date();
-    const trialEndDate = new Date(trialStartDate);
-    trialEndDate.setDate(trialEndDate.getDate() + 7);
+
       // Create a new company document in Firestore
       await setDoc(doc(firestore, "companies", newCompanyId), {
         id: newCompanyId,
         name: companyName,
-        plan: selectedPlan,
         whapiToken: "", // Initialize with any default values you need
-        trialStartDate: trialStartDate,
-        trialEndDate: trialEndDate,
       });
 
-  
-
+      // Save user data to Firestore
       await setDoc(doc(firestore, "user", user.email!), {
         name: name,
         company: companyName,
         email: user.email!,
         role: "1",
         companyId: newCompanyId,
-        phoneNumber: phoneNumber,
-        plan: selectedPlan,
-        trialStartDate: trialStartDate,
-        trialEndDate: trialEndDate,
+        phoneNumber: phoneNumber // Add phone number
       });
 
       // Save user data under the new company's employee collection
@@ -86,9 +71,7 @@ function Main() {
         name: name,
         email: user.email!,
         role: "1",
-        phoneNumber: phoneNumber,
-
-
+        phoneNumber: phoneNumber // Add phone number
       });
 
       const response2 = await axios.post(`https://mighty-dane-newly.ngrok-free.app/api/channel/create/${newCompanyId}`);
@@ -129,7 +112,7 @@ function Main() {
     <>
       <div
         className={clsx([
-          "p-3 sm:px-8 relative h-screen overflow-hidden bg-primary xl:bg-white dark:bg-darkmode-800 xl:dark:bg-darkmode-600", // Changed lg:overflow-y-auto to overflow-hidden
+          "p-3 sm:px-8 relative h-screen lg:overflow-hidden bg-primary xl:bg-white dark:bg-darkmode-800 xl:dark:bg-darkmode-600",
           "before:hidden before:xl:block before:content-[''] before:w-[57%] before:-mt-[28%] before:-mb-[16%] before:-ml-[13%] before:absolute before:inset-y-0 before:left-0 before:transform before:rotate-[-4.5deg] before:bg-primary/20 before:rounded-[100%] before:dark:bg-darkmode-400",
           "after:hidden after:xl:block after:content-[''] after:w-[57%] after:-mt-[20%] after:-mb-[13%] after:-ml-[13%] after:absolute after:inset-y-0 after:left-0 after:transform after:rotate-[-4.5deg] after:bg-primary after:rounded-[100%] after:dark:bg-darkmode-700",
         ])}
@@ -141,7 +124,7 @@ function Main() {
             <div className="flex-col hidden min-h-screen xl:flex">
                 <div className="my-auto flex flex-col items-left w-full">
                   <img
-                    alt="Juta Software Logo"
+                    alt="Zahin Travel Logo"
                     className="w-2/4 -mt-16"
                     src={logoUrl}
                   />
@@ -155,7 +138,8 @@ function Main() {
                   Sign Up
                 </h2>
                 <div className="mt-2 text-center intro-x text-slate-400 dark:text-slate-400 xl:hidden">
-                  Start your 7 days free trial now!
+                  A few more clicks to sign in to your account. Manage all your
+                  e-commerce accounts in one place
                 </div>
                 <div className="mt-8 intro-x">
                   <FormInput
@@ -200,25 +184,6 @@ function Main() {
                     onKeyDown={handleKeyDown}
                   />
                 
-                  {/* New Plan Selection Section */}
-                  <div className="grid grid-cols-1 gap-2 mt-4 md:grid-cols-2">
-                    {[
-                      ['blaster', 'WhatsApp Blaster', '50'],
-                      ['enterprise', 'Standard AI', '168']
-                    ].map(([id, name, price]) => (
-                      <div 
-                        key={id}
-                        className={clsx(
-                          "p-2 border rounded cursor-pointer",
-                          selectedPlan === id ? 'border-primary bg-primary/10' : 'border-gray-200'
-                        )}
-                        onClick={() => setSelectedPlan(id as 'blaster' | 'enterprise')}
-                      >
-                        <div className="text-sm font-bold">{name}</div>
-                        <div className="text-xs">RM {price}/month</div>
-                      </div>
-                    ))}
-                  </div>
                 </div>
                 <div className="mt-5 text-center intro-x xl:mt-8 xl:text-left">
                   <Button
@@ -226,14 +191,14 @@ function Main() {
                     className="w-full px-4 py-3 align-top xl:w-32 xl:mr-3"
                     onClick={handleRegister}
                   >
-                    Start Free Trial
+                    Register
                   </Button>
                   <Link to="/login">
                     <Button
                       variant="outline-secondary"
                       className="w-full px-4 py-3 mt-3 align-top xl:w-32 xl:mt-0"
                     >
-                      Back to Login
+                      Sign in
                     </Button>
                   </Link>
                 </div>
