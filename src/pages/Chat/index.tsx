@@ -419,16 +419,16 @@ function Main() {
   const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
   const baseMessageClass = "flex flex-col max-w-[auto] min-w-[auto] p-1 text-white";
   const myMessageClass = `${baseMessageClass} bg-primary self-end ml-auto text-left mb-1 mr-6 group`;
-  const otherMessageClass = `${baseMessageClass} bg-gray-700 self-start text-left mt-1 ml-2 group`;
-  const myFirstMessageClass = `${myMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl mt-4`;
-  const myMiddleMessageClass = `${myMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl`;
-  const myLastMessageClass = `${myMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl mb-4`;
-  const otherFirstMessageClass = `${otherMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl mt-4`;
-  const otherMiddleMessageClass = `${otherMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl`;
-  const otherLastMessageClass = `${otherMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl mb-4`;
+  const otherMessageClass = `${baseMessageClass} bg-white dark:bg-gray-700 self-start text-left mt-1 ml-2 group shadow-lg`;
+  const myFirstMessageClass = `${myMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl mt-4 shadow-lg`;
+  const myMiddleMessageClass = `${myMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl shadow-lg`;
+  const myLastMessageClass = `${myMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl mb-4 shadow-lg`;
+  const otherFirstMessageClass = `${otherMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl mt-4 shadow-lg`;
+  const otherMiddleMessageClass = `${otherMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl shadow-lg`;
+  const otherLastMessageClass = `${otherMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl mb-4 shadow-lg`;
   const [messageMode, setMessageMode] = useState('reply');
   const myMessageTextClass = "text-white"
-  const otherMessageTextClass = "text-white"
+  const otherMessageTextClass = "text-black dark:text-white"
   const [activeTags, setActiveTags] = useState<string[]>(['all']);
   const [tagList, setTagList] = useState<Tag[]>([]);
   const [userData, setUserData] = useState<UserData | null>(null);
@@ -6855,10 +6855,12 @@ console.log(prompt);
       </div>
       <div className="flex-1 overflow-y-auto p-2" 
         style={{
-          paddingBottom: "150px",
-          backgroundColor: selectedContact ? 'transparent' : 'bg-slate-400 dark:bg-gray-800',
+          paddingBottom: "100px",
+          backgroundColor: 'white',
           backgroundSize: 'cover',
           backgroundRepeat: 'no-repeat',
+          borderBottomLeftRadius: '10px',
+          borderBottomRightRadius: '10px',
         }}
         ref={messageListRef}>
         {isLoading2 && (
@@ -7164,7 +7166,7 @@ console.log(prompt);
                         
                       )}
                              {message.document?.caption && (
-                <p className="mt-2 text-sm">{message.document.caption}</p>
+                <p className="mt-2 text-sm text-black dark:text-white">{message.document.caption}</p>
               )}
                       {message.type === 'link_preview' && message.link_preview && (
                         <div className="link-preview-content p-0 message-content image-message rounded-lg overflow-hidden text-gray-800 dark:text-gray-200">
@@ -7243,14 +7245,14 @@ console.log(prompt);
                           <div className="flex items-center mr-2">
                             {(hoveredMessageId === message.id || selectedMessages.includes(message)) && (
                               <>
-                                <button className="ml-2 text-white hover:text-blue-600 dark:text-white dark:hover:text-blue-300 transition-colors duration-200 mr-2" onClick={() => setReplyToMessage(message)}><Lucide icon="MessageCircleReply" className="w-6 h-6" /></button>
+                                <button className="ml-2 text-blue-500 hover:text-blue-600 dark:text-white dark:hover:text-blue-300 transition-colors duration-200 mr-2" onClick={() => setReplyToMessage(message)}><Lucide icon="MessageCircleReply" className="w-6 h-6" /></button>
                                 <button 
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setReactionMessage(message);
                                     setShowReactionPicker(true);
                                   }}
-                                  className="mr-2 p-1 text-white hover:text-blue-500 dark:text-white dark:hover:text-blue-300"
+                                  className="mr-2 p-1 text-red-500 hover:text-red-600 dark:text-white dark:hover:text-red-300"
                                 ><Lucide icon="Heart" className="w-6 h-6" /></button>
                                 {showReactionPicker && reactionMessage?.id === message.id && (
                                   <ReactionPicker
@@ -7259,7 +7261,7 @@ console.log(prompt);
                                   />
                                 )}
                                 {message.from_me && message.createdAt && new Date().getTime() - new Date(message.createdAt).getTime() < 15 * 60 * 1000 && userRole !== "3" && (
-                                  <button className="ml-2 mr-2 text-white hover:text-blue-500 dark:text-white dark:hover:text-blue-300 transition-colors duration-200" onClick={() => openEditMessage(message)}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M21.731 2.269a2.625 2.625 0 00-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 000-3.712zM19.513 8.199l-3.712-3.712-12.15 12.15a5.25 5.25 0 00-1.32 2.214l-.8 2.685a.75.75 0 00.933.933l2.685-.8a5.25 5.25 0 002.214-1.32L19.513 8.2z" /></svg></button>
+                                  <button className=" mr-2 text-black hover:text-black-600 dark:text-white dark:hover:text-black-300 transition-colors duration-200" onClick={() => openEditMessage(message)}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M21.731 2.269a2.625 2.625 0 00-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 000-3.712zM19.513 8.199l-3.712-3.712-12.15 12.15a5.25 5.25 0 00-1.32 2.214l-.8 2.685a.75.75 0 00.933.933l2.685-.8a5.25 5.25 0 002.214-1.32L19.513 8.2z" /></svg></button>
                                 )}
                                 <input type="checkbox" className="mr-2 form-checkbox h-5 w-5 text-blue-500 transition duration-150 ease-in-out rounded-full" checked={selectedMessages.includes(message)} onChange={() => handleSelectMessage(message)} />
                               </>
@@ -7281,10 +7283,10 @@ console.log(prompt);
         )}
       </div>
       
-      <div className="absolute bottom-0 left-0 w-500px !box m-1 py-1 px-2">
+      <div className="relative bottom-0 left-0 w-500px !box py-1 px-2">
  
         {replyToMessage && (
-          <div className="p-2 mb-2 rounded bg-gray-200 dark:bg-gray-700 flex items-center justify-between">
+          <div className="p-2 mb-2 bg-gray-200 dark:bg-gray-700 flex items-center justify-between">
             <div>
               <div className="font-semibold text-gray-800 dark:text-gray-200">{replyToMessage.from_name}</div>
               <div>
