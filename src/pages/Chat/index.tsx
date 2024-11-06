@@ -5699,6 +5699,41 @@ console.log(prompt);
     fetchTotalContacts();
   }, []);
 
+
+  const handleSnooze = async (contact: Contact) => {
+    try {
+      await handleAddTagToSelectedContacts('snooze', contact);
+    } catch (error) {
+      console.error('Error snoozing contact:', error);
+    }
+  };
+  
+  const handleUnsnooze = async (contact: Contact) => {
+    try {
+      const updatedTags = contact.tags?.filter(tag => tag.toLowerCase() !== 'snooze') || [];
+      await handleRemoveTag(contact.phone!, 'snooze');
+    } catch (error) {
+      console.error('Error unsnoozing contact:', error);
+    }
+  };
+
+  const handleResolve = async (contact: Contact) => {
+    try {
+      await handleAddTagToSelectedContacts('resolved', contact);
+    } catch (error) {
+      console.error('Error resolving contact:', error);
+    }
+  };
+
+  const handleUnresolve = async (contact: Contact) => {
+    try {
+      const updatedTags = contact.tags?.filter(tag => tag.toLowerCase() !== 'resolved') || [];
+      await handleRemoveTag(contact.phone!, 'resolved');
+    } catch (error) {
+      console.error('Error unresolving contact:', error);
+    }
+  };
+
   return (
     <div className="flex flex-col md:flex-row overflow-y-auto bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200" style={{ height: '100vh' }}>
       <audio ref={audioRef} src={noti} />
@@ -6190,95 +6225,89 @@ console.log(prompt);
         ))}
       </Menu.Items>
     </Menu>
-    <button
-      className="p-2 !box m-0 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200"
-      onClick={toggleTagsExpansion}
-    >
+    <Menu as="div" className="relative inline-block text-left z-50">
+    <Menu.Button className="p-2 !box m-0 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200">
       <span className="flex items-center justify-center w-5 h-5">
         <Lucide 
           icon={isTagsExpanded ? "ChevronUp" : "ChevronDown"} 
           className="w-5 h-5 text-gray-800 dark:text-gray-200" 
         />
       </span>
-    </button>
-          </div>
-          </div>
+    </Menu.Button>
+
+    <Menu.Items className="absolute right-12 mt-2 w-52 bg-white dark:bg-gray-800 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto">
+      <div className="py-1">
+        {['Mine', 'All', 'Unassigned', 'Group', 'Unread', 'Snooze', 'Stop Bot', 'Active Bot', 'Resolved',
+          ...(userData?.phone !== undefined && userData.phone !== -1 ? 
+            [phoneNames[userData.phone] || `Phone ${userData.phone + 1}`] : 
+            Object.values(phoneNames)
+          ),
+          ...visibleTags.filter(tag => 
+            !['All', 'Unread', 'Mine', 'Unassigned', 'Snooze', 'Group', 'stop bot', 'Active Bot'].includes(tag.name) && 
+            !visiblePhoneTags.includes(tag.name)
+          )
+        ].map((tag) => {
+          const tagName = typeof tag === 'string' ? tag : tag.name || String(tag);
+          const tagLower = tagName.toLowerCase();
+          let newfilter = contacts;
+          if(userData?.phone !== undefined && userData.phone !== -1){
+            const userPhoneIndex = parseInt(userData.phone, 10);
+            newfilter = contacts.filter(contact => contact.phoneIndex === userPhoneIndex)
+          }
+          const unreadCount = newfilter.filter(contact => {
+            const contactTags = contact.tags?.map(t => t.toLowerCase()) || [];
+            const isGroup = contact.chat_id?.endsWith('@g.us');
+            const phoneIndex = Object.entries(phoneNames).findIndex(([_, name]) => name.toLowerCase() === tagLower);
+            
+            return (
+              (tagLower === 'all' ? !isGroup :
+              tagLower === 'unread' ? contact.unreadCount && contact.unreadCount > 0 :
+              tagLower === 'mine' ? contactTags.includes(currentUserName.toLowerCase()) :
+              tagLower === 'unassigned' ? !contactTags.some(t => employeeList.some(e => e.name.toLowerCase() === t)) :
+              tagLower === 'snooze' ? contactTags.includes('snooze') :
+              tagLower === 'resolved' ? contactTags.includes('resolved') :
+              tagLower === 'group' ? isGroup :
+              tagLower === 'stop bot' ? contactTags.includes('stop bot') :
+              tagLower === 'active bot' ? !contactTags.includes('stop bot') :
+              phoneIndex !== -1 ? contact.phoneIndex === phoneIndex :
+              contactTags.includes(tagLower)) &&
+              (tagLower !== 'all' && tagLower !== 'unassigned' ? contact.unreadCount && contact.unreadCount > 0 : true)
+            );
+          }).length;
+
+          return (
+            <Menu.Item key={typeof tag === 'string' ? tag : tag.id}>
+              {({ active }) => (
+                <button
+                  onClick={() => filterTagContact(tagName)}
+                  className={`flex items-center justify-between w-full px-4 py-2 text-sm ${
+                    active || (tagLower === activeTags[0])
+                      ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
+                      : 'text-gray-700 dark:text-gray-200'
+                  }`}
+                >
+                  <span>{tagName}</span>
+                  {userData?.role === '1' && unreadCount > 0 && (
+                    <span className={`ml-2 px-1.5 py-0.5 rounded-full text-xs ${
+                      tagName.toLowerCase() === 'stop bot' ? 'bg-red-700' :
+                      tagName.toLowerCase() === 'active bot' ? 'bg-green-700' : 'bg-primary'
+                    } text-white`}>
+                      {unreadCount}
+                    </span>
+                  )}
+                </button>
+              )}
+            </Menu.Item>
+          );
+        })}
+      </div>
+    </Menu.Items>
+  </Menu>
+</div>
+</div>
   <div className="border-b border-gray-300 dark:border-gray-700 mt-4"></div>
 
 </div>
-<div className="mt-4 mb-2 px-4 max-h-40 overflow-y-auto">
-<div className="flex flex-wrap gap-2">
-  {['Mine', 'All', 'Unassigned',
-    ...(isTagsExpanded ? [
-      'Group', 'Unread', 'Snooze', 'Stop Bot', 'Active Bot', 'Resolved', // Added 'Active Bot'
-      ...(userData?.phone !== undefined && userData.phone !== -1 ? 
-        [phoneNames[userData.phone] || `Phone ${userData.phone + 1}`] : 
-        Object.values(phoneNames)
-      ),
-      ...visibleTags.filter(tag => 
-        !['All', 'Unread', 'Mine', 'Unassigned', 'Snooze', 'Group', 'stop bot', 'Active Bot'].includes(tag.name) && // Added 'Active Bot'
-        !visiblePhoneTags.includes(tag.name)
-      )
-    ] : [])
-  ].map((tag) => {
-    const tagName = typeof tag === 'string' ? tag : tag.name || String(tag);
-    const tagLower = tagName.toLowerCase();
-    let newfilter = contacts;
-    if(userData?.phone !== undefined && userData.phone !== -1){
-      const userPhoneIndex = parseInt(userData.phone, 10);
-      newfilter = contacts.filter(contact => contact.phoneIndex === userPhoneIndex)
-    }
-    const unreadCount = newfilter.filter(contact => {
-      const contactTags = contact.tags?.map(t => t.toLowerCase()) || [];
-      const isGroup = contact.chat_id?.endsWith('@g.us');
-      const phoneIndex = Object.entries(phoneNames).findIndex(([_, name]) => name.toLowerCase() === tagLower);
-      
-      return (
-        (tagLower === 'all' ? !isGroup :
-        tagLower === 'unread' ? contact.unreadCount && contact.unreadCount > 0 :
-        tagLower === 'mine' ? contactTags.includes(currentUserName.toLowerCase()) :
-        tagLower === 'unassigned' ? !contactTags.some(t => employeeList.some(e => e.name.toLowerCase() === t)) :
-        tagLower === 'snooze' ? contactTags.includes('snooze') :
-        tagLower === 'resolved' ? contactTags.includes('resolved') :
-        tagLower === 'group' ? isGroup :
-        tagLower === 'stop bot' ? contactTags.includes('stop bot') :
-        tagLower === 'active bot' ? !contactTags.includes('stop bot') : // Added Active Bot condition
-        phoneIndex !== -1 ? contact.phoneIndex === phoneIndex :
-        contactTags.includes(tagLower)) &&
-        (tagLower !== 'all' && tagLower !== 'unassigned' ? contact.unreadCount && contact.unreadCount > 0 : true)
-      );
-    }).length;
-
-    return (
-      <button
-        key={typeof tag === 'string' ? tag : tag.id}
-        onClick={() => filterTagContact(tagName)}
-        className={`px-3 py-1 rounded-full text-sm flex items-center ${
-          (tagLower === activeTags[0])
-            ? 'bg-primary text-white dark:bg-primary dark:text-white'
-            : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
-        } transition-colors duration-200`}
-      >
-        <span>{tagName}</span>
-        {userData?.role === '1' && unreadCount > 0 && (
-          <span className={`ml-2 px-1.5 py-0.5 rounded-full text-xs ${
-            tagName.toLowerCase() === 'stop bot' ? 'bg-red-700' :
-            tagName.toLowerCase() === 'active bot' ? 'bg-green-700' : 'bg-primary'
-          } text-white`}>
-            {unreadCount}
-          </span>
-        )}
-      </button>
-    );
-  })}
-</div>
-</div>
-  <span
-    className="flex items-center justify-center p-2 cursor-pointer text-primary dark:text-blue-400 hover:underline transition-colors duration-200"
-    onClick={toggleTagsExpansion}
-  >
-    {isTagsExpanded ? "Show Less" : "Show More"}
-  </span>
   <div className="bg-gray-100 dark:bg-gray-900 flex-1 overflow-y-scroll h-full" ref={contactListRef}>
   {paginatedContacts.length === 0 ? ( // Check if paginatedContacts is empty
     <div className="flex items-center justify-center h-full">
@@ -6488,7 +6517,7 @@ console.log(prompt);
           </span>
           {isAssistantAvailable && (
             <div onClick={(e) => toggleStopBotLabel(contact, index, e)}
-              className="cursor-pointer">
+              className="cursor-pointer relative z-10">
                 <label className="inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
@@ -6508,11 +6537,11 @@ console.log(prompt);
         </div>
                   </div>
                 </div>
-    {index < filteredContacts.length - 1 && <hr className="my-2 border-gray-300 dark:border-gray-700" />}
-  </React.Fragment>
-))
-)}
-</div>
+                {index < filteredContacts.length - 1 && <hr className="my-2 border-gray-300 dark:border-gray-700" />}
+              </React.Fragment>
+            ))
+            )}
+            </div>
               <ReactPaginate
                 breakLabel="..."
                 nextLabel="Next"
@@ -6565,29 +6594,83 @@ console.log(prompt);
               <div className="font-semibold text-gray-800 dark:text-gray-200 capitalize">{selectedContact.leadNumber}</div>
             )}
           </div>
-</div>
-<div className="flex items-center space-x-3">
-<div className="hidden sm:flex space-x-3">
-<button 
-  className="p-2 m-0 !box" 
-  onClick={() => {
-    if (userRole !== "3") {
-      setBlastMessageModal(true);
-    } else {
-      toast.error("You don't have permission to send blast messages.");
-    }
-  }}
-  disabled={userRole === "3"}
->
-  <span className="flex items-center justify-center w-5 h-5">
-    <Lucide icon="Send" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
-  </span>
-</button>
+        </div>
+        <div className="flex items-center space-x-3">
+        <div className="hidden sm:flex space-x-3">
+        <button 
+          className="p-2 m-0 !box" 
+          onClick={() => {
+            if (userRole !== "3") {
+              setBlastMessageModal(true);
+            } else {
+              toast.error("You don't have permission to send blast messages.");
+            }
+          }}
+          disabled={userRole === "3"}
+        >
+          <span className="flex items-center justify-center w-5 h-5">
+            <Lucide icon="Send" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
+          </span>
+        </button>
             {/* <button className="p-2 m-0 !box" onClick={handleReminderClick}>
               <span className="flex items-center justify-center w-5 h-5">
                 <Lucide icon="BellRing" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
               </span>
             </button> */}
+            <div className="flex space-x-2">
+              {selectedContact?.tags?.includes('snooze') ? (
+                <button 
+                  className="p-2 !box m-0"
+                  onClick={() => handleUnsnooze(selectedContact)}
+                >
+                  <span className="flex items-center justify-center w-5 h-5">
+                    <Lucide 
+                      icon="AlarmClockOff" 
+                      className="w-5 h-5 text-gray-800 dark:text-gray-200" 
+                    />
+                  </span>
+                </button>
+              ) : (
+                <button 
+                  className="p-2 !box m-0"
+                  onClick={() => handleSnooze(selectedContact)}
+                >
+                  <span className="flex items-center justify-center w-5 h-5">
+                    <Lucide 
+                      icon="AlarmClock" 
+                      className="w-5 h-5 text-gray-800 dark:text-gray-200" 
+                    />
+                  </span>
+                </button>
+              )}
+            </div>
+            <div className="flex space-x-2">
+              {selectedContact?.tags?.includes('resolved') ? (
+                <button 
+                  className="p-2 !box m-0"
+                  onClick={() => handleUnresolve(selectedContact)}
+                >
+                  <span className="flex items-center justify-center w-5 h-5">
+                    <Lucide 
+                      icon="CheckCircle" 
+                      className="w-5 h-5 text-gray-800 dark:text-gray-200" 
+                    />
+                  </span>
+                </button>
+              ) : (
+                <button 
+                  className="p-2 !box m-0"
+                  onClick={() => handleResolve(selectedContact)}
+                >
+                  <span className="flex items-center justify-center w-5 h-5">
+                    <Lucide 
+                      icon="CheckCircle" 
+                      className="w-5 h-5 text-gray-800 dark:text-gray-200" 
+                    />
+                  </span>
+                </button>
+              )}
+            </div>
             <Menu as="div" className="relative inline-block text-left">
               <Menu.Button as={Button} className="p-2 !box m-0">
                 <span className="flex items-center justify-center w-5 h-5">
@@ -6682,12 +6765,18 @@ console.log(prompt);
               </span>
             </Menu.Button>
             <Menu.Items className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10">
-              {/* <Menu.Item>
-                <button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md" onClick={handleReminderClick}>
-                  <Lucide icon="BellRing" className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
-                  <span className="text-gray-800 dark:text-gray-200">Reminder</span>
+              <Menu.Item>
+                <button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md" onClick={() => selectedContact?.tags?.includes('snooze') ? handleUnsnooze(selectedContact) : handleSnooze(selectedContact)}>
+                  <Lucide icon={selectedContact?.tags?.includes('snooze') ? "AlarmClockOff" : "AlarmClock"} className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
+                  <span className="text-gray-800 dark:text-gray-200">{selectedContact?.tags?.includes('snooze') ? "Unsnooze" : "Snooze"}</span>
                 </button>
-              </Menu.Item> */}
+              </Menu.Item>
+              <Menu.Item>
+                <button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md" onClick={() => selectedContact?.tags?.includes('resolved') ? handleUnresolve(selectedContact) : handleResolve(selectedContact)}>
+                  <Lucide icon="CheckCircle" className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
+                  <span className="text-gray-800 dark:text-gray-200">{selectedContact?.tags?.includes('resolved') ? "Unresolve" : "Resolve"}</span>
+                </button>
+              </Menu.Item>
               <Menu.Item>
                 <Menu as="div" className="relative inline-block text-left w-full">
                   <Menu.Button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
