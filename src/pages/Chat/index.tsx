@@ -543,6 +543,12 @@ function Main() {
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [reactionMessage, setReactionMessage] = useState<any>(null);
 
+  const [isGlobalSearchActive, setIsGlobalSearchActive] = useState(false);
+  const [globalSearchResults, setGlobalSearchResults] = useState<any[]>([]);
+  const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
+  const [globalSearchPage, setGlobalSearchPage] = useState(1);
+  const [totalGlobalSearchPages, setTotalGlobalSearchPages] = useState(1);
+
   useEffect(() => {
     if (contextContacts.length > 0) {
       setContacts(contextContacts as Contact[]);
@@ -853,7 +859,9 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => vo
             if (companyData) {
               setIsAssistantAvailable(!!companyData.assistantId);
             }
-            setStopbot(companyData.stopbot)
+            if(companyData.plan === 'blaster'){
+              setIsAssistantAvailable(false);
+            }
             const phoneCount = companyData.phoneCount || 0;
             const newPhoneNames: Record<number, string> = {};
             for (let i = 0; i < phoneCount; i++) {
@@ -3507,7 +3515,10 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
 
     // Send notification to assigned employee
     if (assignedEmployee.phoneNumber) {
-      let employeeMessage = `Hi ${assignedEmployee.employeeId} ${assignedEmployee.name},\n\nA new contact has been assigned to you:\n\nName: ${contact.contactName || contact.firstName || 'N/A'}\nPhone: ${contact.phone}\n\nKindly login to https://www.zahintravel.chat/login to chat with the contact.\n\nThank you.`;
+      let employeeMessage = `Hello ${assignedEmployee.name}, a new contact has been assigned to you:\n\nName: ${contact.contactName || contact.firstName || 'N/A'}\nPhone: ${contact.phone}\n\nPlease follow up with them as soon as possible.`;
+      if(companyId == '042'){
+        employeeMessage = `Hi ${assignedEmployee.employeeId || assignedEmployee.phoneNumber} ${assignedEmployee.name}.\n\nAnda telah diberi satu prospek baharu\n\nSila masuk ke https://zahintravel.chat/login untuk melihat perbualan di antara Zahin Travel dan prospek.\n\nTerima kasih.\n\nIkhlas,\nZahin Travel Sdn. Bhd. (1276808-W)\nNo. Lesen Pelancongan: KPK/LN 9159\nNo. MATTA: MA6018\n\n#zahintravel - Nikmati setiap detik..\n#diyakini\n#responsif\n#budibahasa`;
+      }
       await sendWhatsAppMessage(assignedEmployee.phoneNumber, employeeMessage);
     }
 
@@ -3885,12 +3896,122 @@ const sortContacts = (contacts: Contact[]) => {
 
   };
 
-  // Update this function
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const query = e.target.value.toLowerCase();
-    setSearchQuery(query);
-    // We'll handle the filtering in the useEffect
+  const searchTimeoutRef = useRef<NodeJS.Timeout>();
+
+  const handleGlobalMessageSearch = async (searchQuery: string, page: number = 1) => {
+    if (!searchQuery.trim()) {
+      setGlobalSearchResults([]);
+      setIsGlobalSearchActive(false);
+      setGlobalSearchLoading(false);
+      return;
+    }
+
+    setGlobalSearchLoading(true);
+    setIsGlobalSearchActive(true);
+
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error('No authenticated user');
+
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) throw new Error('No user document found');
+
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+
+      // Get all contacts for the company
+      const contactsRef = collection(firestore, 'companies', companyId, 'contacts');
+      const contactsSnapshot = await getDocs(contactsRef);
+
+      let allResults: any[] = [];
+
+      // Search through each contact's messages
+      for (const contactDoc of contactsSnapshot.docs) {
+        const messagesRef = collection(firestore, 'companies', companyId, 'contacts', contactDoc.id, 'messages');
+        
+        // Simplified query that only uses orderBy
+        const messagesQuery = query(
+          messagesRef,
+          orderBy('timestamp', 'desc'),
+          limit(100)
+        );
+
+        const messagesSnapshot = await getDocs(messagesQuery);
+        
+        // Filter messages client-side
+        const contactResults = messagesSnapshot.docs
+          .filter(doc => {
+            const data = doc.data() as { text?: { body?: string } };
+            const messageText = data.text?.body?.toLowerCase() || '';
+            return messageText.includes(searchQuery.toLowerCase());
+          })
+          .map(doc => ({
+            ...(doc.data() as Record<string, any>),
+            id: doc.id,
+            contactId: contactDoc.id
+          }));
+
+        allResults = [...allResults, ...contactResults];
+      }
+
+      // Format and sort results
+      const formattedResults = allResults.map(result => ({
+        ...result,
+        text: {
+          body: result.text?.body || result.message || result.content || '',
+        },
+        timestamp: result.timestamp || result.created_at || Date.now(),
+        from_me: result.from_me || false,
+        chat_id: result.chat_id || result.chatId || '',
+        type: result.type || 'text'
+      }));
+
+      const sortedResults = formattedResults.sort((a, b) => {
+        const timestampA = typeof a.timestamp === 'number' ? a.timestamp : new Date(a.timestamp).getTime();
+        const timestampB = typeof b.timestamp === 'number' ? b.timestamp : new Date(b.timestamp).getTime();
+        return timestampB - timestampA;
+      });
+
+      setGlobalSearchResults(sortedResults);
+      toast.success(`Found ${sortedResults.length} message${sortedResults.length === 1 ? '' : 's'}`);
+
+    } catch (error) {
+      console.error('Search failed:', error);
+      setGlobalSearchResults([]);
+      toast.error('Search failed. Please try again.');
+    } finally {
+      setGlobalSearchLoading(false);
+    }
   };
+
+  const loadMoreSearchResults = (page: number) => {
+    handleGlobalMessageSearch(searchQuery, page);
+  };
+
+  // Update the search handler to use debouncing more effectively
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const query = e.target.value;
+    setSearchQuery(query);
+    
+    // Clear existing timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    if (!query.trim()) {
+      setGlobalSearchResults([]);
+      setIsGlobalSearchActive(false);
+      setGlobalSearchLoading(false);
+      return;
+    }
+    
+    setGlobalSearchLoading(true);
+    searchTimeoutRef.current = setTimeout(() => {
+      handleGlobalMessageSearch(query);
+    }, 750); // Increased debounce time to reduce API calls
+  };
+
 
   const filterForwardDialogContacts = (tag: string) => {
     setForwardDialogTags(prevTags => 
@@ -4012,6 +4133,12 @@ const sortContacts = (contacts: Contact[]) => {
         case 'resolved':
           filteredContacts = filteredContacts.filter(contact => 
             contact.tags?.includes('resolved') && 
+            !contact.tags?.includes('snooze')
+          );
+          break;
+        case 'active bot':
+          filteredContacts = filteredContacts.filter(contact => 
+            !contact.tags?.includes('stop bot') && 
             !contact.tags?.includes('snooze')
           );
           break;
@@ -5597,7 +5724,7 @@ console.log(prompt);
                 </Menu.Button>
               </div>
            
-                <Menu.Items className="absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white dark:bg-gray-800 ring-1 ring-black ring-opacity-5 z-50">
+                <Menu.Items className="absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white dark:bg-gray-800 ring-1 ring-black ring-opacity-5">
                   <div className="py-1 max-h-60 overflow-y-auto" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
                     {Object.entries(phoneNames).map(([index, phoneName]) => (
                       <Menu.Item key={index}>
@@ -5620,7 +5747,7 @@ console.log(prompt);
           )}
   
         </div>
-        <div className="sticky top-20 z-5 bg-gray-100 dark:bg-gray-900 p-2">
+        <div className="sticky top-20 bg-gray-100 dark:bg-gray-900 p-2">
           <div className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-900">
             {notifications.length > 0 && <NotificationPopup notifications={notifications} />}
 
@@ -5936,13 +6063,14 @@ console.log(prompt);
   </div>
 </Dialog>
 
-    <div className="flex justify-end space-x-3">
+    <div className="flex justify-end space-x-2 w-full mr-2">
     {(
+      // Replace or update the existing search input section
       <div className="relative flex-grow">
         <input
           type="text"
-          className="!box w-full h-9 py-1 pl-10 pr-4 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-800"
-          placeholder="Search..."
+          className="flex-grow box w-full h-9 py-1 pl-10 pr-4 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-800"
+          placeholder="Search messages..."
           value={searchQuery}
           onChange={handleSearchChange}
         />
@@ -5950,6 +6078,71 @@ console.log(prompt);
           icon="Search"
           className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500 dark:text-gray-400"
         />
+        
+        {/* Global Search Results Dropdown */}
+        {isGlobalSearchActive && searchQuery && (
+          <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 rounded-md shadow-lg max-h-96 overflow-y-auto">
+            {globalSearchLoading ? (
+              <div className="w-full p-4 text-center text-gray-500">
+                Searching...
+              </div>
+            ) : globalSearchResults.length > 0 ? (
+              <>
+                {globalSearchResults.map((result) => (
+                  <div
+                    key={result.id}
+                    className="p-3 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+                    onClick={async () => {
+                      // Find and select the contact
+                      const contact = contacts.find(c => c.id === result.contactId);
+                      if (contact) {
+                        await selectChat(contact.chat_id!, contact.id!, contact);
+                        setIsGlobalSearchActive(false);
+                        setSearchQuery('');
+                      }
+                      // Scroll to the message that was clicked on in the chat
+                      scrollToMessage(result.id);
+                    }}
+                  >
+                    <div className="flex-grow w-full justify-between items-start">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium">
+                          {contacts.find(c => c.id === result.contactId)?.contactName || result.contactId}
+                        </div>
+                        <div className="text-sm text-gray-500 truncate">
+                          {result.text?.body ? (
+                            <span dangerouslySetInnerHTML={{ __html: result.text.body.replace(new RegExp(`(${searchQuery})`, 'gi'), '<mark>$1</mark>') }} />
+                          ) : (
+                            result.caption || 'Media message'
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                
+                {/* Pagination */}
+                {totalGlobalSearchPages > 1 && (
+                  <div className="pagination">
+                    {Array.from({ length: totalGlobalSearchPages }, (_, i) => i + 1).map(pageNum => (
+                      <button
+                        key={pageNum}
+                        onClick={() => loadMoreSearchResults(pageNum)}
+                        disabled={pageNum === globalSearchPage}
+                      >
+                        {pageNum}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="p-4 text-center text-gray-500">
+                No messages found
+              </div>
+            )}
+          </div>
+        )}
       </div>
     )}
     {isAssistantAvailable && (
@@ -6017,13 +6210,13 @@ console.log(prompt);
 <div className="flex flex-wrap gap-2">
   {['Mine', 'All', 'Unassigned',
     ...(isTagsExpanded ? [
-      'Group', 'Unread', 'Snooze', 'Stop Bot', 'Resolved',
+      'Group', 'Unread', 'Snooze', 'Stop Bot', 'Active Bot', 'Resolved', // Added 'Active Bot'
       ...(userData?.phone !== undefined && userData.phone !== -1 ? 
         [phoneNames[userData.phone] || `Phone ${userData.phone + 1}`] : 
         Object.values(phoneNames)
       ),
       ...visibleTags.filter(tag => 
-        !['All', 'Unread', 'Mine', 'Unassigned', 'Snooze', 'Group', 'stop bot'].includes(tag.name) && 
+        !['All', 'Unread', 'Mine', 'Unassigned', 'Snooze', 'Group', 'stop bot', 'Active Bot'].includes(tag.name) && // Added 'Active Bot'
         !visiblePhoneTags.includes(tag.name)
       )
     ] : [])
@@ -6049,13 +6242,12 @@ console.log(prompt);
         tagLower === 'resolved' ? contactTags.includes('resolved') :
         tagLower === 'group' ? isGroup :
         tagLower === 'stop bot' ? contactTags.includes('stop bot') :
+        tagLower === 'active bot' ? !contactTags.includes('stop bot') : // Added Active Bot condition
         phoneIndex !== -1 ? contact.phoneIndex === phoneIndex :
         contactTags.includes(tagLower)) &&
         (tagLower !== 'all' && tagLower !== 'unassigned' ? contact.unreadCount && contact.unreadCount > 0 : true)
       );
     }).length;
-
-    // ... rest of the code
 
     return (
       <button
@@ -6070,7 +6262,8 @@ console.log(prompt);
         <span>{tagName}</span>
         {userData?.role === '1' && unreadCount > 0 && (
           <span className={`ml-2 px-1.5 py-0.5 rounded-full text-xs ${
-            tagName.toLowerCase() === 'stop bot' ? 'bg-red-700' : 'bg-primary'
+            tagName.toLowerCase() === 'stop bot' ? 'bg-red-700' :
+            tagName.toLowerCase() === 'active bot' ? 'bg-green-700' : 'bg-primary'
           } text-white`}>
             {unreadCount}
           </span>
@@ -6089,18 +6282,13 @@ console.log(prompt);
   <div className="bg-gray-100 dark:bg-gray-900 flex-1 overflow-y-scroll h-full" ref={contactListRef}>
   {paginatedContacts.length === 0 ? ( // Check if paginatedContacts is empty
     <div className="flex items-center justify-center h-full">
-      {loadingMessage && (
-        <>
-          <div className="flex flex-col items-center">
-            <div>
-              <svg className="animate-spin h-10 w-10 text-gray-500 dark:text-gray-400 mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
-              </svg>
-            </div>
-            <div className="text-gray-500 dark:text-gray-400 mt-2">{loadingMessage}</div>
+      {paginatedContacts.length === 0 && (
+        <div className="flex flex-col items-center">
+          <div>
+            <Lucide icon="MessageCircle" className="h-10 w-10 text-gray-500 dark:text-gray-400 mb-2" />
           </div>
-        </>
+          <div className="text-gray-500 text-2xl dark:text-gray-400 mt-2">No contacts found</div>
+        </div>
       )}
     </div>
   ) : ((paginatedContacts).map((contact, index) => (
@@ -6125,36 +6313,38 @@ console.log(prompt);
     >
     </div>
     <div className="relative w-14 h-14">
-    <div className="w-14 h-14 bg-gray-400 dark:bg-gray-600 rounded-full flex items-center justify-center text-white text-xl overflow-hidden">
-    {contact && (
-      contact.chat_id && contact.chat_id.includes('@g.us') ? (
-        contact.profilePicUrl ? (
-          <img 
-            src={contact.profilePicUrl} 
-            alt={contact.contactName || "Group"} 
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <Lucide icon="Users" className="w-8 h-8 text-white dark:text-gray-200" />
-        )
-      ) : contact.profilePicUrl ? (
-        <img 
-          src={contact.profilePicUrl} 
-          alt={contact.contactName || "Profile"} 
-          className="w-full h-full object-cover"
-        />
-      ) : (
-        <div className="w-full h-full flex items-center justify-center bg-gray-400 dark:bg-gray-600 text-white">
-          {<Lucide icon="User" className="w-10 h-10" />}
-        </div>
-      )
-    )}
+    <div className="flex items-center space-x-3">
+      <div className="w-14 h-14 bg-gray-400 dark:bg-gray-600 rounded-full flex items-center justify-center text-white text-xl overflow-hidden">
+        {contact && (
+          contact.chat_id && contact.chat_id.includes('@g.us') ? (
+            contact.profilePicUrl ? (
+              <img 
+                src={contact.profilePicUrl} 
+                alt={contact.contactName || "Group"} 
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <Lucide icon="Users" className="w-8 h-8 text-white dark:text-gray-200" />
+            )
+          ) : contact.profilePicUrl ? (
+            <img 
+              src={contact.profilePicUrl} 
+              alt={contact.contactName || "Profile"} 
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-gray-400 dark:bg-gray-600 text-white">
+              {<Lucide icon="User" className="w-10 h-10" />}
+            </div>
+          )
+        )}
+      </div>
+      {(contact.unreadCount ?? 0) > 0 && (
+        <span className="absolute -top-1 -right-1 bg-primary text-white dark:bg-blue-600 dark:text-gray-200 text-xs rounded-full px-2 py-1 min-w-[20px] h-[20px] flex items-center justify-center">
+          {contact.unreadCount}
+        </span>
+      )}
     </div>
-    {(contact.unreadCount ?? 0) > 0 && (
-      <span className="absolute -top-1 -right-1 bg-primary text-white dark:bg-blue-600 dark:text-gray-200 text-xs rounded-full px-2 py-1 min-w-[20px] h-[20px] flex items-center justify-center">
-        {contact.unreadCount}
-      </span>
-    )}
   </div>
       <div className="flex-1 min-w-0">
         <div className="flex justify-between items-center">
@@ -6688,14 +6878,32 @@ console.log(prompt);
                         </div>
                       )}
                       {message.type === 'text' && message.text?.context && (
-                        <div className="p-2 mb-2 rounded bg-gray-200 dark:bg-gray-800">
+                        <div 
+                          className="p-2 mb-2 rounded bg-gray-200 dark:bg-gray-800 cursor-pointer hover:bg-gray-300 dark:hover:bg-gray-700"
+                          onClick={() => {
+                            const quotedMessageId = message.text?.context?.quoted_message_id;
+                            if (quotedMessageId) {
+                              scrollToMessage(quotedMessageId);
+                              // Optionally add visual feedback
+                              const element = messageListRef.current?.querySelector(`[data-message-id="${quotedMessageId}"]`);
+                              if (element) {
+                                element.classList.add('highlight-message');
+                                setTimeout(() => {
+                                  element.classList.remove('highlight-message');
+                                }, 2000);
+                              }
+                            }
+                          }}
+                        >
                           <div 
                             className="text-sm font-medium" 
                             style={{ color: getAuthorColor(message.text.context.quoted_author) }}
                           >
                             {message.text.context.quoted_author || ''}
                           </div>
-                          <div className="text-sm text-gray-700 dark:text-gray-300">{message.text.context.quoted_content?.body || ''}</div>
+                          <div className="text-sm text-gray-700 dark:text-gray-300">
+                            {message.text.context.quoted_content?.body || ''}
+                          </div>
                         </div>
                       )}
                        {/* {message.chat_id && message.chat_id.includes('@g') && message.phoneIndex != null && phoneCount >= 2 && (

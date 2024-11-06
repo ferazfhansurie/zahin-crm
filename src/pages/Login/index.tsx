@@ -65,6 +65,9 @@ const firebaseConfig = {
       }
     };
   
+    const handleStartFreeTrial = () => {
+      navigate('/register');
+    };
     return (
       <>
         <div
@@ -88,10 +91,7 @@ const firebaseConfig = {
                   <h2 className="text-2xl font-bold text-center intro-x xl:text-3xl xl:text-left">
                     Sign In
                   </h2>
-                  <div className="mt-2 text-center intro-x text-slate-400 xl:hidden">
-                    A few more clicks to sign in to your account. Manage all your
-                    e-commerce accounts in one place
-                  </div>
+                 
                   <div className="mt-8 intro-x">
                     <FormInput
                       type="text"
@@ -122,7 +122,13 @@ const firebaseConfig = {
                     </Button>
                   </div>
                   <div className="mt-5 text-center intro-x xl:mt-8 xl:text-left">
-               
+                  <Button
+                      variant="secondary"
+                      className="w-full px-4 py-3 align-top xl:mr-3"
+                      onClick={handleStartFreeTrial}
+                    >
+                      Start Free Trial
+                    </Button>
                     
                   </div>
                   {error && (

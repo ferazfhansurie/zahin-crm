@@ -68,7 +68,7 @@ function LoadingPage() {
   const [totalChats, setTotalChats] = useState(0);
   const [isProcessingChats, setIsProcessingChats] = useState(false);
   const [currentAction, setCurrentAction] = useState<string | null>(null);
-  const [processingComplete, setProcessingComplete] = useState(false);
+  const [processingComplete, setProcessingComplete] = useState(true);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactsFetched, setContactsFetched] = useState(false);
   const auth = getAuth(app);
@@ -235,7 +235,7 @@ function LoadingPage() {
           ws.current.onmessage = async (event) => {
             const data = JSON.parse(event.data);
             console.log('WebSocket message received:', data);
-
+            setBotStatus(data.status);
             if (data.type === 'auth_status') {
               console.log(`Bot status: ${data.status}`);
               setBotStatus(data.status);
@@ -243,7 +243,8 @@ function LoadingPage() {
                 setQrCodeImage(data.qrCode);
         
               } else if (data.status === 'authenticated' || data.status === 'ready') {
-                setIsProcessingChats(true);
+                navigate('/chat');
+                
               }
             } else if (data.type === 'progress') {
               setCurrentAction(data.action);
@@ -253,6 +254,9 @@ function LoadingPage() {
               if (data.action === 'done_process') {
                 setProcessingComplete(true);
               }
+            }
+            if(data.status === 'authenticated' || data.status === 'ready'){
+              navigate('/chat');
             }
           };
           
@@ -302,6 +306,7 @@ function LoadingPage() {
   }, [contactsFetched, fetchedChats, totalChats, contacts, navigate]);
 
   const fetchContacts = async () => {
+    console.log('fetchContacts triggered');
     try {
       setLoadingPhase('fetching_contacts');
       const user = auth.currentUser;
@@ -427,6 +432,7 @@ const getLoadingMessage = () => {
 )}
 
 useEffect(() => {
+  console.log('useEffect triggered. processingComplete:', processingComplete, 'contactsFetched:', contactsFetched, 'isLoading:', isLoading);
   if (processingComplete && contactsFetched && !isLoading) {
     const timer = setTimeout(() => {
       navigate('/chat');
@@ -616,14 +622,21 @@ useEffect(() => {
             >
               Refresh
             </button>
-            
+            <a
+  href="https://wa.link/pcgo1k"
+  target="_blank"
+  rel="noopener noreferrer"
+  className="mt-4 px-6 py-3 bg-green-500 text-white text-lg font-semibold rounded hover:bg-green-600 transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 w-full inline-block text-center"
+>
+  Need Help?
+</a>
             <button
               onClick={handleLogout}
               className="mt-4 px-6 py-3 bg-red-500 text-white text-lg font-semibold rounded hover:bg-red-600 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 w-full"
             >
               Logout
             </button>
-            
+    
             {error && <div className="mt-2 text-red-500 dark:text-red-400">{error}</div>}
           </>
         )}

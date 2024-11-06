@@ -179,7 +179,7 @@ function Main() {
 
   const generateTimeSlots = (isWeekend: boolean): string[] => {
     const start = 8;
-    const end = isWeekend ? 13 : 20;
+    const end = isWeekend ? 20 : 20;
     const slots: string[] = [];
   
     for (let hour = start; hour < end; hour++) {
