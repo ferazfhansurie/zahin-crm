@@ -429,65 +429,73 @@ const paginatedEmployees = filteredEmployees
             </div>
           </div>
         </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-5">
+        <div className="mt-5">
           {paginatedEmployees.map((employee, index) => (
-            <div key={index} className="bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300">
-              <div className="p-4">
-                <div className="flex items-center justify-between mr-4">
-                  {employee.imageUrl ? (
-                    <img
-                      src={employee.imageUrl}
-                      alt={employee.name}
-                      className="w-20 h-20 rounded-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-20 h-20 rounded-full bg-gray-300 dark:bg-gray-600 flex items-center justify-center">
-                      <Lucide icon="User" className="w-16 h-16 text-gray-500 dark:text-gray-400" />
-                    </div>
-                  )}
-                  <div className="flex-grow ml-4">
-                    <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
-                      {employee.name.length > 15 ? employee.name.charAt(0).toUpperCase() + employee.name.substring(1, 15) + '...' : employee.name.charAt(0).toUpperCase() + employee.name.slice(1)}
-                    </h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {employee.email}
-                    </p>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {employee.role === "1" ? 'Admin' : employee.role === "2" ? 'Sales' : employee.role === "3" ? 'Observer' : employee.role === "4" ? 'Manager' : employee.role === "5" ? 'Supervisor' : 'Other'}
-                      {employee.employeeId && (
-                        <span className={`ml-2 text-md font-semibold ${
-                          employee.role === "1" ? 'text-indigo-600 dark:text-indigo-400' :
-                          employee.role === "2" ? 'text-teal-600 dark:text-teal-400' :
-                          employee.role === "3" ? 'text-purple-600 dark:text-purple-400' :
-                          employee.role === "4" ? 'text-amber-600 dark:text-amber-400' :
-                          employee.role === "5" ? 'text-green-600 dark:text-green-400' :
-                          'text-amber-600 dark:text-amber-400'
-                        }`}>
-                          {employee.employeeId}
+            <div key={index} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 mb-2 p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center flex-1">
+                  {/* Avatar/Initial Section */}
+                  <div className="flex-shrink-0">
+                    {employee.imageUrl ? (
+                      <img
+                        src={employee.imageUrl}
+                        alt={employee.name}
+                        className="w-14 h-14 rounded-full"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-purple-200 dark:bg-purple-800 flex items-center justify-center">
+                        <span className="text-lg font-medium text-purple-700 dark:text-purple-200">
+                          {employee.name.charAt(0).toUpperCase()}
                         </span>
-                      )}
-                    </p>
-                    {/* {employee.group && (
-                      <p className="text-sm text-gray-600 dark:text-gray-400">
-                        Group: {employee.group}
-                      </p>
-                    )} */}
+                      </div>
+                    )}
                   </div>
-                  <div className="flex space-x-2">
-                    {role === "1" || (role !== "1" && employee.email === currentUserEmail) ? (
+
+                  {/* User Info Section */}
+                  <div className="ml-4 flex-1">
+                    <div className="flex items-center">
+                      <div className="font-medium">
+                        <span className="text-blue-500 dark:text-blue-300">{employee.employeeId}</span> <span className="text-gray-900 dark:text-gray-100 capitalize">{employee.name}</span>
+                      </div>
+                    </div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      {employee.email}
+                    </div>
+                  </div>
+
+                  {/* Role/Status Section */}
+                  <div className="flex items-center">
+                    <div className="mr-8">
+                      <div className="text-sm text-gray-600 dark:text-gray-300">
+                        {employee.role === "1" ? 'Administrator' : 
+                        employee.role === "2" ? 'Sales Agent' : 
+                        employee.role === "3" ? 'Observer' : 
+                        employee.role === "4" ? 'Manager' : 
+                        employee.role === "5" ? 'Supervisor' : 'Other'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="flex items-center space-x-2">
+                    {(role === "1" || (role !== "1" && employee.email === currentUserEmail)) && (
                       <button
-                        onClick={() => navigate(`crud-form`, { state: { contactId: employee.id, contact: employee, companyId: companyId || '' } })}
-                        className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900 rounded-full transition-colors duration-300"
-                        aria-label="Edit"
+                        onClick={() => navigate(`crud-form`, { 
+                          state: { 
+                            contactId: employee.id, 
+                            contact: employee, 
+                            companyId: companyId || '' 
+                          } 
+                        })}
+                        className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
                       >
                         <Lucide icon="Pencil" className="w-5 h-5" />
                       </button>
-                    ) : null}
+                    )}
                     {role === "1" && (
                       <button 
                         onClick={() => toggleModal(employee.id)}
-                        className="p-2 text-red-500 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900 rounded-full transition-colors duration-300"
-                        aria-label="Delete"
+                        className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
                       >
                         <Lucide icon="Trash" className="w-5 h-5" />
                       </button>
@@ -498,6 +506,7 @@ const paginatedEmployees = filteredEmployees
             </div>
           ))}
         </div>
+
       </div>
       {isModalOpen && (
         <div 
