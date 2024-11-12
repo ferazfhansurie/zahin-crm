@@ -8104,6 +8104,75 @@ console.log(prompt);
             </div>
           </div>
         </div>
+        <div className="bg-white dark:bg-gray-700 rounded-lg shadow-md overflow-hidden mt-4">
+          <div className="bg-indigo-50 dark:bg-indigo-900 px-4 py-3 border-b border-gray-200 dark:border-gray-600">
+            <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Conversation Actions</h4>
+          </div>
+          <div className="p-4">
+            <div className="mb-4">
+              <div className="flex justify-between items-center">
+                <span className="text-lg text-gray-800 dark:text-gray-200">Assigned Agent</span>
+                <button
+                  onClick={() => handleAddTagToSelectedContacts(userData?.name || '', selectedContact)}
+                  className="text-primary hover:text-primary-dark dark:text-primary-light flex items-center"
+                >
+                  <span className="mr-2">→</span>
+                  Assign to me
+                </button>
+              </div>
+              
+              <div className="relative mt-2">
+                <input
+                  type="text"
+                  placeholder="Search employees..."
+                  value={employeeSearch}
+                  onChange={(e) => setEmployeeSearch(e.target.value)}
+                  className="w-full p-2 mb-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <select
+                  className="w-full p-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary"
+                  value={selectedContact?.tags?.find((tag: string) => employeeList.some(emp => emp.name === tag)) || 'None'}
+                  onChange={(e) => {
+                    if (e.target.value !== 'None') {
+                      // Remove existing employee assignments first
+                      const existingEmployeeTags = selectedContact?.tags?.filter((tag: string) => 
+                        employeeList.some(emp => emp.name === tag)
+                      ) || [];
+                      existingEmployeeTags.forEach((tag: string) => {
+                        handleRemoveTag(selectedContact.id, tag);
+                      });
+                      // Add new assignment
+                      handleAddTagToSelectedContacts(e.target.value, selectedContact);
+                    } else {
+                      // Remove all employee assignments
+                      const existingEmployeeTags = selectedContact?.tags?.filter((tag: string) => 
+                        employeeList.some(emp => emp.name === tag)
+                      ) || [];
+                      existingEmployeeTags.forEach((tag: string) => {
+                        handleRemoveTag(selectedContact.id, tag);
+                      });
+                    }
+                  }}
+                >
+                  <option value="None">None</option>
+                  {employeeList
+                    .filter(employee => {
+                      const matchesSearch = employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                      if (userRole === '4' || userRole === '2') {
+                        return employee.role === '2' && employee.name !== userData?.name && matchesSearch;
+                      }
+                      return employee.name !== userData?.name && matchesSearch;
+                    })
+                    .map((employee) => (
+                      <option key={employee.id} value={employee.name}>
+                        {employee.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
