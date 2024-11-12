@@ -74,6 +74,7 @@ import FollowUps from "../pages/FollowUps";
 import Layout from "../themes";
 import { getAuth } from "firebase/auth";
 import { useState, useEffect } from "react";
+import AIImageResponse from "../pages/AIImageResponse";
 import { ContactsProvider, useContacts } from "../contact"; // Adjust the path as needed
 
 function Router() {
@@ -107,6 +108,7 @@ function Router() {
         { path: "users-layout-2/quick-replies", element: <QuickReplies /> },
         { path: "users-layout-2/automations", element: <Automations /> },
         { path: "users-layout-2/follow-ups", element: <FollowUps /> },
+        { path: "users-layout-2/a-i-image-response", element: <AIImageResponse /> },
         { path: "users-layout-2/builder", element: <Builder /> },
         { path: "dashboard-overview-3", element: <DashboardOverview3 /> },
         { path: "dashboard-overview-4", element: <DashboardOverview4 /> },

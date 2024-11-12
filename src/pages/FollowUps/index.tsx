@@ -5,6 +5,7 @@ import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import Button from "@/components/Base/Button";
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import Select from 'react-select';
 
 interface FollowUp {
     id: string;
@@ -18,6 +19,7 @@ interface FollowUp {
     lastSent?: Date;
     document?: string | null;
     image?: string | null;
+    stopTags: string[];
 }
 
 interface TimeInterval {
@@ -28,6 +30,11 @@ interface TimeInterval {
 
 interface User {
     companyId: string;
+}
+
+interface Tag {
+    id: string;
+    name: string;
 }
 
 const TIME_INTERVALS: TimeInterval[] = [
@@ -62,8 +69,11 @@ const FollowUpsPage: React.FC = () => {
         intervalUnit: 'minutes' as 'minutes' | 'hours' | 'days',
         previousMessageId: null as string | null,
         status: 'active' as const,
-        sequence: 1
+        sequence: 1,
+        stopTags: [] as string[]
     });
+
+    const [tags, setTags] = useState<Tag[]>([]);
 
     // Firebase setup
     const firestore = getFirestore();
@@ -72,6 +82,10 @@ const FollowUpsPage: React.FC = () => {
 
     useEffect(() => {
         fetchFollowUps();
+    }, []);
+
+    useEffect(() => {
+        fetchTags();
     }, []);
 
     const fetchFollowUps = async () => {
@@ -97,18 +111,61 @@ const FollowUpsPage: React.FC = () => {
                 id: doc.id,
                 message: doc.data().message || '',
                 interval: doc.data().interval || 5,
-                intervalUnit: doc.data().intervalUnit || 'minutes' as 'minutes' | 'hours' | 'days',
+                intervalUnit: doc.data().intervalUnit || 'minutes',
                 previousMessageId: doc.data().previousMessageId || null,
                 sequence: doc.data().sequence || 1,
                 status: doc.data().status || 'active',
                 createdAt: doc.data().createdAt.toDate(),
                 document: doc.data().document || null,
                 image: doc.data().image || null,
+                stopTags: doc.data().stopTags || [],
             }));
 
             setFollowUps(fetchedFollowUps);
         } catch (error) {
             console.error('Error fetching follow ups:', error);
+        }
+    };
+
+    const fetchTags = async () => {
+        try {
+            const user = auth.currentUser;
+            if (!user) {
+                console.log('No authenticated user');
+                return;
+            }
+
+            const docUserRef = doc(firestore, 'user', user.email!);
+            const docUserSnapshot = await getDoc(docUserRef);
+            if (!docUserSnapshot.exists()) {
+                console.log('No such document for user!');
+                return;
+            }
+            const userData = docUserSnapshot.data();
+            const companyId = userData.companyId;
+
+            const companyRef = doc(firestore, 'companies', companyId);
+            const companySnapshot = await getDoc(companyRef);
+            if (!companySnapshot.exists()) {
+                console.log('No such document for company!');
+                return;
+            }
+            const companyData = companySnapshot.data();
+
+            let tags: Tag[] = [];
+
+            if (companyData.v2) {
+                const tagsCollectionRef = collection(firestore, `companies/${companyId}/tags`);
+                const tagsSnapshot = await getDocs(tagsCollectionRef);
+                tags = tagsSnapshot.docs.map(doc => ({
+                    id: doc.id,
+                    name: doc.data().name
+                }));
+            }
+
+            setTags(tags);
+        } catch (error) {
+            console.error('Error fetching tags:', error);
         }
     };
 
@@ -152,6 +209,7 @@ const FollowUpsPage: React.FC = () => {
                 createdAt: serverTimestamp(),
                 document: selectedDocument ? await uploadDocument(selectedDocument) : null,
                 image: selectedImage ? await uploadImage(selectedImage) : null,
+                stopTags: newFollowUp.stopTags,
             };
 
             const followUpRef = collection(firestore, `companies/${companyId}/followUps`);
@@ -163,7 +221,8 @@ const FollowUpsPage: React.FC = () => {
                 intervalUnit: 'minutes' as 'minutes' | 'hours' | 'days',
                 previousMessageId: null as string | null,
                 status: 'active' as const,
-                sequence: 1
+                sequence: 1,
+                stopTags: [] as string[]
             });
             setSelectedDocument(null);
             setSelectedImage(null);
@@ -179,7 +238,8 @@ const FollowUpsPage: React.FC = () => {
         interval: number,
         intervalUnit: 'minutes' | 'hours' | 'days',
         previousMessageId: string | null,
-        status: 'active' | 'inactive'
+        status: 'active' | 'inactive',
+        stopTags: string[]
     ) => {
         const user = auth.currentUser;
         if (!user) return;
@@ -198,6 +258,7 @@ const FollowUpsPage: React.FC = () => {
                 intervalUnit,
                 previousMessageId,
                 status,
+                stopTags,
             };
 
             // Handle document upload if a new document is selected
@@ -329,6 +390,111 @@ const FollowUpsPage: React.FC = () => {
                             )}
                         </div>
 
+                        <div className="mb-4">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                Stop Tags
+                            </label>
+                            <Select
+                                isMulti
+                                options={tags.map(tag => ({ value: tag.name, label: tag.name }))}
+                                value={newFollowUp.stopTags.map(tag => ({ value: tag, label: tag }))}
+                                onChange={(selected) => {
+                                    const selectedTags = selected ? selected.map(option => option.value) : [];
+                                    setNewFollowUp({ ...newFollowUp, stopTags: selectedTags });
+                                }}
+                                placeholder="Select tags to stop follow-ups..."
+                                styles={{
+                                    control: (base, state) => ({
+                                        ...base,
+                                        backgroundColor: 'white',
+                                        borderColor: state.isFocused ? '#3b82f6' : '#d1d5db',
+                                        borderRadius: '0.375rem',
+                                        '.dark &': {
+                                            backgroundColor: '#1f2937',
+                                        },
+                                        '&:hover': {
+                                            borderColor: '#3b82f6',
+                                        },
+                                    }),
+                                    menu: (base) => ({
+                                        ...base,
+                                        backgroundColor: 'white',
+                                        '.dark &': {
+                                            backgroundColor: '#1f2937',
+                                        },
+                                        border: '1px solid #d1d5db',
+                                        borderRadius: '0.375rem',
+                                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                                    }),
+                                    option: (base, state) => ({
+                                        ...base,
+                                        backgroundColor: state.isFocused ? '#3b82f6' : 'white',
+                                        '.dark &': {
+                                            backgroundColor: state.isFocused ? '#3b82f6' : '#1f2937',
+                                        },
+                                        color: state.isFocused ? 'white' : 'black',
+                                       
+                                        padding: '0.5rem 1rem',
+                                        cursor: 'pointer',
+                                        '&:hover': {
+                                            backgroundColor: '#60a5fa',
+                                            color: 'white',
+                                        },
+                                    }),
+                                    multiValue: (base) => ({
+                                        ...base,
+                                        backgroundColor: '#e5e7eb',
+                                        '.dark &': {
+                                            backgroundColor: '#4b5563',
+                                        },
+                                        borderRadius: '0.375rem',
+                                        margin: '2px',
+                                    }),
+                                    multiValueLabel: (base) => ({
+                                        ...base,
+                                        color: '#1f2937',
+                                        '.dark &': {
+                                            color: '#f3f4f6',
+                                        },
+                                        padding: '2px 6px',
+                                    }),
+                                    multiValueRemove: (base) => ({
+                                        ...base,
+                                        color: '#4b5563',
+                                        '.dark &': {
+                                            color: '#d1d5db',
+                                        },
+                                        ':hover': {
+                                            backgroundColor: '#ef4444',
+                                            color: 'white',
+                                        },
+                                        borderRadius: '0 0.375rem 0.375rem 0',
+                                    }),
+                                    input: (base) => ({
+                                        ...base,
+                                        color: 'black',
+                                        '.dark &': {
+                                            color: '#d1d5db',
+                                        },
+                                    }),
+                                    placeholder: (base) => ({
+                                        ...base,
+                                        color: '#9ca3af',
+                                    }),
+                                }}
+                                theme={(theme) => ({
+                                    ...theme,
+                                    colors: {
+                                        ...theme.colors,
+                                        primary: '#3b82f6',
+                                        primary75: '#60a5fa',
+                                        primary50: '#93c5fd',
+                                        primary25: '#bfdbfe',
+                                    },
+                                })}
+                            />
+                        </div>
+
                         <div className="flex items-center mb-2">
                             <input
                                 type="file"
@@ -439,6 +605,112 @@ const FollowUpsPage: React.FC = () => {
                                             )}
                                         </div>
                                         <div className="flex items-center mb-2">
+                                            <Select
+                                                isMulti
+                                                options={tags.map(tag => ({ value: tag.name, label: tag.name }))}
+                                                value={followUp.stopTags.map(tag => ({ value: tag, label: tag }))}
+                                                onChange={(selected) => {
+                                                    const selectedTags = selected ? selected.map(option => option.value) : [];
+                                                    const updatedFollowUp = {
+                                                        ...followUp,
+                                                        stopTags: selectedTags
+                                                    };
+                                                    setFollowUps(followUps.map(f => f.id === followUp.id ? updatedFollowUp : f));
+                                                }}
+                                                placeholder="Select tags to stop follow-ups..."
+                                                className="w-full"
+                                                styles={{
+                                                    control: (base, state) => ({
+                                                        ...base,
+                                                        backgroundColor: 'white',
+                                                        borderColor: state.isFocused ? '#3b82f6' : '#d1d5db',
+                                                        borderRadius: '0.375rem',
+                                                        '.dark &': {
+                                                            backgroundColor: '#1f2937',
+                                                        },
+                                                        '&:hover': {
+                                                            borderColor: '#3b82f6',
+                                                        },
+                                                    }),
+                                                    menu: (base) => ({
+                                                        ...base,
+                                                        backgroundColor: 'white',
+                                                        '.dark &': {
+                                                            backgroundColor: '#1f2937',
+                                                        },
+                                                        border: '1px solid #d1d5db',
+                                                        borderRadius: '0.375rem',
+                                                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                                                    }),
+                                                    option: (base, state) => ({
+                                                        ...base,
+                                                        backgroundColor: state.isFocused ? '#3b82f6' : 'white',
+                                                        '.dark &': {
+                                                            backgroundColor: state.isFocused ? '#3b82f6' : '#1f2937',
+                                                        },
+                                                        color: state.isFocused ? 'white' : 'black',
+                                                     
+                                                        padding: '0.5rem 1rem',
+                                                        cursor: 'pointer',
+                                                        '&:hover': {
+                                                            backgroundColor: '#60a5fa',
+                                                            color: 'white',
+                                                        },
+                                                    }),
+                                                    multiValue: (base) => ({
+                                                        ...base,
+                                                        backgroundColor: '#e5e7eb',
+                                                        '.dark &': {
+                                                            backgroundColor: '#4b5563',
+                                                        },
+                                                        borderRadius: '0.375rem',
+                                                        margin: '2px',
+                                                    }),
+                                                    multiValueLabel: (base) => ({
+                                                        ...base,
+                                                        color: '#1f2937',
+                                                        '.dark &': {
+                                                            color: '#f3f4f6',
+                                                        },
+                                                        padding: '2px 6px',
+                                                    }),
+                                                    multiValueRemove: (base) => ({
+                                                        ...base,
+                                                        color: '#4b5563',
+                                                        '.dark &': {
+                                                            color: '#d1d5db',
+                                                        },
+                                                        ':hover': {
+                                                            backgroundColor: '#ef4444',
+                                                            color: 'white',
+                                                        },
+                                                        borderRadius: '0 0.375rem 0.375rem 0',
+                                                    }),
+                                                    input: (base) => ({
+                                                        ...base,
+                                                        color: 'black',
+                                                        '.dark &': {
+                                                            color: '#d1d5db',
+                                                        },
+                                                    }),
+                                                    placeholder: (base) => ({
+                                                        ...base,
+                                                        color: '#9ca3af',
+                                                    }),
+                                                }}
+                                                theme={(theme) => ({
+                                                    ...theme,
+                                                    colors: {
+                                                        ...theme.colors,
+                                                        primary: '#3b82f6',
+                                                        primary75: '#60a5fa',
+                                                        primary50: '#93c5fd',
+                                                        primary25: '#bfdbfe',
+                                                    },
+                                                })}
+                                            />
+                                        </div>
+                                        <div className="flex items-center mb-2">
                                             <div className="flex-1">
                                                 <input
                                                     type="file"
@@ -463,7 +735,15 @@ const FollowUpsPage: React.FC = () => {
                                             <div className="flex-shrink-0 ml-4">
                                                 <button
                                                     className="ml-2 px-4 py-2 bg-green-500 text-white rounded-lg"
-                                                    onClick={() => updateFollowUp(followUp.id, followUp.message, followUp.interval, followUp.intervalUnit, followUp.previousMessageId, followUp.status)}
+                                                    onClick={() => updateFollowUp(
+                                                        followUp.id,
+                                                        followUp.message,
+                                                        followUp.interval,
+                                                        followUp.intervalUnit,
+                                                        followUp.previousMessageId,
+                                                        followUp.status,
+                                                        followUp.stopTags
+                                                    )}
                                                 >
                                                     Save
                                                 </button>
@@ -517,6 +797,21 @@ const FollowUpsPage: React.FC = () => {
                                                     style={{ height: '100vh' }}
                                                     onClick={() => window.open(followUp.document ?? '', '_blank')}
                                                 />
+                                            </div>
+                                        )}
+                                        {followUp.stopTags.length > 0 && (
+                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                <span className="text-sm text-gray-500 dark:text-gray-400">
+                                                    Stops when tagged:
+                                                </span>
+                                                {followUp.stopTags.map((tag) => (
+                                                    <span
+                                                        key={tag}
+                                                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100"
+                                                    >
+                                                        {tag}
+                                                    </span>
+                                                ))}
                                             </div>
                                         )}
                                     </div>

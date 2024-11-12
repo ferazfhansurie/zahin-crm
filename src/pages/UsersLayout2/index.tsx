@@ -249,19 +249,49 @@ function Main() {
 
 const handleDeleteEmployee = async (employeeId: string, companyId: any) => {
   try {
+    // Get the employee's email before deleting
     const employeeRef = doc(firestore, `companies/${companyId}/employee/${employeeId}`);
+    const employeeDoc = await getDoc(employeeRef);
+    const employeeEmail = employeeDoc.data()?.email;
 
+    if (!employeeEmail) {
+      throw new Error('Employee email not found');
+    }
+
+    console.log('Attempting to delete employee:', { employeeId, employeeEmail, companyId });
+
+    // Delete from Firestore
     await deleteDoc(employeeRef);
+    console.log('Successfully deleted from Firestore');
     
+    // Delete from Firebase Auth via your API endpoint
+    console.log('Sending delete request to API for email:', employeeEmail);
+    const response = await axios.delete(`https://mighty-dane-newly.ngrok-free.app/api/auth/user`, {
+      data: { email: employeeEmail }
+    });
+    console.log('API Response:', response.data);
+    
+    if (response.status !== 200) {
+      throw new Error('Failed to delete user from authentication');
+    }
+
+    // Update UI
     const updatedEmployeeList = employeeList.filter(employee => employee.id !== employeeId);
-    
     setEmployeeList(updatedEmployeeList);
-    setResponse('Employee deleted successfully');
     
+    toast.success('Employee deleted successfully');
     toggleModal();
   } catch (error) {
-    setResponse('Failed to delete employee');
     console.error("Error deleting employee:", error);
+    if (axios.isAxiosError(error)) {
+      console.error('API Error details:', {
+        status: error.response?.status,
+        data: error.response?.data
+      });
+      toast.error(`Failed to delete employee: ${error.response?.data?.message || error.message}`);
+    } else {
+      toast.error('Failed to delete employee: ' + (error instanceof Error ? error.message : 'Unknown error'));
+    }
   }
 };
 
@@ -331,15 +361,16 @@ const paginatedEmployees = filteredEmployees
                 </Button>
               )}
             </Link>
-            <Link to="builder">
-              <Button variant="primary" className="mr-2 shadow-md">
-                Prompt Builder
-              </Button>
-            </Link>
+          
             <Link to="quick-replies">
             <Button variant="primary" className="mr-2 shadow-md">
                   Quick Replies
                 </Button>
+            </Link>
+            <Link to="a-i-image-response">
+              <Button variant="primary" className="mr-2 shadow-md">
+                Image Response
+              </Button>
             </Link>
             <Link to="follow-ups">
             <Button variant="primary" className="mr-2 shadow-md">

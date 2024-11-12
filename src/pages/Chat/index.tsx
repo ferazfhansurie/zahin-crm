@@ -548,6 +548,9 @@ function Main() {
   const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
   const [globalSearchPage, setGlobalSearchPage] = useState(1);
   const [totalGlobalSearchPages, setTotalGlobalSearchPages] = useState(1);
+  const [messageUsage, setMessageUsage] = useState<number>(0);
+  const [companyPlan, setCompanyPlan] = useState<string>('');
+
 
   useEffect(() => {
     if (contextContacts.length > 0) {
@@ -1869,6 +1872,22 @@ async function fetchConfigFromDatabase() {
     if (!data) {
       console.error('Company data is missing');
       return;
+    }
+    setCompanyPlan(data.plan || '');
+     // Add message usage tracking for enterprise plan
+     if (data.plan === 'enterprise') {
+      const currentDate = new Date();
+      const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+      
+      const usageRef = doc(firestore, `companies/${companyId}/usage/${monthKey}`);
+      const usageSnapshot = await getDoc(usageRef);
+      
+      if (usageSnapshot.exists()) {
+        const totalMessages = usageSnapshot.data().total_messages || 0;
+        setMessageUsage(totalMessages);
+      } else {
+        setMessageUsage(0);
+      }
     }
     setPhoneCount(data.phoneCount);
     if(data.phoneCount >=2){
@@ -5782,6 +5801,28 @@ console.log(prompt);
           )}
   
         </div>
+        {companyPlan === 'enterprise' && (
+  <div className="px-4 py-2">
+    <div className="flex items-center justify-between mb-1">
+      <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+        Monthly Message Usage
+      </span>
+      <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+        {messageUsage}/500
+      </span>
+    </div>
+    <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
+      <div 
+        className={`h-2.5 rounded-full ${
+          messageUsage > 450 ? 'bg-red-600' : 
+          messageUsage > 350 ? 'bg-yellow-400' : 
+          'bg-green-600'
+        }`}
+        style={{ width: `${Math.min((messageUsage / 500) * 100, 100)}%` }}
+      ></div>
+    </div>
+  </div>
+)}
         <div className="sticky top-20 bg-gray-100 dark:bg-gray-900 p-2">
           <div className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-900">
             {notifications.length > 0 && <NotificationPopup notifications={notifications} />}
@@ -6099,6 +6140,7 @@ console.log(prompt);
 </Dialog>
 
     <div className="flex justify-end space-x-2 w-full mr-2">
+      
     {(
       // Replace or update the existing search input section
       <div className="relative flex-grow">
@@ -6973,15 +7015,37 @@ console.log(prompt);
                           className="p-2 mb-2 rounded bg-gray-200 dark:bg-gray-800 cursor-pointer hover:bg-gray-300 dark:hover:bg-gray-700"
                           onClick={() => {
                             const quotedMessageId = message.text?.context?.quoted_message_id;
+                            const quotedContent = message.text?.context?.quoted_content?.body;
+
+                            // First try by ID if available
                             if (quotedMessageId) {
                               scrollToMessage(quotedMessageId);
-                              // Optionally add visual feedback
                               const element = messageListRef.current?.querySelector(`[data-message-id="${quotedMessageId}"]`);
                               if (element) {
                                 element.classList.add('highlight-message');
                                 setTimeout(() => {
                                   element.classList.remove('highlight-message');
                                 }, 2000);
+                                return;
+                              }
+                            }
+
+                            // If ID not found or no match, search by content
+                            if (quotedContent) {
+                              const matchingMessage = messages.find(msg => 
+                                msg.type === 'text' && 
+                                msg.text?.body === quotedContent
+                              );
+
+                              if (matchingMessage) {
+                                scrollToMessage(matchingMessage.id);
+                                const element = messageListRef.current?.querySelector(`[data-message-id="${matchingMessage.id}"]`);
+                                if (element) {
+                                  element.classList.add('highlight-message');
+                                  setTimeout(() => {
+                                    element.classList.remove('highlight-message');
+                                  }, 2000);
+                                }
                               }
                             }
                           }}
@@ -7778,8 +7842,8 @@ console.log(prompt);
   ) : (
     <div className="hidden md:flex flex-col w-full h-full bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 items-center justify-center">
       <div className="flex flex-col items-center justify-center p-8 rounded-lg shadow-lg bg-gray-100 dark:bg-gray-700">
-        <Lucide icon="MessageSquare" className="w-16 h-16 text-blue-500 dark:text-blue-400 mb-4" />
-        <p className="text-gray-700 dark:text-gray-300 text-lg text-center mb-6">Select a chat to start messaging</p>
+        <Lucide icon="MessageSquare" className="w-16 h-16 text-black dark:text-white mb-4" />
+        <p className="text-black dark:text-white text-lg text-center mb-6">Select a chat to start messaging</p>
         <button
           onClick={openNewChatModal}
           className="bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded transition duration-200"
