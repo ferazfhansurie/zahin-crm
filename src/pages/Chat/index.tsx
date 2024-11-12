@@ -6808,15 +6808,37 @@ console.log(prompt);
                           className="p-2 mb-2 rounded bg-gray-200 dark:bg-gray-800 cursor-pointer hover:bg-gray-300 dark:hover:bg-gray-700"
                           onClick={() => {
                             const quotedMessageId = message.text?.context?.quoted_message_id;
+                            const quotedContent = message.text?.context?.quoted_content?.body;
+
+                            // First try by ID if available
                             if (quotedMessageId) {
                               scrollToMessage(quotedMessageId);
-                              // Optionally add visual feedback
                               const element = messageListRef.current?.querySelector(`[data-message-id="${quotedMessageId}"]`);
                               if (element) {
                                 element.classList.add('highlight-message');
                                 setTimeout(() => {
                                   element.classList.remove('highlight-message');
                                 }, 2000);
+                                return;
+                              }
+                            }
+
+                            // If ID not found or no match, search by content
+                            if (quotedContent) {
+                              const matchingMessage = messages.find(msg => 
+                                msg.type === 'text' && 
+                                msg.text?.body === quotedContent
+                              );
+
+                              if (matchingMessage) {
+                                scrollToMessage(matchingMessage.id);
+                                const element = messageListRef.current?.querySelector(`[data-message-id="${matchingMessage.id}"]`);
+                                if (element) {
+                                  element.classList.add('highlight-message');
+                                  setTimeout(() => {
+                                    element.classList.remove('highlight-message');
+                                  }, 2000);
+                                }
                               }
                             }
                           }}
