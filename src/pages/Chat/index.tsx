@@ -3199,100 +3199,143 @@ const pauseFiveDaysFollowUp = (contact: Contact) => {
   handleBinaTag('pauseFollowUp', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
-
-
-  const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact) => {
-    try {
-      const user = auth.currentUser;
-      if (!user) {
-        console.error('No authenticated user');
-        return;
-      }
-  
-      const docUserRef = doc(firestore, 'user', user.email!);
-      const docUserSnapshot = await getDoc(docUserRef);
-      if (!docUserSnapshot.exists()) {
-        console.error('No such document for user!');
-        return;
-      }
-      const userData = docUserSnapshot.data();
-      const companyId = userData.companyId;
-  
-      console.log(`Adding tag: ${tagName} to contact: ${contact.id}`);
-  
-      // Update contact's tags
-      const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id!);
-      const contactDoc = await getDoc(contactRef);
-  
-      if (!contactDoc.exists()) {
-        console.error(`Contact document does not exist: ${contact.id}`);
-        toast.error(`Failed to add tag: Contact not found`);
-        return;
-      }
-
-      const currentTags = contactDoc.data().tags || [];
-
-      if (!currentTags.includes(tagName)) {
-        await updateDoc(contactRef, {
-          tags: arrayUnion(tagName)
-        });
-  
-        // Update local state
-        setContacts(prevContacts =>
-          prevContacts.map(c =>
-            c.id === contact.id
-              ? { ...c, tags: [...(c.tags || []), tagName] }
-              : c
-          )
-        );
-
-  
-        console.log(`Tag ${tagName} added to contact ${contact.id}`);
-        toast.success(`Tag "${tagName}" added to contact`);
-
-        // Handle specific tags
-        if (tagName === 'Before Quote Follow Up') {
-          addTagBeforeQuote(contact);
-        } else if (tagName === 'Before Quote Follow Up EN') {
-          addTagBeforeQuoteEnglish(contact);
-        } else if (tagName === 'Before Quote Follow Up BM') {
-          addTagBeforeQuoteMalay(contact);
-        } else if (tagName === 'Before Quote Follow Up CN') {
-          addTagBeforeQuoteChinese(contact);
-        } else if (tagName === 'After Quote Follow Up') {
-          addTagAfterQuote(contact);
-        } else if (tagName === 'After Quote Follow Up EN') {
-          addTagAfterQuoteEnglish(contact);
-        } else if (tagName === 'After Quote Follow Up CN') {
-          addTagAfterQuoteChinese(contact);
-        } else if (tagName === 'After Quote Follow Up BM') {
-          addTagAfterQuoteMalay(contact);
-        } else if (tagName === '5 Days Follow Up EN') {
-          fiveDaysFollowUpEnglish(contact);
-        } else if (tagName === '5 Days Follow Up CN') {
-          fiveDaysFollowUpChinese(contact);
-        } else if (tagName === '5 Days Follow Up BM') {
-          fiveDaysFollowUpMalay(contact);
-        } else if (tagName === 'Pause Follow Up') {
-          pauseFiveDaysFollowUp(contact);
-        } else {
-          // Check if the tag is an employee's name and send assignment notification
-          const employee = employeeList.find(emp => emp.name === tagName);
-          if (employee) {
-            await sendAssignmentNotification(tagName, contact);
-          }
-        }
-
-      } else {
-        console.log(`Tag ${tagName} already exists for contact ${contact.id}`);
-        toast.info(`Tag "${tagName}" already exists for this contact`);
-      }
-  
-    } catch (error) {
-      console.error('Error adding tag to contact:', error);
-      toast.error('Failed to add tag to contact');
+const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact) => {
+  try {
+    const user = auth.currentUser;
+    if (!user) {
+      console.error('No authenticated user');
+      return;
     }
-  };
+
+    const docUserRef = doc(firestore, 'user', user.email!);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) {
+      console.error('No such document for user!');
+      return;
+    }
+    const userData = docUserSnapshot.data();
+    const companyId = userData.companyId;
+
+    // Check if tag is a trigger tag by looking up follow-up templates
+    const templatesRef = collection(firestore, 'companies', companyId, 'followUpTemplates');
+    const templatesSnapshot = await getDocs(templatesRef);
+    
+    let matchingTemplate: any = null;
+    templatesSnapshot.forEach(doc => {
+      const template = doc.data();
+      if (template.triggerTags?.includes(tagName) && template.status === 'active') {
+        matchingTemplate = { 
+          id: doc.id, 
+          ...template 
+        };
+      }
+    });
+
+    // Update contact's tags
+    const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id!);
+    const contactDoc = await getDoc(contactRef);
+
+    if (!contactDoc.exists()) {
+      console.error(`Contact document does not exist: ${contact.id}`);
+      toast.error(`Failed to add tag: Contact not found`);
+      return;
+    }
+
+    const currentTags = contactDoc.data().tags || [];
+
+    if (!currentTags.includes(tagName)) {
+      await updateDoc(contactRef, {
+        tags: arrayUnion(tagName)
+      });
+
+      // Update local state
+      setContacts(prevContacts =>
+        prevContacts.map(c =>
+          c.id === contact.id
+            ? { ...c, tags: [...(c.tags || []), tagName] }
+            : c
+        )
+      );
+
+      console.log(`Tag ${tagName} added to contact ${contact.id}`);
+      toast.success(`Tag "${tagName}" added to contact`);
+
+      // If this is a trigger tag, call the follow-up API
+      if (matchingTemplate) {
+        try {
+          const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/tag/followup', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              requestType: 'startTemplate',
+              phone: contact.phone,
+              first_name: contact.contactName || contact.firstName || contact.phone,
+              phoneIndex: contact.phoneIndex || 0,
+              templateId: matchingTemplate.id,
+              idSubstring: companyId
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`Follow-up API error: ${response.statusText}`);
+          }
+
+          console.log('Follow-up template started successfully');
+          toast.success('Follow-up sequence started');
+        } catch (error) {
+          console.error('Error starting follow-up sequence:', error);
+          toast.error('Failed to start follow-up sequence');
+        }
+      }
+
+      // Handle specific tags
+      if (tagName === 'Before Quote Follow Up') {
+        addTagBeforeQuote(contact);
+      } else if (tagName === 'Before Quote Follow Up EN') {
+        addTagBeforeQuoteEnglish(contact);
+      } else if (tagName === 'Before Quote Follow Up BM') {
+        addTagBeforeQuoteMalay(contact);
+      } else if (tagName === 'Before Quote Follow Up CN') {
+        addTagBeforeQuoteChinese(contact);
+      } else if (tagName === 'After Quote Follow Up') {
+        addTagAfterQuote(contact);
+      } else if (tagName === 'After Quote Follow Up EN') {
+        addTagAfterQuoteEnglish(contact);
+      } else if (tagName === 'After Quote Follow Up CN') {
+        addTagAfterQuoteChinese(contact);
+      } else if (tagName === 'After Quote Follow Up BM') {
+        addTagAfterQuoteMalay(contact);
+      } else if (tagName === '5 Days Follow Up EN') {
+        fiveDaysFollowUpEnglish(contact);
+      } else if (tagName === '5 Days Follow Up CN') {
+        fiveDaysFollowUpChinese(contact);
+      } else if (tagName === '5 Days Follow Up BM') {
+        fiveDaysFollowUpMalay(contact);
+      } else if (tagName === 'Pause Follow Up') {
+        pauseFiveDaysFollowUp(contact);
+      } else {
+        // Check if the tag is an employee's name and send assignment notification
+        const employee = employeeList.find(emp => emp.name === tagName);
+        if (employee) {
+          await sendAssignmentNotification(tagName, contact);
+        }
+      }
+
+    } else {
+      console.log(`Tag ${tagName} already exists for contact ${contact.id}`);
+      toast.info(`Tag "${tagName}" already exists for this contact`);
+    }
+
+  } catch (error) {
+    console.error('Error adding tag to contact:', error);
+    toast.error('Failed to add tag to contact');
+  }
+};
+
+
+  
 
 // Add this function to handle adding notifications
 const addNotificationToUser = async (companyId: string, employeeName: string, notificationData: any) => {
@@ -4705,7 +4748,7 @@ const sortContacts = (contacts: Contact[]) => {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
-
+  
   const handleRemoveTag = async (contactId: string, tagName: string) => {
     try {
       const user = auth.currentUser;
@@ -4718,6 +4761,21 @@ const sortContacts = (contacts: Contact[]) => {
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
   
+      // Check if tag is a trigger tag
+      const templatesRef = collection(firestore, 'companies', companyId, 'followUpTemplates');
+      const templatesSnapshot = await getDocs(templatesRef);
+      
+      let matchingTemplate: any = null;
+      templatesSnapshot.forEach(doc => {
+        const template = doc.data();
+        if (template.triggerTags?.includes(tagName) && template.status === 'active') {
+          matchingTemplate = { 
+            id: doc.id, 
+            ...template 
+          };
+        }
+      });
+  
       // Update Firestore
       const contactRef = doc(firestore, 'companies', companyId, 'contacts', contactId);
       const contactSnapshot = await getDoc(contactRef);
@@ -4725,6 +4783,36 @@ const sortContacts = (contacts: Contact[]) => {
       await updateDoc(contactRef, {
         tags: arrayRemove(tagName)
       });
+  
+      // If this was a trigger tag, call the follow-up API to remove the template
+      if (matchingTemplate) {
+        try {
+          const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/tag/followup', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              requestType: 'removeTemplate',
+              phone: contact.phone,
+              first_name: contact.contactName || contact.firstName || contact.phone,
+              phoneIndex: contact.phoneIndex || 0,
+              templateId: matchingTemplate.id,
+              idSubstring: companyId
+            }),
+          });
+  
+          if (!response.ok) {
+            throw new Error(`Follow-up API error: ${response.statusText}`);
+          }
+  
+          console.log('Follow-up template removed successfully');
+          toast.success('Follow-up sequence stopped');
+        } catch (error) {
+          console.error('Error stopping follow-up sequence:', error);
+          toast.error('Failed to stop follow-up sequence');
+        }
+      }
   
       // Check if the removed tag is an employee name
       const isEmployeeTag = employeeList.some(employee => employee.name.toLowerCase() === tagName.toLowerCase());
@@ -4788,9 +4876,9 @@ const sortContacts = (contacts: Contact[]) => {
       } else if (tagName === 'Edward Follow Up') {
         removeTagEdward(contact);
       }
+  
       // Update state
       setContacts(prevContacts => {
-        // For all roles, just update the tags
         return prevContacts.map(contact =>
           contact.id === contactId
             ? { ...contact, tags: contact.tags!.filter(tag => tag !== tagName), assignedTo: undefined }
@@ -4814,6 +4902,7 @@ const sortContacts = (contacts: Contact[]) => {
       toast.error('Failed to remove tag.');
     }
   };
+
 
   const adjustHeight = (textarea: HTMLTextAreaElement, reset = false) => {
     if (reset) {
