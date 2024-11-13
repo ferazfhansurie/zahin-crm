@@ -876,111 +876,112 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
 
   const fetchContactsOverTime = async (filter: 'today' | '7days' | '1month' | '3months' | 'all') => {
     if (!companyId) {
-        console.error('CompanyId is not set. Unable to fetch contacts data.');
-        return;
+      console.error('CompanyId is not set. Unable to fetch contacts data.');
+      return;
     }
-
-    const now = new Date();
-    let startDate: Date;
-
-    let interval: 'hour' | 'day' | 'month';
-
 
     try {
-        const contactsRef = collection(firestore, `companies/${companyId}/contacts`);
-        const contactsSnapshot = await getDocs(contactsRef);
-        
-        let firstContactDate = now;
-        const contactsData: { [date: string]: number } = {};
-        
-        contactsSnapshot.forEach((doc) => {
-          const contactData = doc.data();
-          const dateAdded = contactData.dateAdded ? new Date(contactData.dateAdded) : null;
-  
-          if (dateAdded) {
-            if (dateAdded < firstContactDate) {
-              firstContactDate = dateAdded;
-            }
-          }
-        });
-  
-        switch (filter) {
-          case 'today':
-            startDate = startOfDay(now);
-            interval = 'hour';
-            break;
-          case '7days':
-          case '1month':
-            startDate = filter === '7days' ? subDays(now, 7) : subDays(now, 30);
-            interval = 'day';
-            break;
-          case '3months':
-            startDate = subMonths(now, 3);
-            interval = 'month';
-            break;
-          default: // 'all'
-            startDate = firstContactDate;
-            interval = 'month';
-            break;
-        }
-  
+      const contactsRef = collection(firestore, `companies/${companyId}/contacts`);
+      const contactsSnapshot = await getDocs(contactsRef);
+      
+      const now = new Date();
+      let startDate: Date;
 
-        contactsSnapshot.forEach((doc) => {
-          const contactData = doc.data();
-          const dateAdded = contactData.dateAdded ? new Date(contactData.dateAdded) : null;
-  
+      // Set the start date based on the filter
+      switch (filter) {
+        case 'today':
+          startDate = startOfDay(now);
+          break;
+        case '7days':
+          startDate = subDays(now, 7);
+          break;
+        case '1month':
+          startDate = subDays(now, 30);
+          break;
+        case '3months':
+          startDate = subMonths(now, 3);
+          break;
+        default: // 'all'
+          startDate = subMonths(now, 12); // Default to last 12 months
+          break;
+      }
 
-          if (dateAdded && dateAdded >= startDate && dateAdded <= now) {
-            const dateKey = interval === 'hour' 
-              ? format(dateAdded, 'yyyy-MM-dd HH:00')
-              : format(dateAdded, 'yyyy-MM-dd');
-              contactsData[dateKey] = (contactsData[dateKey] || 0) + 1;
+      // Initialize data structure for counting
+      const contactCounts: { [key: string]: number } = {};
+
+      // Count contacts by date
+      contactsSnapshot.forEach((doc) => {
+        const contactData = doc.data();
+        
+        // Skip if it's not a valid contact document or doesn't have createdAt
+        if (doc.id.startsWith('+') && contactData.createdAt) {
+          // Convert Firebase Timestamp to Date if necessary
+          const createdAt = contactData.createdAt.toDate ? 
+            contactData.createdAt.toDate() : 
+            new Date(contactData.createdAt);
+          
+          if (createdAt >= startDate) {
+            let dateKey;
+            if (filter === 'today') {
+              dateKey = format(createdAt, 'HH:00'); // Group by hour for today
+            } else {
+              dateKey = format(createdAt, 'yyyy-MM-dd'); // Group by day for other periods
             }
-          });
             
-
-          let timePoints: Date[];
-          if (interval === 'hour') {
-            timePoints = eachHourOfInterval({ start: startOfDay(now), end: endOfDay(now) });
-          } else {
-            timePoints = eachDayOfInterval({ start: startDate, end: now });
+            contactCounts[dateKey] = (contactCounts[dateKey] || 0) + 1;
           }
+        }
+      });
 
-          const sortedData = timePoints.map(date => {
-            const dateKey = interval === 'hour'
-              ? format(date, 'yyyy-MM-dd HH:00')
-              : format(date, 'yyyy-MM-dd');
-            return { 
-              date: interval === 'hour' ? format(date, 'HH:mm') : format(date, 'MMM dd'),
-              count: contactsData[dateKey] || 0 
-            };
-          });    
+      // Generate all time points in the range
+      const timePoints = filter === 'today'
+        ? eachHourOfInterval({ start: startDate, end: now })
+        : eachDayOfInterval({ start: startDate, end: now });
 
-        setContactsOverTime(sortedData);
+      // Create the final data array with all time points and calculate running total
+      let runningTotal = 0;
+      const sortedData = timePoints.map(date => {
+        const dateKey = filter === 'today'
+          ? format(date, 'HH:00')
+          : format(date, 'yyyy-MM-dd');
+        
+        runningTotal += contactCounts[dateKey] || 0;
+        
+        return {
+          date: filter === 'today'
+            ? format(date, 'HH:mm')
+            : format(date, 'MMM dd'),
+          count: runningTotal // Use running total instead of individual counts
+        };
+      });
+
+      console.log('Contacts over time data:', sortedData); // Debug log
+      setContactsOverTime(sortedData);
+
     } catch (error) {
-        console.error('Error fetching contacts over time data:', error);
+      console.error('Error fetching contacts over time data:', error);
     }
-};
+  };
 
-// Helper function to get the earliest contact added date
-const getEarliestContactDate = async () => {
+  // Helper function to get the earliest contact added date
+  const getEarliestContactDate = async () => {
     const contactsRef = collection(firestore, `companies/${companyId}/contacts`);
     const contactsSnapshot = await getDocs(contactsRef);
     let earliestDate: Date | null = null;
 
     contactsSnapshot.forEach((doc) => {
-        const contactData = doc.data();
-        const dateAdded = contactData.dateAdded ? new Date(contactData.dateAdded) : null;
+      const contactData = doc.data();
+      const dateAdded = contactData.dateAdded ? new Date(contactData.dateAdded) : null;
 
-        if (dateAdded) {
-            if (!earliestDate || dateAdded < earliestDate) {
-                earliestDate = dateAdded;
-            }
+      if (dateAdded) {
+        if (!earliestDate || dateAdded < earliestDate) {
+          earliestDate = dateAdded;
         }
+      }
     });
 
     return earliestDate;
-};
+  };
 
   useEffect(() => {
     if (companyId) {
@@ -1129,6 +1130,102 @@ const getEarliestContactDate = async () => {
     } as const;
   }, []);
 
+  // Add these new state variables near the top of your component
+  const [blastMessageData, setBlastMessageData] = useState<{
+    labels: string[];
+    datasets: {
+      label: string;
+      data: number[];
+      backgroundColor: string;
+    }[];
+  }>({
+    labels: [],
+    datasets: []
+  });
+
+  // Add this new function to fetch blast message data
+  const fetchBlastMessageData = async () => {
+    try {
+      const auth = getAuth(app);
+      const user = auth.currentUser;
+      if (!user) {
+        console.error('User not authenticated');
+        return;
+      }
+
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.error('User document does not exist');
+        return;
+      }
+
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+
+      // Fetch scheduled messages collection
+      const scheduledMessagesRef = collection(firestore, 'companies', companyId, 'scheduledMessages');
+      const scheduledMessagesSnapshot = await getDocs(scheduledMessagesRef);
+
+      const monthlyData: { [key: string]: { scheduled: number; completed: number; failed: number } } = {};
+
+      scheduledMessagesSnapshot.forEach(doc => {
+        const messageData = doc.data();
+        const scheduledTime = messageData.scheduledTime?.toDate() || new Date(messageData.scheduledTime);
+        const monthKey = format(scheduledTime, 'MMM yyyy');
+        const status = messageData.status;
+
+        if (!monthlyData[monthKey]) {
+          monthlyData[monthKey] = { scheduled: 0, completed: 0, failed: 0 };
+        }
+
+        // Count messages based on their status
+        if (status === 'completed') {
+          monthlyData[monthKey].completed++;
+        } else if (status === 'failed') {
+          monthlyData[monthKey].failed++;
+        }
+        monthlyData[monthKey].scheduled++; // Count all messages as scheduled
+      });
+
+      const labels = Object.keys(monthlyData).sort((a, b) => {
+        return new Date(a).getTime() - new Date(b).getTime();
+      });
+      const scheduledData = labels.map(key => monthlyData[key].scheduled);
+      const completedData = labels.map(key => monthlyData[key].completed);
+      const failedData = labels.map(key => monthlyData[key].failed);
+
+      setBlastMessageData({
+        labels,
+        datasets: [
+          {
+            label: 'Scheduled',
+            data: scheduledData,
+            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+          },
+          {
+            label: 'Completed',
+            data: completedData,
+            backgroundColor: 'rgba(75, 192, 192, 0.6)',
+          },
+          {
+            label: 'Failed',
+            data: failedData,
+            backgroundColor: 'rgba(255, 99, 132, 0.6)',
+          },
+        ],
+      });
+
+    } catch (error) {
+      console.error('Error fetching scheduled messages data:', error);
+    }
+  };
+
+  // Add useEffect to fetch blast message data
+  useEffect(() => {
+    fetchBlastMessageData();
+  }, []);
+
   const dashboardCards = [
     {
       id: 'kpi',
@@ -1183,13 +1280,13 @@ const getEarliestContactDate = async () => {
       }
     },
     {
-      id: 'monthly-spend',
-      title: 'Monthly Spend',
+      id: 'blast-messages',
+      title: 'Scheduled Messages Analytics',
       content: (
         <div className="h-full flex flex-col">
-          {monthlySpendData.labels.length > 0 ? (
+          {blastMessageData.labels.length > 0 ? (
             <Bar 
-              data={monthlySpendData} 
+              data={blastMessageData} 
               options={{ 
                 responsive: true, 
                 maintainAspectRatio: false,
@@ -1198,7 +1295,7 @@ const getEarliestContactDate = async () => {
                     beginAtZero: true,
                     title: {
                       display: true,
-                      text: 'Price (MYR)',
+                      text: 'Number of Messages',
                     },
                   },
                   x: {
@@ -1208,29 +1305,45 @@ const getEarliestContactDate = async () => {
                     },
                   },
                 },
+                plugins: {
+                  title: {
+                    display: true,
+                    text: 'Monthly Scheduled Message Statistics',
+                  },
+                  tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                  },
+                },
               }} 
             />
           ) : (
-            <p className="text-center text-gray-600 dark:text-gray-400">No data available</p>
+            <p className="text-center text-gray-600 dark:text-gray-400">No scheduled message data available</p>
           )}
-         <div className="mt-4">
-      {monthlySpendData.labels.length > 0 && (
-        <>
-          <p className="text-sm text-gray-600 dark:text-gray-400">This Month's Tokens:</p>
-          <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-            {Math.round(monthlySpendData.datasets[0].data[monthlySpendData.datasets[0].data.length - 1] / 0.003 * 1000).toLocaleString()}
-          </p>
-          <p className="text-sm text-gray-600 dark:text-gray-400">This Month's Price:</p>
-          <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-            ${monthlySpendData.datasets[0].data[monthlySpendData.datasets[0].data.length - 1].toFixed(2)}
-          </p>
-          <p className="text-sm text-gray-600 dark:text-gray-400">Calculation:</p>
-          <p className="text-md text-gray-700 dark:text-gray-300">
-            ({Math.round(monthlySpendData.datasets[0].data[monthlySpendData.datasets[0].data.length - 1] / 0.003 * 1000).toLocaleString()} tokens / 1000) * $0.003 per 1k tokens
-          </p>
-        </>
-      )}
-    </div>
+          <div className="mt-4">
+            {blastMessageData.labels.length > 0 && (
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Total Scheduled:</p>
+                  <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                    {blastMessageData.datasets[0].data.reduce((a, b) => a + b, 0).toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Total Completed:</p>
+                  <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                    {blastMessageData.datasets[1].data.reduce((a, b) => a + b, 0).toLocaleString()}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Total Failed:</p>
+                  <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                    {blastMessageData.datasets[2].data.reduce((a, b) => a + b, 0).toLocaleString()}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )
     }
@@ -1302,15 +1415,15 @@ const getEarliestContactDate = async () => {
                         )}
                       </div>
                     </div>
-                  ) :  card.id === 'monthly-spend' ? (
+                  ) :  card.id === 'blast-messages' ? (
                     <div>
                     <div className="mb-4">
                       {/* You can add any controls or filters here if needed */}
                     </div>
                     <div className="h-64">
-                      {monthlySpendData.labels.length > 0 ? (
+                      {blastMessageData.labels.length > 0 ? (
                         <Bar 
-                          data={monthlySpendData} 
+                          data={blastMessageData} 
                           options={{ 
                             responsive: true, 
                             maintainAspectRatio: false,
@@ -1319,7 +1432,7 @@ const getEarliestContactDate = async () => {
                                 beginAtZero: true,
                                 title: {
                                   display: true,
-                                  text: 'Price (MYR)',
+                                  text: 'Number of Messages',
                                 },
                               },
                               x: {
@@ -1329,28 +1442,44 @@ const getEarliestContactDate = async () => {
                                 },
                               },
                             },
+                            plugins: {
+                              title: {
+                                display: true,
+                                text: 'Monthly Scheduled Message Statistics',
+                              },
+                              tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                              },
+                            },
                           }} 
                         />
                       ) : (
-                        <div className="text-center text-gray-600 dark:text-gray-400">No monthly spend data available</div>
+                        <div className="text-center text-gray-600 dark:text-gray-400">No scheduled message data available</div>
                       )}
                     </div>
                     <div className="mt-4">
-      {monthlySpendData.labels.length > 0 && (
-        <>
-          <p className="text-sm text-gray-600 dark:text-gray-400">This Month's Tokens:</p>
-          <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-            {Math.round(monthlySpendData.datasets[0].data[monthlySpendData.datasets[0].data.length - 1] / 0.003 * 1000).toLocaleString()}
-          </p>
-          <p className="text-sm text-gray-600 dark:text-gray-400">This Month's Price:</p>
-          <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-            RM {monthlySpendData.datasets[0].data[monthlySpendData.datasets[0].data.length - 1].toFixed(2)}
-          </p>
-          <p className="text-sm text-gray-600 dark:text-gray-400">Calculation:</p>
-          <p className="text-md text-gray-700 dark:text-gray-300">
-            ({Math.round(monthlySpendData.datasets[0].data[monthlySpendData.datasets[0].data.length - 1] / 0.003 * 1000).toLocaleString()} tokens / 1000) * $0.003 per 1k tokens
-          </p>
-        </>
+      {blastMessageData.labels.length > 0 && (
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Total Scheduled:</p>
+            <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+              {blastMessageData.datasets[0].data.reduce((a, b) => a + b, 0).toLocaleString()}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Total Completed:</p>
+            <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+              {blastMessageData.datasets[1].data.reduce((a, b) => a + b, 0).toLocaleString()}
+            </p>
+          </div>
+          <div>
+            <p className="text-sm text-gray-600 dark:text-gray-400">Total Failed:</p>
+            <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+              {blastMessageData.datasets[2].data.reduce((a, b) => a + b, 0).toLocaleString()}
+            </p>
+          </div>
+        </div>
       )}
     </div>
                   </div>
