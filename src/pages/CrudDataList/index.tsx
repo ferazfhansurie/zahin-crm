@@ -2178,10 +2178,24 @@ const sendBlastMessage = async () => {
         const batchContacts = validContacts.slice(i, i + batchSize);
   
         for (const contact of batchContacts) {
-          // Format phone number (remove any non-digit characters and ensure it starts with country code)
-          const phoneNumber = contact.phone.replace(/\D/g, '');
-          if (!phoneNumber.match(/^\d{10,15}$/)) {
-            console.warn('Invalid phone number:', contact.phone);
+           // Format phone number (remove any non-digit characters)
+          let phoneNumber = contact.phone.replace(/\D/g, '');
+          
+          // Add proper prefix based on the starting digits
+          if (phoneNumber.startsWith('60')) {
+            phoneNumber = '+' + phoneNumber;
+          } else if (phoneNumber.startsWith('0')) {
+            phoneNumber = '+6' + phoneNumber;
+          } else if (phoneNumber.startsWith('1')) {
+            phoneNumber = '+60' + phoneNumber;
+          } else {
+            console.warn('Invalid phone number format:', contact.phone);
+            continue;
+          }
+
+          // Validate final phone number format
+          if (!phoneNumber.match(/^\+60\d{9,10}$/)) {
+            console.warn('Invalid Malaysian phone number:', phoneNumber);
             continue;
           }
   
