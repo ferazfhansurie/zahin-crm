@@ -5123,35 +5123,61 @@ const sortContacts = (contacts: Contact[]) => {
     checkBotsStatus();
   }, [contacts]);
 
+  const [companyStopBot, setCompanyStopBot] = useState(false);
 
- 
+  useEffect(() => {
+    const fetchCompanyStopBot = async () => {
+      try {
+        const user = auth.currentUser;
+        if (!user) return;
 
+        const docUserRef = doc(firestore, 'user', user.email!);
+        const docUserSnapshot = await getDoc(docUserRef);
+        if (!docUserSnapshot.exists()) return;
+
+        const userData = docUserSnapshot.data();
+        const companyId = userData.companyId;
+
+        const companyRef = doc(firestore, 'companies', companyId);
+        const companySnapshot = await getDoc(companyRef);
+        if (!companySnapshot.exists()) return;
+
+        const companyData = companySnapshot.data();
+        setCompanyStopBot(companyData.stopbot || false);
+      } catch (error) {
+        console.error('Error fetching company stopbot status:', error);
+      }
+    };
+
+    fetchCompanyStopBot();
+  }, []); 
 
   const toggleBot = async () => {
-    if (userRole === "3") {
-      toast.error("You don't have permission to control the bot.");
-      return;
-    }
     try {
       const user = auth.currentUser;
       if (!user) return;
-
+  
       const docUserRef = doc(firestore, 'user', user.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) return;
-
+  
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-
+  
       const companyRef = doc(firestore, 'companies', companyId);
+      
+      // Toggle the stopbot value
+      const newStopBotValue = !companyStopBot;
       await updateDoc(companyRef, {
-        stopbot: !stopbot
+        stopbot: newStopBotValue
       });
-      setStopbot(!stopbot);
-      toast.success(`Bot ${stopbot ? 'activated' : 'deactivated'} successfully!`);
+  
+      setCompanyStopBot(newStopBotValue);
+      toast.success(`Bot ${newStopBotValue ? 'disabled' : 'enabled'} successfully`);
+  
     } catch (error) {
-      console.error('Error toggling bot:', error);
-      toast.error('Failed to toggle bot status.');
+      console.error('Error toggling bot status:', error);
+      toast.error('Failed to toggle bot status');
     }
   };
 
@@ -6225,15 +6251,15 @@ console.log(prompt);
     {isAssistantAvailable && (
       <button 
         className={`flex items-center justify-start p-2 !box ${
-          stopbot ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'
+          companyStopBot ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'
         } ${userRole === "3" ? 'opacity-50 cursor-not-allowed' : ''}`} 
         onClick={toggleBot}
         disabled={userRole === "3"}
       >
         <Lucide 
-          icon={stopbot ? 'PowerOff' : 'Power'} 
+          icon={companyStopBot ? 'PowerOff' : 'Power'} 
           className={`w-5 h-5 ${
-            stopbot ? 'text-red-500' : 'text-green-500'
+            companyStopBot ? 'text-red-500' : 'text-green-500'
           }`}
         />                
       </button>

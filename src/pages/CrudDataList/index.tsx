@@ -138,6 +138,25 @@ function Main() {
     count?: number;
     v2?:boolean;
     whapiToken?:string;
+    processedMessages?: {
+      chatId: string;
+      message: string;
+      contactData?: {
+        contactName: string;
+        firstName: string;
+        lastName: string;
+        email: string;
+        phone: string;
+        vehicleNumber: string;
+        branch: string;
+        expiryDate: string;
+        ic: string;
+      };
+    }[];
+    templateData?: {
+      hasPlaceholders: boolean;
+      placeholdersUsed: string[];
+    };
   }
   
   const [deleteConfirmationModal, setDeleteConfirmationModal] = useState(false);
@@ -2180,10 +2199,24 @@ const sendBlastMessage = async () => {
         const batchContacts = validContacts.slice(i, i + batchSize);
   
         for (const contact of batchContacts) {
-          // Format phone number (remove any non-digit characters and ensure it starts with country code)
-          const phoneNumber = contact.phone.replace(/\D/g, '');
-          if (!phoneNumber.match(/^\d{10,15}$/)) {
-            console.warn('Invalid phone number:', contact.phone);
+           // Format phone number (remove any non-digit characters)
+          let phoneNumber = contact.phone.replace(/\D/g, '');
+          
+          // Add proper prefix based on the starting digits
+          if (phoneNumber.startsWith('60')) {
+            phoneNumber = '+' + phoneNumber;
+          } else if (phoneNumber.startsWith('0')) {
+            phoneNumber = '+6' + phoneNumber;
+          } else if (phoneNumber.startsWith('1')) {
+            phoneNumber = '+60' + phoneNumber;
+          } else {
+            console.warn('Invalid phone number format:', contact.phone);
+            continue;
+          }
+
+          // Validate final phone number format
+          if (!phoneNumber.match(/^\+60\d{9,10}$/)) {
+            console.warn('Invalid Malaysian phone number:', phoneNumber);
             continue;
           }
   
@@ -2504,13 +2537,12 @@ const sendBlastMessage = async () => {
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
 
-      // Upload new media file if selected
+      // Upload new media/document files (existing code)
       let newMediaUrl = currentScheduledMessage.mediaUrl;
       if (editMediaFile) {
         newMediaUrl = await uploadFile(editMediaFile);
       }
 
-      // Upload new document file if selected
       let newDocumentUrl = currentScheduledMessage.documentUrl;
       let newFileName = currentScheduledMessage.fileName;
       if (editDocumentFile) {
@@ -2518,11 +2550,19 @@ const sendBlastMessage = async () => {
         newFileName = editDocumentFile.name;
       }
 
-      const updatedMessages = currentScheduledMessage.chatIds.map(chatId => {
-        const contact = contacts.find(c => c.phone === chatId.split('@')[0]);
-        let personalizedMessage = blastMessage;
-        if (contact) {
-          personalizedMessage = personalizedMessage
+      // Process messages for each contact
+      const processedMessages = await Promise.all(
+        currentScheduledMessage.chatIds.map(async (chatId) => {
+          const phoneNumber = chatId.split('@')[0];
+          const contact = contacts.find(c => c.phone?.replace(/\D/g, '') === phoneNumber);
+          
+          if (!contact) {
+            console.warn(`No contact found for chatId: ${chatId}`);
+            return { chatId, message: blastMessage }; // Return unprocessed message as fallback
+          }
+  
+          // Process message with contact data using the NEW blast message
+          let processedMessage = blastMessage
             .replace(/@{contactName}/g, contact.contactName || '')
             .replace(/@{firstName}/g, contact.contactName?.split(' ')[0] || '')
             .replace(/@{lastName}/g, contact.lastName || '')
@@ -2532,39 +2572,39 @@ const sendBlastMessage = async () => {
             .replace(/@{branch}/g, contact.branch || '')
             .replace(/@{expiryDate}/g, contact.expiryDate || '')
             .replace(/@{ic}/g, contact.ic || '');
-        }
-        return {
-          chatId,
-          message: personalizedMessage
-        };
-      });
+  
+          return {
+            chatId,
+            message: processedMessage
+          };
+        })
+      );
 
       // Prepare the updated message data
       const updatedMessageData = {
         ...currentScheduledMessage,
-        chatIds: currentScheduledMessage.chatIds,
-      message: blastMessage,
-      messages: currentScheduledMessage.chatIds.map(chatId => ({
-        chatId,
-        message: blastMessage.replace(/@{contactName}/g, '') // You might want to replace this with actual contact names if available
-      })),
-      batchQuantity: currentScheduledMessage.batchQuantity || 10,
-      companyId: companyId,
-      createdAt: currentScheduledMessage.createdAt || Timestamp.now(),
-      documentUrl: newDocumentUrl,
-      fileName: newFileName,
-      mediaUrl: newMediaUrl,
-      mimeType: editMediaFile ? editMediaFile.type : (editDocumentFile ? editDocumentFile.type : null),
-      repeatInterval: currentScheduledMessage.repeatInterval || 0,
-      repeatUnit: currentScheduledMessage.repeatUnit || 'days',
-      scheduledTime: currentScheduledMessage.scheduledTime,
-      status: currentScheduledMessage.status || 'scheduled',
-      v2: currentScheduledMessage.v2 || false,
-      whapiToken: currentScheduledMessage.whapiToken || null,
+        message: blastMessage, // Store the new template
+        messages: processedMessages, // Store the newly processed messages
+        templateData: {
+          hasPlaceholders: blastMessage.includes('@{'),
+          placeholdersUsed: [...blastMessage.matchAll(/@{([^}]+)}/g)].map(match => match[1])
+        },
+        batchQuantity: currentScheduledMessage.batchQuantity || 10,
+        companyId,
+        createdAt: currentScheduledMessage.createdAt || Timestamp.now(),
+        documentUrl: newDocumentUrl,
+        fileName: newFileName,
+        mediaUrl: newMediaUrl,
+        mimeType: editMediaFile ? editMediaFile.type : (editDocumentFile ? editDocumentFile.type : null),
+        repeatInterval: currentScheduledMessage.repeatInterval || 0,
+        repeatUnit: currentScheduledMessage.repeatUnit || 'days',
+        scheduledTime: currentScheduledMessage.scheduledTime,
+        status: 'scheduled',
+        v2: currentScheduledMessage.v2 || false,
+        whapiToken: currentScheduledMessage.whapiToken || null,
       };
 
-      console.log('Request URL:', `https://mighty-dane-newly.ngrok-free.app/api/schedule-message/${companyId}/${currentScheduledMessage.id}`);
-      console.log('Request data:', JSON.stringify(updatedMessageData, null, 2));
+      console.log('Updating scheduled message with data:', updatedMessageData);
 
       // Send PUT request to update the scheduled message
       const response = await axios.put(
@@ -2573,13 +2613,20 @@ const sendBlastMessage = async () => {
       );
 
       if (response.status === 200) {
-        // Update the local state
-        setScheduledMessages(scheduledMessages.map(msg => 
-          msg.id === currentScheduledMessage.id 
-            ? { ...updatedMessageData, mimeType: updatedMessageData.mimeType || undefined } as ScheduledMessage
-            : msg
-        ));
-  
+        // Update local state
+        setScheduledMessages(prev => 
+          prev.map(msg => 
+            msg.id === currentScheduledMessage.id 
+              ? { 
+                  ...msg, 
+                  ...updatedMessageData, 
+                  message: blastMessage, // Use the edited message content
+                  mimeType: updatedMessageData.mimeType || undefined 
+                } as ScheduledMessage
+              : msg
+          )
+        );
+
         setEditScheduledMessageModal(false);
         setEditMediaFile(null);
         setEditDocumentFile(null);
@@ -2590,10 +2637,40 @@ const sendBlastMessage = async () => {
       } else {
         throw new Error("Failed to update scheduled message");
       }
+
     } catch (error) {
       console.error("Error updating scheduled message:", error);
       toast.error("Failed to update scheduled message.");
     }
+  };
+
+  // Add this function to process messages when they're displayed
+  const processScheduledMessage = (message: ScheduledMessage) => {
+    if (!message.templateData?.hasPlaceholders) {
+      return message.message;
+    }
+
+    // If the message has processed messages, use those
+    if (message.processedMessages && message.processedMessages.length > 0) {
+      // Return a summary or the first processed message
+      return `Template: ${message.message}\nExample: ${message.processedMessages[0].message}`;
+    }
+
+    return message.message;
+  };
+
+  // Update the display of scheduled messages to use the processed version
+  const renderScheduledMessage = (message: ScheduledMessage) => {
+    return (
+      <p className="text-gray-800 dark:text-gray-200 mb-2 font-medium text-md line-clamp-2">
+        {processScheduledMessage(message)}
+        {message.templateData?.hasPlaceholders && (
+          <span className="text-xs text-gray-500 dark:text-gray-400 ml-2">
+            (Uses placeholders)
+          </span>
+        )}
+      </p>
+    );
   };
 
   // Add this function to format the date
@@ -3216,7 +3293,7 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
                       {showPlaceholders && (
                         <div className="mt-2 space-y-1">
                           <p className="text-sm text-gray-600 dark:text-gray-400">Click to insert:</p>
-                          {['contactName', 'firstName', 'lastName', 'email', 'phone'].map(field => (
+                          {['contactName', 'firstName', 'lastName', 'email', 'phone', 'vehicleNumber', 'branch', 'expiryDate', 'ic'].map(field => (
                             <button
                               key={field}
                               type="button"
