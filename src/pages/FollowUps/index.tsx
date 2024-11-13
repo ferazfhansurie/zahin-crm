@@ -7,6 +7,22 @@ import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import Select from 'react-select';
 
+interface FollowUpTemplate {
+    id: string;
+    name: string;
+    status: 'active' | 'inactive';
+    createdAt: Date;
+    startTime: Date;
+    isCustomStartTime: boolean;
+    triggerTags?: string[];  // Add this line
+}
+
+// Add Tag interface
+interface Tag {
+    id: string;
+    name: string;
+}
+
 interface FollowUp {
     id: string;
     message: string;
@@ -18,7 +34,6 @@ interface FollowUp {
     createdAt: Date;
     document?: string | null;
     image?: string | null;
-    stopTags: string[];
 }
 
 
@@ -135,8 +150,7 @@ const FollowUpsPage: React.FC = () => {
         intervalUnit: 'minutes' as 'minutes' | 'hours' | 'days',
         previousMessageId: null as string | null,
         status: 'active' as const,
-        sequence: 1,
-        stopTags: [] as string[]
+        sequence: 1
     });
 
     const [newMessage, setNewMessage] = useState<{
@@ -170,8 +184,6 @@ const FollowUpsPage: React.FC = () => {
             numbers: []  // Initialize empty string array
         }
     });
-
-    const [tags, setTags] = useState<Tag[]>([]);
 
     // Firebase setup
     const firestore = getFirestore();
@@ -210,61 +222,18 @@ const FollowUpsPage: React.FC = () => {
                 id: doc.id,
                 message: doc.data().message || '',
                 interval: doc.data().interval || 5,
-                intervalUnit: doc.data().intervalUnit || 'minutes',
+                intervalUnit: doc.data().intervalUnit || 'minutes' as 'minutes' | 'hours' | 'days',
                 previousMessageId: doc.data().previousMessageId || null,
                 sequence: doc.data().sequence || 1,
                 status: doc.data().status || 'active',
                 createdAt: doc.data().createdAt.toDate(),
                 document: doc.data().document || null,
                 image: doc.data().image || null,
-                stopTags: doc.data().stopTags || [],
             }));
 
             setFollowUps(fetchedFollowUps);
         } catch (error) {
             console.error('Error fetching follow ups:', error);
-        }
-    };
-
-    const fetchTags = async () => {
-        try {
-            const user = auth.currentUser;
-            if (!user) {
-                console.log('No authenticated user');
-                return;
-            }
-
-            const docUserRef = doc(firestore, 'user', user.email!);
-            const docUserSnapshot = await getDoc(docUserRef);
-            if (!docUserSnapshot.exists()) {
-                console.log('No such document for user!');
-                return;
-            }
-            const userData = docUserSnapshot.data();
-            const companyId = userData.companyId;
-
-            const companyRef = doc(firestore, 'companies', companyId);
-            const companySnapshot = await getDoc(companyRef);
-            if (!companySnapshot.exists()) {
-                console.log('No such document for company!');
-                return;
-            }
-            const companyData = companySnapshot.data();
-
-            let tags: Tag[] = [];
-
-            if (companyData.v2) {
-                const tagsCollectionRef = collection(firestore, `companies/${companyId}/tags`);
-                const tagsSnapshot = await getDocs(tagsCollectionRef);
-                tags = tagsSnapshot.docs.map(doc => ({
-                    id: doc.id,
-                    name: doc.data().name
-                }));
-            }
-
-            setTags(tags);
-        } catch (error) {
-            console.error('Error fetching tags:', error);
         }
     };
 
@@ -308,7 +277,6 @@ const FollowUpsPage: React.FC = () => {
                 createdAt: serverTimestamp(),
                 document: selectedDocument ? await uploadDocument(selectedDocument) : null,
                 image: selectedImage ? await uploadImage(selectedImage) : null,
-                stopTags: newFollowUp.stopTags,
             };
 
             const followUpRef = collection(firestore, `companies/${companyId}/followUps`);
@@ -320,8 +288,7 @@ const FollowUpsPage: React.FC = () => {
                 intervalUnit: 'minutes' as 'minutes' | 'hours' | 'days',
                 previousMessageId: null as string | null,
                 status: 'active' as const,
-                sequence: 1,
-                stopTags: [] as string[]
+                sequence: 1
             });
             setSelectedDocument(null);
             setSelectedImage(null);
@@ -337,8 +304,7 @@ const FollowUpsPage: React.FC = () => {
         interval: number,
         intervalUnit: 'minutes' | 'hours' | 'days',
         previousMessageId: string | null,
-        status: 'active' | 'inactive',
-        stopTags: string[]
+        status: 'active' | 'inactive'
     ) => {
         const user = auth.currentUser;
         if (!user) return;
@@ -357,7 +323,6 @@ const FollowUpsPage: React.FC = () => {
                 intervalUnit,
                 previousMessageId,
                 status,
-                stopTags,
             };
 
             // Handle document upload if a new document is selected
@@ -406,193 +371,656 @@ const FollowUpsPage: React.FC = () => {
         // Replace message sorting with createdAt sorting
         .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
 
+    // Add new template
+    const addTemplate = async () => {
+        if (!newTemplate.name.trim()) return;
+    
+        try {
+            const user = auth.currentUser;
+            if (!user) return;
+    
+            const userRef = doc(firestore, 'user', user.email!);
+            const userData = (await getDoc(userRef)).data() as User;
+            
+            let startTime: Date;
+            switch (newTemplate.startType) {
+                case 'immediate':
+                    startTime = new Date();
+                    break;
+                case 'delayed':
+                    startTime = new Date();
+                    startTime.setHours(startTime.getHours() + 24);
+                    break;
+                case 'custom':
+                    startTime = new Date(customStartTime);
+                    break;
+                default:
+                    startTime = new Date();
+            }
+            
+        const templateData = {
+            name: newTemplate.name,
+            status: 'active',
+            createdAt: serverTimestamp(),
+            startTime: startTime,
+            isCustomStartTime: newTemplate.startType === 'custom',
+            triggerTags: newTemplate.triggerTags
+        };
+
+        const templateRef = collection(firestore, `companies/${userData.companyId}/followUpTemplates`);
+        await addDoc(templateRef, templateData);
+        
+        setIsAddingTemplate(false);
+        setNewTemplate({
+            name: '',
+            triggerTags: [],
+            startType: 'immediate'
+        });
+        setCustomStartTime('');
+        fetchTemplates();
+        toast.success('Template created successfully');
+    } catch (error) {
+        console.error('Error adding template:', error);
+        toast.error('Failed to create template');
+    }
+};
+
+    const updateMessage = async (messageId: string) => {
+        if (!editingMessage || !selectedTemplate) return;
+
+        try {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            const userRef = doc(firestore, 'user', user.email!);
+            const userData = (await getDoc(userRef)).data() as User;
+            
+            // Update: Use subcollection path
+            const messageRef = doc(firestore, 
+                `companies/${userData.companyId}/followUpTemplates/${selectedTemplate}/messages`, 
+                messageId
+            );
+            
+            const updateData: Partial<FollowUpMessage> = {
+                message: editingMessage.message,
+                delayAfter: editingMessage.delayAfter,
+            };
+
+            if (selectedDocument) {
+                updateData.document = await uploadDocument(selectedDocument);
+            }
+            if (selectedImage) {
+                updateData.image = await uploadImage(selectedImage);
+            }
+
+            await updateDoc(messageRef, updateData);
+            
+            setIsEditingMessage(null);
+            setEditingMessage(null);
+            setSelectedDocument(null);
+            setSelectedImage(null);
+            
+            fetchMessages(selectedTemplate);
+        } catch (error) {
+            console.error('Error updating message:', error);
+        }
+    };
+    
+    const deleteMessage = async (messageId: string) => {
+        if (!selectedTemplate) return;
+
+        try {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            const userRef = doc(firestore, 'user', user.email!);
+            const userData = (await getDoc(userRef)).data() as User;
+            
+            // Update: Use subcollection path
+            const messageRef = doc(firestore, 
+                `companies/${userData.companyId}/followUpTemplates/${selectedTemplate}/messages`, 
+                messageId
+            );
+            await deleteDoc(messageRef);
+            
+            fetchMessages(selectedTemplate);
+        } catch (error) {
+            console.error('Error deleting message:', error);
+        }
+    };
+
+    const deleteTemplate = async (templateId: string) => {
+        try {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            const userRef = doc(firestore, 'user', user.email!);
+            const userData = (await getDoc(userRef)).data() as User;
+            
+            // Delete all messages in the subcollection first
+            const messagesRef = collection(firestore, 
+                `companies/${userData.companyId}/followUpTemplates/${templateId}/messages`
+            );
+            const messagesSnapshot = await getDocs(messagesRef);
+            
+            const deletionPromises = messagesSnapshot.docs.map(doc => 
+                deleteDoc(doc.ref)
+            );
+            await Promise.all(deletionPromises);
+
+            // Then delete the template
+            const templateRef = doc(firestore, 
+                `companies/${userData.companyId}/followUpTemplates`, 
+                templateId
+            );
+            await deleteDoc(templateRef);
+
+            // Clear selected template if it was the one deleted
+            if (selectedTemplate === templateId) {
+                setSelectedTemplate(null);
+                setMessages([]);
+            }
+            
+            // Refresh templates list
+            fetchTemplates();
+            toast.success('Template deleted successfully');
+        } catch (error) {
+            console.error('Error deleting template:', error);
+            toast.error('Failed to delete template');
+        }
+    };
+
+    // Fetch templates
+    const fetchTemplates = async () => {
+        try {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            const userRef = doc(firestore, 'user', user.email!);
+            const userData = (await getDoc(userRef)).data() as User;
+            
+            const templatesRef = collection(firestore, `companies/${userData.companyId}/followUpTemplates`);
+            const templatesSnapshot = await getDocs(query(templatesRef, orderBy('createdAt', 'desc')));
+            
+            const fetchedTemplates = templatesSnapshot.docs.map(doc => ({
+                id: doc.id,
+                ...doc.data(),
+                createdAt: doc.data().createdAt.toDate()
+            })) as FollowUpTemplate[];
+
+            setTemplates(fetchedTemplates);
+        } catch (error) {
+            console.error('Error fetching templates:', error);
+        }
+    };
+
+    // Fetch messages for selected template
+    const fetchMessages = async (templateId: string) => {
+        try {
+            const user = auth.currentUser;
+        if (!user) return;
+
+        const userRef = doc(firestore, 'user', user.email!);
+        const userData = (await getDoc(userRef)).data() as User;
+        
+        // Update: Use subcollection path
+        const messagesRef = collection(firestore, 
+            `companies/${userData.companyId}/followUpTemplates/${templateId}/messages`
+        );
+        const messagesSnapshot = await getDocs(
+            query(
+                messagesRef,
+                orderBy('dayNumber'),
+                orderBy('sequence')
+            )
+        );
+        
+        const fetchedMessages = messagesSnapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data(),
+            createdAt: doc.data().createdAt.toDate()
+        })) as FollowUpMessage[];
+
+        setMessages(fetchedMessages);
+    } catch (error) {
+        console.error('Error fetching messages:', error);
+        }
+    };
+
+    // Add this helper function to check for duplicate messages
+    const isDuplicateMessage = (dayNumber: number, sequence: number) => {
+        return messages.some(message => 
+            message.dayNumber === dayNumber && 
+            message.sequence === sequence
+        );
+    };
+
+    // Add message to template
+    const addMessage = async () => {
+        if (!selectedTemplate || !newMessage.message.trim()) return;
+
+        // Check for duplicate message
+        if (isDuplicateMessage(newMessage.dayNumber, newMessage.sequence)) {
+            toast.error(`Message ${newMessage.sequence} for Day ${newMessage.dayNumber} already exists`);
+            return;
+        }
+
+        try {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            const userRef = doc(firestore, 'user', user.email!);
+            const userData = (await getDoc(userRef)).data() as User;
+            
+            const messageData = {
+                ...newMessage,
+                status: 'active',
+                createdAt: serverTimestamp(),
+                document: selectedDocument ? await uploadDocument(selectedDocument) : null,
+                image: selectedImage ? await uploadImage(selectedImage) : null,
+            };
+
+            const messagesRef = collection(firestore, 
+                `companies/${userData.companyId}/followUpTemplates/${selectedTemplate}/messages`
+            );
+            await addDoc(messagesRef, messageData);
+            
+            setNewMessage({
+                message: '',
+                dayNumber: 1,
+                sequence: getNextSequenceNumber(newMessage.dayNumber),
+                templateId: selectedTemplate,
+                status: 'active' as const,
+                delayAfter: {
+                    value: 5,
+                    unit: 'minutes',
+                    isInstantaneous: false
+                },
+                specificNumbers: {
+                    enabled: false,
+                    numbers: []
+                }
+            });
+            setNewNumber(''); // Reset the temporary number input
+            setSelectedDocument(null);
+            setSelectedImage(null);
+            fetchMessages(selectedTemplate);
+            toast.success('Message added successfully');
+        } catch (error) {
+            console.error('Error adding message:', error);
+            toast.error('Failed to add message');
+        }
+    };
+
+    // Add this helper function to get the next available sequence number for a given day
+    const getNextSequenceNumber = (dayNumber: number) => {
+        const dayMessages = messages.filter(message => message.dayNumber === dayNumber);
+        if (dayMessages.length === 0) return 1;
+        
+        const maxSequence = Math.max(...dayMessages.map(message => message.sequence));
+        return maxSequence + 1;
+    };
+
     return (
         <div className="flex flex-col h-screen overflow-hidden">
             <div className="flex-grow overflow-y-auto">
                 <div className="p-5 min-h-full">
-                    <h2 className="text-2xl font-bold mb-5">Follow Ups</h2>
-                    <div className="mb-5">
-                        <input
-                            className="w-full px-4 py-2 mb-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                            placeholder="New follow up message"
-                            value={newFollowUp.message}
-                            onChange={(e) => setNewFollowUp({ ...newFollowUp, message: e.target.value })}
-                        />
-                        
-                        <div className="flex items-center gap-2 mb-2">
-                            <select
-                                className="px-4 py-2 border rounded-lg bg-white dark:bg-gray-800"
-                                value={`${newFollowUp.interval}-${newFollowUp.intervalUnit}`}
-                                onChange={(e) => {
-                                    if (e.target.value === '-1') {
-                                        // Custom interval selected
-                                        setNewFollowUp({
-                                            ...newFollowUp,
-                                            interval: 0
-                                        });
-                                    } else {
-                                        const [value, unit] = e.target.value.split('-');
-                                        setNewFollowUp({
-                                            ...newFollowUp,
-                                            interval: parseInt(value),
-                                            intervalUnit: unit as 'minutes' | 'hours' | 'days'
-                                        });
-                                    }
-                                }}
-                            >
-                                {TIME_INTERVALS.map((interval) => (
-                                    <option key={`${interval.value}-${interval.unit}`} value={`${interval.value}-${interval.unit}`}>
-                                        {interval.label}
-                                    </option>
-                                ))}
-                                <option value="-1">Custom Interval</option>
-                            </select>
+                    <div className="flex justify-between items-center mb-5">
+                        <h2 className="text-2xl font-bold">Follow Up Templates</h2>
+                        <Button onClick={() => setIsAddingTemplate(true)}>
+                            Add Template
+                        </Button>
+                    </div>
 
-                            {newFollowUp.interval === 0 && (
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        type="number"
-                                        className="w-24 px-4 py-2 border rounded-lg bg-white dark:bg-gray-800"
-                                        placeholder="Value"
-                                        value={customInterval.value}
-                                        onChange={(e) => {
-                                            setCustomInterval({
-                                                ...customInterval,
-                                                value: e.target.value
-                                            });
-                                            setNewFollowUp({
-                                                ...newFollowUp,
-                                                interval: parseInt(e.target.value) || 0
-                                            });
-                                        }}
-                                    />
-                                    <select
-                                        className="px-4 py-2 border rounded-lg bg-white dark:bg-gray-800"
-                                        value={customInterval.unit}
-                                        onChange={(e) => {
-                                            const unit = e.target.value as 'minutes' | 'hours' | 'days';
-                                            setCustomInterval({
-                                                ...customInterval,
-                                                unit
-                                            });
-                                            setNewFollowUp({
-                                                ...newFollowUp,
-                                                intervalUnit: unit
-                                            });
+                    {/* Template List */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                        {templates.map(template => (
+                            <div 
+                                key={template.id}
+                                className={`p-4 border rounded-lg ${
+                                    selectedTemplate === template.id ? 'border-primary' : ''
+                                }`}
+                            >
+                                <div className="flex justify-between items-start">
+                                    <div 
+                                        className="cursor-pointer flex-grow"
+                                        onClick={() => {
+                                            setSelectedTemplate(template.id);
+                                            fetchMessages(template.id);
                                         }}
                                     >
-                                        <option value="minutes">Minutes</option>
-                                        <option value="hours">Hours</option>
-                                        <option value="days">Days</option>
-                                    </select>
+                                        <h3 className="text-lg font-semibold">{template.name}</h3>
+                                        <p className="text-sm text-gray-500">
+                                            Created: {template.createdAt.toLocaleDateString()}
+                                        </p>
+                                    </div>
+                                    <Button
+                                        onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
+                                            e.stopPropagation();
+                                            if (window.confirm('Are you sure you want to delete this template? This will also delete all associated messages.')) {
+                                                deleteTemplate(template.id);
+                                            }
+                                        }}
+                                        className="bg-red-500 hover:bg-red-600"
+                                    >
+                                        Delete
+                                    </Button>
                                 </div>
-                            )}
-                        </div>
+                            </div>
+                        ))}
+                    </div>
 
-                        <div className="mb-4">
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                                Stop Tags
-                            </label>
-                            <Select
-                                isMulti
-                                options={tags.map(tag => ({ value: tag.name, label: tag.name }))}
-                                value={newFollowUp.stopTags.map(tag => ({ value: tag, label: tag }))}
-                                onChange={(selected) => {
-                                    const selectedTags = selected ? selected.map(option => option.value) : [];
-                                    setNewFollowUp({ ...newFollowUp, stopTags: selectedTags });
-                                }}
-                                placeholder="Select tags to stop follow-ups..."
-                                styles={{
-                                    control: (base, state) => ({
-                                        ...base,
-                                        backgroundColor: 'white',
-                                        borderColor: state.isFocused ? '#3b82f6' : '#d1d5db',
-                                        borderRadius: '0.375rem',
-                                        '.dark &': {
-                                            backgroundColor: '#1f2937',
-                                        },
-                                        '&:hover': {
-                                            borderColor: '#3b82f6',
-                                        },
-                                    }),
-                                    menu: (base) => ({
-                                        ...base,
-                                        backgroundColor: 'white',
-                                        '.dark &': {
-                                            backgroundColor: '#1f2937',
-                                        },
-                                        border: '1px solid #d1d5db',
-                                        borderRadius: '0.375rem',
-                                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-                                    }),
-                                    option: (base, state) => ({
-                                        ...base,
-                                        backgroundColor: state.isFocused ? '#3b82f6' : 'white',
-                                        '.dark &': {
-                                            backgroundColor: state.isFocused ? '#3b82f6' : '#1f2937',
-                                        },
-                                        color: state.isFocused ? 'white' : 'black',
-                                       
-                                        padding: '0.5rem 1rem',
-                                        cursor: 'pointer',
-                                        '&:hover': {
-                                            backgroundColor: '#60a5fa',
-                                            color: 'white',
-                                        },
-                                    }),
-                                    multiValue: (base) => ({
-                                        ...base,
-                                        backgroundColor: '#e5e7eb',
-                                        '.dark &': {
-                                            backgroundColor: '#4b5563',
-                                        },
-                                        borderRadius: '0.375rem',
-                                        margin: '2px',
-                                    }),
-                                    multiValueLabel: (base) => ({
-                                        ...base,
-                                        color: '#1f2937',
-                                        '.dark &': {
-                                            color: '#f3f4f6',
-                                        },
-                                        padding: '2px 6px',
-                                    }),
-                                    multiValueRemove: (base) => ({
-                                        ...base,
-                                        color: '#4b5563',
-                                        '.dark &': {
-                                            color: '#d1d5db',
-                                        },
-                                        ':hover': {
-                                            backgroundColor: '#ef4444',
-                                            color: 'white',
-                                        },
-                                        borderRadius: '0 0.375rem 0.375rem 0',
-                                    }),
-                                    input: (base) => ({
-                                        ...base,
-                                        color: 'black',
-                                        '.dark &': {
-                                            color: '#d1d5db',
-                                        },
-                                    }),
-                                    placeholder: (base) => ({
-                                        ...base,
-                                        color: '#9ca3af',
-                                    }),
-                                }}
-                                theme={(theme) => ({
-                                    ...theme,
-                                    colors: {
-                                        ...theme.colors,
-                                        primary: '#3b82f6',
-                                        primary75: '#60a5fa',
-                                        primary50: '#93c5fd',
-                                        primary25: '#bfdbfe',
-                                    },
-                                })}
+                    {/* Add Template Modal */}
+{isAddingTemplate && (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg w-96">
+            <h3 className="text-lg font-semibold mb-4">New Template</h3>
+            
+            {/* Template Name */}
+            <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Template Name
+                </label>
+                <input
+                    type="text"
+                    className="w-full px-4 py-2 border rounded-lg"
+                    placeholder="Template Name"
+                    value={newTemplate.name}
+                    onChange={(e) => setNewTemplate(prev => ({ ...prev, name: e.target.value }))}
+                />
+            </div>
+
+            {/* Trigger Tags */}
+            <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Trigger Tags
+                </label>
+                <Select
+                    isMulti
+                    options={tags.map(tag => ({ value: tag.name, label: tag.name }))}
+                    value={newTemplate.triggerTags.map(tag => ({ value: tag, label: tag }))}
+                    onChange={(selected) => {
+                        const selectedTags = selected ? selected.map(option => option.value) : [];
+                        setNewTemplate(prev => ({ ...prev, triggerTags: selectedTags }));
+                    }}
+                    placeholder="Select tags to trigger follow-ups..."
+                    className="basic-multi-select"
+                    classNamePrefix="select"
+                />
+                <p className="mt-1 text-sm text-gray-500">
+                    Follow-up sequence will start when any of these tags are applied
+                </p>
+            </div>
+
+            {/* Start Time Options */}
+            <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Start Time
+                </label>
+                <div className="space-y-2">
+                    <label className="flex items-center">
+                        <input
+                            type="radio"
+                            className="mr-2"
+                            checked={newTemplate.startType === 'immediate'}
+                            onChange={() => setNewTemplate(prev => ({ 
+                                ...prev, 
+                                startType: 'immediate',
+                                isCustomStartTime: false 
+                            }))}
+                        />
+                        Start immediately when tag is applied
+                    </label>
+                                        
+                    <label className="flex items-center">
+                        <input
+                            type="radio"
+                            className="mr-2"
+                            checked={newTemplate.startType === 'delayed'}
+                            onChange={() => setNewTemplate(prev => ({ 
+                                ...prev, 
+                                startType: 'delayed',
+                                isCustomStartTime: false 
+                            }))}
+                        />
+                        Start 24 hours after tag is applied
+                    </label>
+
+                    {newTemplate.triggerTags.length > 0 && (
+                        <label className="flex items-center">
+                            <input
+                                type="radio"
+                                className="mr-2"
+                                checked={newTemplate.startType === 'custom'}
+                                onChange={() => setNewTemplate(prev => ({ 
+                                    ...prev, 
+                                    startType: 'custom',
+                                    isCustomStartTime: true 
+                                }))}
                             />
-                        </div>
+                            Custom start time after tag is applied
+                        </label>
+                    )}
+                </div>
+            </div>
+            
+            {/* Custom Start Time Input */}
+            {newTemplate.startType === 'custom' && (
+                <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Custom Start Time
+                    </label>
+                    <input
+                        type="datetime-local"
+                        className="w-full px-4 py-2 border rounded-lg"
+                        value={customStartTime}
+                        onChange={(e) => setCustomStartTime(e.target.value)}
+                    />
+                </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-2">
+                <Button 
+                    onClick={() => {
+                        setIsAddingTemplate(false);
+                        setNewTemplate({
+                            name: '',
+                            triggerTags: [],
+                            startType: 'immediate'
+                        });
+                    }}
+                    className="bg-gray-500 hover:bg-gray-600"
+                >
+                    Cancel
+                </Button>
+                <Button 
+                    onClick={() => {
+                        addTemplate();
+                        setNewTemplate({
+                            name: '',
+                            triggerTags: [],
+                            startType: 'immediate'
+                        });
+                    }}
+                    disabled={!newTemplate.name.trim()}
+                    className="bg-primary hover:bg-primary-dark"
+                >
+                    Create
+                </Button>
+            </div>
+        </div>
+    </div>
+)}
+
+                    {/* Messages Section */}
+                    {selectedTemplate && (
+                        <div className="mt-8">
+                            <h3 className="text-xl font-semibold mb-4">Messages</h3>
+                            
+                            {/* Add Message Form */}
+                            <div className="mb-6 p-4 border rounded-lg">
+                                <div className="flex gap-4 mb-4">
+                                    <input
+                                        type="number"
+                                        className="w-24 px-4 py-2 border rounded-lg"
+                                        placeholder="Day #"
+                                        value={newMessage.dayNumber}
+                                        onChange={(e) => setNewMessage({
+                                            ...newMessage,
+                                            dayNumber: parseInt(e.target.value) || 1
+                                        })}
+                                    />
+                                    <input
+                                        type="number"
+                                        className="w-24 px-4 py-2 border rounded-lg"
+                                        placeholder="Sequence #"
+                                        value={newMessage.sequence}
+                                        onChange={(e) => setNewMessage({
+                                            ...newMessage,
+                                            sequence: parseInt(e.target.value) || 1
+                                        })}
+                                    />
+                                </div>
+
+                                {/* Message Input */}
+                                <input
+                                    className="w-full px-4 py-2 mb-4 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                                    placeholder="Enter message"
+                                    value={newMessage.message}
+                                    onChange={(e) => setNewMessage({
+                                        ...newMessage,
+                                        message: e.target.value
+                                    })}
+                                />
+
+                                {/* Specific Numbers Option */}
+                                <div className="space-y-2 mb-4">
+                                    <label className="flex items-center">
+                                        <input
+                                            type="checkbox"
+                                            className="mr-2"
+                                            checked={newMessage.specificNumbers.enabled}
+                                            onChange={(e) => setNewMessage({
+                                                ...newMessage,
+                                                specificNumbers: {
+                                                    ...newMessage.specificNumbers,
+                                                    enabled: e.target.checked
+                                                }
+                                            })}
+                                        />
+                                        Send to specific numbers
+                                    </label>
+                                        
+                                    {newMessage.specificNumbers.enabled && (
+                                        <div className="space-y-2">
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="text"
+                                                    className="flex-1 px-4 py-2 border rounded-lg"
+                                                    placeholder="Enter phone number"
+                                                    value={newNumber}
+                                                    onChange={(e) => setNewNumber(e.target.value)}
+                                                />
+                                                <Button
+                                                    onClick={() => {
+                                                        if (newNumber.trim()) {
+                                                            setNewMessage({
+                                                                ...newMessage,
+                                                                specificNumbers: {
+                                                                    ...newMessage.specificNumbers,
+                                                                    numbers: [...newMessage.specificNumbers.numbers, newNumber.trim()]
+                                                                }
+                                                            });
+                                                            setNewNumber('');
+                                                        }
+                                                    }}
+                                                >
+                                                    Add
+                                                </Button>
+                                            </div>
+                                            
+                                            {/* Display added numbers */}
+                                            <div className="space-y-1">
+                                                {newMessage.specificNumbers.numbers.map((number, index) => (
+                                                    <div key={index} className="flex items-center justify-between bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded">
+                                                        <span>{number}</span>
+                                                        <button
+                                                            onClick={() => {
+                                                                const updatedNumbers = [...newMessage.specificNumbers.numbers];
+                                                                updatedNumbers.splice(index, 1);
+                                                                setNewMessage({
+                                                                    ...newMessage,
+                                                                    specificNumbers: {
+                                                                        ...newMessage.specificNumbers,
+                                                                        numbers: updatedNumbers
+                                                                    }
+                                                                });
+                                                            }}
+                                                            className="text-red-500 hover:text-red-700"
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                
+
+                                 {/* Delay Settings */}
+                                <div className="space-y-2 mb-4">
+                                    <label className="flex items-center">
+                                        <input
+                                            type="checkbox"
+                                            className="mr-2"
+                                            checked={newMessage.delayAfter.isInstantaneous}
+                                            onChange={(e) => setNewMessage({
+                                                ...newMessage,
+                                                delayAfter: {
+                                                    ...newMessage.delayAfter,
+                                                    isInstantaneous: e.target.checked
+                                                }
+                                            })}
+                                        />
+                                        Send immediately after previous message
+                                    </label>
+                                            
+                                    {!newMessage.delayAfter.isInstantaneous && (
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="number"
+                                                className="w-24 px-4 py-2 border rounded-lg"
+                                                value={newMessage.delayAfter.value}
+                                                onChange={(e) => setNewMessage({
+                                                    ...newMessage,
+                                                    delayAfter: {
+                                                        ...newMessage.delayAfter,
+                                                        value: parseInt(e.target.value) || 0
+                                                    }
+                                                })}
+                                                min="0"
+                                            />
+                                            <select
+                                                className="px-4 py-2 border rounded-lg"
+                                                value={newMessage.delayAfter.unit}
+                                                onChange={(e) => setNewMessage({
+                                                    ...newMessage,
+                                                    delayAfter: {
+                                                        ...newMessage.delayAfter,
+                                                        unit: e.target.value as 'minutes' | 'hours' | 'days'
+                                                    }
+                                                })}
+                                            >
+                                                <option value="minutes">Minutes</option>
+                                                <option value="hours">Hours</option>
+                                                <option value="days">Days</option>
+                                            </select>
+                                            <span>after previous message</span>
+                                        </div>
+                                    )}
+                                </div>
 
                                 {/* Document and Image Upload */}
                                 <div className="flex items-center mb-4">
@@ -1006,330 +1434,6 @@ const FollowUpsPage: React.FC = () => {
                             </div>
                         </div>
                     )}
-                        <div className="flex items-center mb-2">
-                            <input
-                                type="file"
-                                id="followUpFile"
-                                className="hidden"
-                                onChange={(e) => setSelectedDocument(e.target.files ? e.target.files[0] : null)}
-                            />
-                            <label htmlFor="followUpFile" className="mr-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg cursor-pointer">
-                                Attach Document
-                            </label>
-                            <input
-                                type="file"
-                                id="followUpImage"
-                                accept="image/*"
-                                className="hidden"
-                                onChange={(e) => setSelectedImage(e.target.files ? e.target.files[0] : null)}
-                            />
-                            <label htmlFor="followUpImage" className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg cursor-pointer">
-                                Attach Image
-                            </label>
-                        </div>
-                        <button
-                            className="px-4 py-2 bg-primary text-white rounded-lg"
-                            onClick={addFollowUp}
-                        >
-                            Add Follow Up
-                        </button>
-                    </div>
-                    <div className="space-y-4">
-                        {filteredFollowUps.map((followUp, index) => (
-                            <div key={followUp.id} className="p-4 border rounded-lg">
-                                <div className="flex items-center mb-2">
-                                    <span className="inline-block px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded-full mr-2">
-                                        Step {index + 1}
-                                    </span>
-                                    <span className="text-gray-500">
-                                        {followUp.interval} {followUp.intervalUnit} {index === 0 ? 'after first message received' : 'after previous step'}
-                                    </span>
-                                </div>
-                                {isEditing === followUp.id ? (
-                                    <>
-                                        <input
-                                            className="w-full px-4 py-2 mb-2 border rounded-lg  bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                                            value={followUp.message}
-                                            onChange={(e) => {
-                                                const updatedFollowUp = {...followUp, message: e.target.value};
-                                                setFollowUps(followUps.map(f => f.id === followUp.id ? updatedFollowUp : f));
-                                            }}
-                                        />
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <select
-                                                className="px-4 py-2 border rounded-lg bg-white dark:bg-gray-800"
-                                                value={`${followUp.interval}-${followUp.intervalUnit}`}
-                                                onChange={(e) => {
-                                                    if (e.target.value === '-1') {
-                                                        const updatedFollowUp = {...followUp, interval: 0};
-                                                        setFollowUps(followUps.map(f => f.id === followUp.id ? updatedFollowUp : f));
-                                                    } else {
-                                                        const [value, unit] = e.target.value.split('-');
-                                                        const updatedFollowUp = {
-                                                            ...followUp,
-                                                            interval: parseInt(value),
-                                                            intervalUnit: unit as 'minutes' | 'hours' | 'days'
-                                                        };
-                                                        setFollowUps(followUps.map(f => f.id === followUp.id ? updatedFollowUp : f));
-                                                    }
-                                                }}
-                                            >
-                                                {TIME_INTERVALS.map((interval) => (
-                                                    <option key={`${interval.value}-${interval.unit}`} value={`${interval.value}-${interval.unit}`}>
-                                                        {interval.label}
-                                                    </option>
-                                                ))}
-                                                <option value="-1">Custom Interval</option>
-                                            </select>
-
-                                            {followUp.interval === 0 && (
-                                                <div className="flex items-center gap-2">
-                                                    <input
-                                                        type="number"
-                                                        className="w-24 px-4 py-2 border rounded-lg bg-white dark:bg-gray-800"
-                                                        placeholder="Value"
-                                                        value={followUp.interval || ''}
-                                                        onChange={(e) => {
-                                                            const updatedFollowUp = {
-                                                                ...followUp,
-                                                                interval: parseInt(e.target.value) || 0
-                                                            };
-                                                            setFollowUps(followUps.map(f => f.id === followUp.id ? updatedFollowUp : f));
-                                                        }}
-                                                    />
-                                                    <select
-                                                        className="px-4 py-2 border rounded-lg bg-white dark:bg-gray-800"
-                                                        value={followUp.intervalUnit}
-                                                        onChange={(e) => {
-                                                            const updatedFollowUp = {
-                                                                ...followUp,
-                                                                intervalUnit: e.target.value as 'minutes' | 'hours' | 'days'
-                                                            };
-                                                            setFollowUps(followUps.map(f => f.id === followUp.id ? updatedFollowUp : f));
-                                                        }}
-                                                    >
-                                                        <option value="minutes">Minutes</option>
-                                                        <option value="hours">Hours</option>
-                                                        <option value="days">Days</option>
-                                                    </select>
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="flex items-center mb-2">
-                                            <Select
-                                                isMulti
-                                                options={tags.map(tag => ({ value: tag.name, label: tag.name }))}
-                                                value={followUp.stopTags.map(tag => ({ value: tag, label: tag }))}
-                                                onChange={(selected) => {
-                                                    const selectedTags = selected ? selected.map(option => option.value) : [];
-                                                    const updatedFollowUp = {
-                                                        ...followUp,
-                                                        stopTags: selectedTags
-                                                    };
-                                                    setFollowUps(followUps.map(f => f.id === followUp.id ? updatedFollowUp : f));
-                                                }}
-                                                placeholder="Select tags to stop follow-ups..."
-                                                className="w-full"
-                                                styles={{
-                                                    control: (base, state) => ({
-                                                        ...base,
-                                                        backgroundColor: 'white',
-                                                        borderColor: state.isFocused ? '#3b82f6' : '#d1d5db',
-                                                        borderRadius: '0.375rem',
-                                                        '.dark &': {
-                                                            backgroundColor: '#1f2937',
-                                                        },
-                                                        '&:hover': {
-                                                            borderColor: '#3b82f6',
-                                                        },
-                                                    }),
-                                                    menu: (base) => ({
-                                                        ...base,
-                                                        backgroundColor: 'white',
-                                                        '.dark &': {
-                                                            backgroundColor: '#1f2937',
-                                                        },
-                                                        border: '1px solid #d1d5db',
-                                                        borderRadius: '0.375rem',
-                                                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
-                                                    }),
-                                                    option: (base, state) => ({
-                                                        ...base,
-                                                        backgroundColor: state.isFocused ? '#3b82f6' : 'white',
-                                                        '.dark &': {
-                                                            backgroundColor: state.isFocused ? '#3b82f6' : '#1f2937',
-                                                        },
-                                                        color: state.isFocused ? 'white' : 'black',
-                                                     
-                                                        padding: '0.5rem 1rem',
-                                                        cursor: 'pointer',
-                                                        '&:hover': {
-                                                            backgroundColor: '#60a5fa',
-                                                            color: 'white',
-                                                        },
-                                                    }),
-                                                    multiValue: (base) => ({
-                                                        ...base,
-                                                        backgroundColor: '#e5e7eb',
-                                                        '.dark &': {
-                                                            backgroundColor: '#4b5563',
-                                                        },
-                                                        borderRadius: '0.375rem',
-                                                        margin: '2px',
-                                                    }),
-                                                    multiValueLabel: (base) => ({
-                                                        ...base,
-                                                        color: '#1f2937',
-                                                        '.dark &': {
-                                                            color: '#f3f4f6',
-                                                        },
-                                                        padding: '2px 6px',
-                                                    }),
-                                                    multiValueRemove: (base) => ({
-                                                        ...base,
-                                                        color: '#4b5563',
-                                                        '.dark &': {
-                                                            color: '#d1d5db',
-                                                        },
-                                                        ':hover': {
-                                                            backgroundColor: '#ef4444',
-                                                            color: 'white',
-                                                        },
-                                                        borderRadius: '0 0.375rem 0.375rem 0',
-                                                    }),
-                                                    input: (base) => ({
-                                                        ...base,
-                                                        color: 'black',
-                                                        '.dark &': {
-                                                            color: '#d1d5db',
-                                                        },
-                                                    }),
-                                                    placeholder: (base) => ({
-                                                        ...base,
-                                                        color: '#9ca3af',
-                                                    }),
-                                                }}
-                                                theme={(theme) => ({
-                                                    ...theme,
-                                                    colors: {
-                                                        ...theme.colors,
-                                                        primary: '#3b82f6',
-                                                        primary75: '#60a5fa',
-                                                        primary50: '#93c5fd',
-                                                        primary25: '#bfdbfe',
-                                                    },
-                                                })}
-                                            />
-                                        </div>
-                                        <div className="flex items-center mb-2">
-                                            <div className="flex-1">
-                                                <input
-                                                    type="file"
-                                                    id={`editFollowUpFile-${followUp.id}`}
-                                                    className="hidden"
-                                                    onChange={(e) => setSelectedDocument(e.target.files ? e.target.files[0] : null)}
-                                                />
-                                                <label htmlFor={`editFollowUpFile-${followUp.id}`} className="mr-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg cursor-pointer">
-                                                    {followUp.document ? 'Replace Document' : 'Attach Document'}
-                                                </label>
-                                                <input
-                                                    type="file"
-                                                    id={`editFollowUpImage-${followUp.id}`}
-                                                    accept="image/*"
-                                                    className="hidden"
-                                                    onChange={(e) => setSelectedImage(e.target.files ? e.target.files[0] : null)}
-                                                />
-                                                <label htmlFor={`editFollowUpImage-${followUp.id}`} className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg cursor-pointer">
-                                                    {followUp.image ? 'Replace Image' : 'Attach Image'}
-                                                </label>
-                                            </div>
-                                            <div className="flex-shrink-0 ml-4">
-                                                <button
-                                                    className="ml-2 px-4 py-2 bg-green-500 text-white rounded-lg"
-                                                    onClick={() => updateFollowUp(
-                                                        followUp.id,
-                                                        followUp.message,
-                                                        followUp.interval,
-                                                        followUp.intervalUnit,
-                                                        followUp.previousMessageId,
-                                                        followUp.status,
-                                                        followUp.stopTags
-                                                    )}
-                                                >
-                                                    Save
-                                                </button>
-                                                <button
-                                                    className="ml-2 px-4 py-2 bg-gray-500 text-white rounded-lg"
-                                                    onClick={() => setIsEditing(null)}
-                                                >
-                                                    Cancel
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </>
-                                ) : (
-                                    <div className="flex flex-col">
-                                        <div className="flex justify-between items-start mb-2">
-                                            <div className="flex-grow">
-                                                <h3 className="text-xl font-bold">{followUp.message}</h3>
-                                                <p className="text-base text-gray-600 dark:text-gray-300 mt-1">{followUp.message}</p>
-                                            </div>
-                                            <div className="flex-shrink-0 ml-4">
-                                                <button
-                                                    className="ml-2 px-4 py-2 bg-blue-500 text-white rounded-lg mr-2 text-sm"
-                                                    onClick={() => setIsEditing(followUp.id)}
-                                                >
-                                                    Edit
-                                                </button>
-                                                <button
-                                                    className="ml-2 px-4 py-2 bg-red-500 text-white rounded-lg text-sm"
-                                                    onClick={() => deleteFollowUp(followUp.id)}
-                                                >
-                                                    Delete
-                                                </button>
-                                            </div>
-                                        </div>
-                                        {followUp.image && (
-                                            <div className="mt-2">
-                                                <img
-                                                    src={followUp.image}
-                                                    alt="Follow Up Image"
-                                                    className="rounded-lg cursor-pointer w-full h-full object-contain"
-                                                    onClick={() => window.open(followUp.image ?? '', '_blank')}
-                                                />
-                                            </div>
-                                        )}
-                                        {followUp.document && (
-                                            <div className="mt-2">
-                                                <iframe
-                                                    src={followUp.document}
-                                                    title="Document"
-                                                    className="border rounded cursor-pointer w-full"
-                                                    style={{ height: '100vh' }}
-                                                    onClick={() => window.open(followUp.document ?? '', '_blank')}
-                                                />
-                                            </div>
-                                        )}
-                                        {followUp.stopTags.length > 0 && (
-                                            <div className="mt-3 flex flex-wrap gap-2">
-                                                <span className="text-sm text-gray-500 dark:text-gray-400">
-                                                    Stops when tagged:
-                                                </span>
-                                                {followUp.stopTags.map((tag) => (
-                                                    <span
-                                                        key={tag}
-                                                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100"
-                                                    >
-                                                        {tag}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        ))}
-                    </div>
                 </div>
             </div>
         </div>
