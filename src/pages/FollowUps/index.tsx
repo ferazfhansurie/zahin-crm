@@ -701,7 +701,7 @@ const FollowUpsPage: React.FC = () => {
                                                 deleteTemplate(template.id);
                                             }
                                         }}
-                                        className="bg-red-500 hover:bg-red-600"
+                                        className="text-white bg-red-500 hover:bg-red-600"
                                     >
                                         Delete
                                     </Button>
@@ -711,147 +711,147 @@ const FollowUpsPage: React.FC = () => {
                     </div>
 
                     {/* Add Template Modal */}
-{isAddingTemplate && (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg w-96">
-            <h3 className="text-lg font-semibold mb-4">New Template</h3>
-            
-            {/* Template Name */}
-            <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Template Name
-                </label>
-                <input
-                    type="text"
-                    className="w-full px-4 py-2 border rounded-lg"
-                    placeholder="Template Name"
-                    value={newTemplate.name}
-                    onChange={(e) => setNewTemplate(prev => ({ ...prev, name: e.target.value }))}
-                />
-            </div>
+                    {isAddingTemplate && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg w-96">
+                                <h3 className="text-lg font-semibold mb-4">New Template</h3>
+                                
+                                {/* Template Name */}
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                        Template Name
+                                    </label>
+                                    <input
+                                        type="text"
+                                        className="w-full px-4 py-2 border rounded-lg"
+                                        placeholder="Template Name"
+                                        value={newTemplate.name}
+                                        onChange={(e) => setNewTemplate(prev => ({ ...prev, name: e.target.value }))}
+                                    />
+                                </div>
 
-            {/* Trigger Tags */}
-            <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Trigger Tags
-                </label>
-                <Select
-                    isMulti
-                    options={tags.map(tag => ({ value: tag.name, label: tag.name }))}
-                    value={newTemplate.triggerTags.map(tag => ({ value: tag, label: tag }))}
-                    onChange={(selected) => {
-                        const selectedTags = selected ? selected.map(option => option.value) : [];
-                        setNewTemplate(prev => ({ ...prev, triggerTags: selectedTags }));
-                    }}
-                    placeholder="Select tags to trigger follow-ups..."
-                    className="basic-multi-select"
-                    classNamePrefix="select"
-                />
-                <p className="mt-1 text-sm text-gray-500">
-                    Follow-up sequence will start when any of these tags are applied
-                </p>
-            </div>
+                                {/* Trigger Tags */}
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                        Trigger Tags
+                                    </label>
+                                    <Select
+                                        isMulti
+                                        options={tags.map(tag => ({ value: tag.name, label: tag.name }))}
+                                        value={newTemplate.triggerTags.map(tag => ({ value: tag, label: tag }))}
+                                        onChange={(selected) => {
+                                            const selectedTags = selected ? selected.map(option => option.value) : [];
+                                            setNewTemplate(prev => ({ ...prev, triggerTags: selectedTags }));
+                                        }}
+                                        placeholder="Select tags to trigger follow-ups..."
+                                        className="basic-multi-select"
+                                        classNamePrefix="select"
+                                    />
+                                    <p className="mt-1 text-sm text-gray-500">
+                                        Follow-up sequence will start when any of these tags are applied
+                                    </p>
+                                </div>
 
-            {/* Start Time Options */}
-            <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Start Time
-                </label>
-                <div className="space-y-2">
-                    <label className="flex items-center">
-                        <input
-                            type="radio"
-                            className="mr-2"
-                            checked={newTemplate.startType === 'immediate'}
-                            onChange={() => setNewTemplate(prev => ({ 
-                                ...prev, 
-                                startType: 'immediate',
-                                isCustomStartTime: false 
-                            }))}
-                        />
-                        Start immediately when tag is applied
-                    </label>
-                                        
-                    <label className="flex items-center">
-                        <input
-                            type="radio"
-                            className="mr-2"
-                            checked={newTemplate.startType === 'delayed'}
-                            onChange={() => setNewTemplate(prev => ({ 
-                                ...prev, 
-                                startType: 'delayed',
-                                isCustomStartTime: false 
-                            }))}
-                        />
-                        Start 24 hours after tag is applied
-                    </label>
+                                {/* Start Time Options */}
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                        Start Time
+                                    </label>
+                                    <div className="space-y-2">
+                                        <label className="flex items-center">
+                                            <input
+                                                type="radio"
+                                                className="mr-2"
+                                                checked={newTemplate.startType === 'immediate'}
+                                                onChange={() => setNewTemplate(prev => ({ 
+                                                    ...prev, 
+                                                    startType: 'immediate',
+                                                    isCustomStartTime: false 
+                                                }))}
+                                            />
+                                            Start immediately when tag is applied
+                                        </label>
+                                                            
+                                        <label className="flex items-center">
+                                            <input
+                                                type="radio"
+                                                className="mr-2"
+                                                checked={newTemplate.startType === 'delayed'}
+                                                onChange={() => setNewTemplate(prev => ({ 
+                                                    ...prev, 
+                                                    startType: 'delayed',
+                                                    isCustomStartTime: false 
+                                                }))}
+                                            />
+                                            Start 24 hours after tag is applied
+                                        </label>
 
-                    {newTemplate.triggerTags.length > 0 && (
-                        <label className="flex items-center">
-                            <input
-                                type="radio"
-                                className="mr-2"
-                                checked={newTemplate.startType === 'custom'}
-                                onChange={() => setNewTemplate(prev => ({ 
-                                    ...prev, 
-                                    startType: 'custom',
-                                    isCustomStartTime: true 
-                                }))}
-                            />
-                            Custom start time after tag is applied
-                        </label>
+                                        {newTemplate.triggerTags.length > 0 && (
+                                            <label className="flex items-center">
+                                                <input
+                                                    type="radio"
+                                                    className="mr-2"
+                                                    checked={newTemplate.startType === 'custom'}
+                                                    onChange={() => setNewTemplate(prev => ({ 
+                                                        ...prev, 
+                                                        startType: 'custom',
+                                                        isCustomStartTime: true 
+                                                    }))}
+                                                />
+                                                Custom start time after tag is applied
+                                            </label>
+                                        )}
+                                    </div>
+                                </div>
+                                
+                                {/* Custom Start Time Input */}
+                                {newTemplate.startType === 'custom' && (
+                                    <div className="mb-4">
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                            Custom Start Time
+                                        </label>
+                                        <input
+                                            type="datetime-local"
+                                            className="w-full px-4 py-2 border rounded-lg"
+                                            value={customStartTime}
+                                            onChange={(e) => setCustomStartTime(e.target.value)}
+                                        />
+                                    </div>
+                                )}
+
+                                {/* Action Buttons */}
+                                <div className="flex justify-end gap-2">
+                                    <Button 
+                                        onClick={() => {
+                                            setIsAddingTemplate(false);
+                                            setNewTemplate({
+                                                name: '',
+                                                triggerTags: [],
+                                                startType: 'immediate'
+                                            });
+                                        }}
+                                        className="text-white bg-gray-500 hover:bg-gray-600"
+                                    >
+                                        Cancel
+                                    </Button>
+                                    <Button 
+                                        onClick={() => {
+                                            addTemplate();
+                                            setNewTemplate({
+                                                name: '',
+                                                triggerTags: [],
+                                                startType: 'immediate'
+                                            });
+                                        }}
+                                        disabled={!newTemplate.name.trim()}
+                                        className="text-white bg-primary hover:bg-primary-dark"
+                                    >
+                                        Create
+                                    </Button>
+                                </div>
+                            </div>
+                        </div>
                     )}
-                </div>
-            </div>
-            
-            {/* Custom Start Time Input */}
-            {newTemplate.startType === 'custom' && (
-                <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                        Custom Start Time
-                    </label>
-                    <input
-                        type="datetime-local"
-                        className="w-full px-4 py-2 border rounded-lg"
-                        value={customStartTime}
-                        onChange={(e) => setCustomStartTime(e.target.value)}
-                    />
-                </div>
-            )}
-
-            {/* Action Buttons */}
-            <div className="flex justify-end gap-2">
-                <Button 
-                    onClick={() => {
-                        setIsAddingTemplate(false);
-                        setNewTemplate({
-                            name: '',
-                            triggerTags: [],
-                            startType: 'immediate'
-                        });
-                    }}
-                    className="bg-gray-500 hover:bg-gray-600"
-                >
-                    Cancel
-                </Button>
-                <Button 
-                    onClick={() => {
-                        addTemplate();
-                        setNewTemplate({
-                            name: '',
-                            triggerTags: [],
-                            startType: 'immediate'
-                        });
-                    }}
-                    disabled={!newTemplate.name.trim()}
-                    className="bg-primary hover:bg-primary-dark"
-                >
-                    Create
-                </Button>
-            </div>
-        </div>
-    </div>
-)}
 
                     {/* Messages Section */}
                     {selectedTemplate && (
@@ -884,7 +884,7 @@ const FollowUpsPage: React.FC = () => {
                                 </div>
 
                                 {/* Message Input */}
-                                <input
+                                <textarea
                                     className="w-full px-4 py-2 mb-4 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
                                     placeholder="Enter message"
                                     value={newMessage.message}
@@ -892,6 +892,7 @@ const FollowUpsPage: React.FC = () => {
                                         ...newMessage,
                                         message: e.target.value
                                     })}
+                                    rows={3}
                                 />
 
                                 {/* Specific Numbers Option */}
@@ -1003,7 +1004,7 @@ const FollowUpsPage: React.FC = () => {
                                                 min="0"
                                             />
                                             <select
-                                                className="px-4 py-2 border rounded-lg"
+                                                className="px-4 py-2 border rounded-lg w-32"
                                                 value={newMessage.delayAfter.unit}
                                                 onChange={(e) => setNewMessage({
                                                     ...newMessage,
@@ -1032,7 +1033,7 @@ const FollowUpsPage: React.FC = () => {
                                     />
                                     <label 
                                         htmlFor="messageDocument" 
-                                        className="mr-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg cursor-pointer"
+                                        className="mr-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-300 dark:hover:bg-gray-600"
                                     >
                                         Attach Document
                                     </label>
@@ -1046,7 +1047,7 @@ const FollowUpsPage: React.FC = () => {
                                     />
                                     <label 
                                         htmlFor="messageImage" 
-                                        className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg cursor-pointer"
+                                        className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-300 dark:hover:bg-gray-600"
                                     >
                                         Attach Image
                                     </label>
@@ -1065,14 +1066,15 @@ const FollowUpsPage: React.FC = () => {
                                         </div>
                                     )}
                                 </div>
-
-                                <Button 
-                                    onClick={addMessage}
-                                    disabled={!newMessage.message.trim()}
-                                    className="w-full"
-                                >
-                                    Add Message
-                                </Button>
+                                <div className="flex justify-end">
+                                    <Button 
+                                        onClick={addMessage}
+                                        disabled={!newMessage.message.trim()}
+                                        className="w-full"
+                                    >
+                                        Add Message
+                                    </Button>
+                                </div>
                             </div>
 
                             {/* Messages List */}
@@ -1381,17 +1383,17 @@ const FollowUpsPage: React.FC = () => {
                                                                                     setIsEditingMessage(message.id);
                                                                                     setEditingMessage(message);
                                                                                 }}
-                                                                                className="bg-primary hover:bg-primary-dark"
+                                                                                className="text-white bg-primary hover:bg-primary-dark"
                                                                             >
                                                                                 Edit
                                                                             </Button>
                                                                             <Button 
-                                                                                onClick={() => {
+                                                                                onClick={() => {    
                                                                                     if (window.confirm('Are you sure you want to delete this message?')) {
                                                                                         deleteMessage(message.id);
                                                                                     }
                                                                                 }}
-                                                                                className="bg-red-500 hover:bg-red-600"
+                                                                                className="text-white bg-red-500 hover:bg-red-600"
                                                                             >
                                                                                 Delete
                                                                             </Button>
