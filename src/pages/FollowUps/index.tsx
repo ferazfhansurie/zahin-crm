@@ -861,26 +861,36 @@ const FollowUpsPage: React.FC = () => {
                             {/* Add Message Form */}
                             <div className="mb-6 p-4 border rounded-lg">
                                 <div className="flex gap-4 mb-4">
-                                    <input
-                                        type="number"
-                                        className="w-24 px-4 py-2 border rounded-lg"
-                                        placeholder="Day #"
-                                        value={newMessage.dayNumber}
-                                        onChange={(e) => setNewMessage({
-                                            ...newMessage,
-                                            dayNumber: parseInt(e.target.value) || 1
-                                        })}
-                                    />
-                                    <input
-                                        type="number"
-                                        className="w-24 px-4 py-2 border rounded-lg"
-                                        placeholder="Sequence #"
-                                        value={newMessage.sequence}
-                                        onChange={(e) => setNewMessage({
-                                            ...newMessage,
-                                            sequence: parseInt(e.target.value) || 1
-                                        })}
-                                    />
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                            Day:
+                                        </label>
+                                        <input
+                                            type="number"
+                                            className="w-24 px-4 py-2 border rounded-lg"
+                                            placeholder="Day #"
+                                            value={newMessage.dayNumber}
+                                            onChange={(e) => setNewMessage({
+                                                ...newMessage,
+                                                dayNumber: parseInt(e.target.value) || 1
+                                            })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                                            Message:
+                                        </label>
+                                        <input
+                                            type="number"
+                                            className="w-24 px-4 py-2 border rounded-lg"
+                                            placeholder="Sequence #"
+                                            value={newMessage.sequence}
+                                            onChange={(e) => setNewMessage({
+                                                ...newMessage,
+                                                sequence: parseInt(e.target.value) || 1
+                                            })}
+                                        />
+                                    </div>
                                 </div>
 
                                 {/* Message Input */}
