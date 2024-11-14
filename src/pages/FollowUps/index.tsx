@@ -1204,20 +1204,20 @@ const FollowUpsPage: React.FC = () => {
                                                                                                     }
                                                                                                 });
                                                                                                 setNewNumber('');
-                                                                                            }
-                                                                                        }}
-                                                                                    >
-                                                                                        Add
-                                                                                    </Button>
-                                                                                </div>
-                                                                                
-                                                                                {/* Display added numbers */}
-                                                                                <div className="space-y-1">
-                                                                                    {editingMessage?.specificNumbers?.numbers.map((number, index) => (
-                                                                                        <div key={index} className="flex items-center justify-between bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded">
-                                                                                            <span>{number}</span>
-                                                                                            <button
-                                                                                                onClick={() => {
+        }
+    }}
+>
+    Add
+</Button>
+</div>
+
+{/* Display added numbers */}
+<div className="space-y-1">
+{editingMessage?.specificNumbers?.numbers.map((number, index) => (
+    <div key={index} className="flex items-center justify-between bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded">
+        <span>{number}</span>
+        <button
+            onClick={() => {
                                                                                                     const updatedNumbers = [...editingMessage.specificNumbers!.numbers];
                                                                                                     updatedNumbers.splice(index, 1);
                                                                                                     setEditingMessage({
@@ -1229,7 +1229,7 @@ const FollowUpsPage: React.FC = () => {
                                                                                                     });
                                                                                                 }}
                                                                                                 className="text-red-500 hover:text-red-700"
-                                                                                            >
+            >
                                                                                                 ✕
                                                                                             </button>
                                                                                         </div>
@@ -1348,14 +1348,14 @@ const FollowUpsPage: React.FC = () => {
                                                                                 setSelectedDocument(null);
                                                                                 setSelectedImage(null);
                                                                             }}
-                                                                            className="bg-gray-500 hover:bg-gray-600"
+                                                                            className="text-white bg-gray-500 hover:bg-gray-600"
                                                                         >
                                                                             Cancel
                                                                         </Button>
                                                                         <Button 
                                                                             onClick={() => updateMessage(message.id)}
                                                                             disabled={!editingMessage?.message.trim()}
-                                                                            className="bg-primary hover:bg-primary-dark"
+                                                                            className="text-white bg-primary hover:bg-primary-dark"
                                                                         >
                                                                             Save Changes
                                                                         </Button>
