@@ -1417,7 +1417,7 @@ const FollowUpsPage: React.FC = () => {
                                                                                 href={message.document}
                                                                                 target="_blank"
                                                                                 rel="noopener noreferrer"
-                                                                                className="text-primary hover:underline"
+                                                                                className="text-blue-500 hover:underline"
                                                                             >
                                                                                 View Document
                                                                             </a>

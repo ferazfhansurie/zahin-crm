@@ -71,6 +71,7 @@ import QuickReplies from "../pages/QuickReplies";
 import Automations from "../pages/Automations";
 import Builder from "../pages/Builder";
 import FollowUps from "../pages/FollowUps";
+import BlastHistory from "../pages/BlastHistory"
 import Layout from "../themes";
 import { getAuth } from "firebase/auth";
 import { useState, useEffect } from "react";
@@ -105,6 +106,7 @@ function Router() {
         { path: "/", element: <Chat /> },
         { path: "chat", element: <Chat /> },
         { path: "/dashboard", element: <DashboardOverview1 /> },
+        { path: "/dashboard/blast-history", element: <BlastHistory /> },
         { path: "users-layout-2/quick-replies", element: <QuickReplies /> },
         { path: "users-layout-2/automations", element: <Automations /> },
         { path: "users-layout-2/follow-ups", element: <FollowUps /> },

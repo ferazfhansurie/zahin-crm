@@ -23,7 +23,7 @@ import { initializeApp } from "firebase/app";
 import { DocumentData, DocumentReference, getDoc,where, query, limit,getDocs, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { getFirestore, collection, setDoc, increment, serverTimestamp } from 'firebase/firestore';
 import { onMessage } from "firebase/messaging";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import LoadingIcon from "@/components/Base/LoadingIcon";
 import { Bar, Doughnut, Line } from "react-chartjs-2";
 import { Chart as ChartJS, ChartData, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, PointElement, LineElement } from 'chart.js';
@@ -1418,7 +1418,11 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
                   ) :  card.id === 'blast-messages' ? (
                     <div>
                     <div className="mb-4">
-                      {/* You can add any controls or filters here if needed */}
+                    <Link to="blast-history">
+                      <Button variant="primary" className="mr-2 shadow-md">
+                          Blast History
+                      </Button>
+                    </Link>
                     </div>
                     <div className="h-64">
                       {blastMessageData.labels.length > 0 ? (
