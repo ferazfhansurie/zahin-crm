@@ -612,12 +612,18 @@ const FollowUpsPage: React.FC = () => {
             const userRef = doc(firestore, 'user', user.email!);
             const userData = (await getDoc(userRef)).data() as User;
             
+            // Ensure specificNumbers is properly structured
             const messageData = {
                 ...newMessage,
                 status: 'active',
                 createdAt: serverTimestamp(),
                 document: selectedDocument ? await uploadDocument(selectedDocument) : null,
                 image: selectedImage ? await uploadImage(selectedImage) : null,
+                specificNumbers: {
+                    enabled: newMessage.specificNumbers.enabled,
+                    numbers: newMessage.specificNumbers.enabled ? 
+                        newMessage.specificNumbers.numbers : []
+                }
             };
 
             const messagesRef = collection(firestore, 
@@ -625,6 +631,7 @@ const FollowUpsPage: React.FC = () => {
             );
             await addDoc(messagesRef, messageData);
             
+            // Reset form
             setNewMessage({
                 message: '',
                 dayNumber: 1,
@@ -641,7 +648,7 @@ const FollowUpsPage: React.FC = () => {
                     numbers: []
                 }
             });
-            setNewNumber(''); // Reset the temporary number input
+            setNewNumber('');
             setSelectedDocument(null);
             setSelectedImage(null);
             fetchMessages(selectedTemplate);
