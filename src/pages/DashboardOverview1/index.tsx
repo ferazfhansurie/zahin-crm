@@ -21,7 +21,7 @@ import { getFirebaseToken, messaging } from "../../firebaseconfig";
 import { getAuth } from "firebase/auth";
 import { initializeApp } from "firebase/app";
 import { DocumentData, DocumentReference, getDoc,where, query, limit,getDocs, onSnapshot, doc, updateDoc } from 'firebase/firestore';
-import { getFirestore, collection, setDoc, increment, serverTimestamp } from 'firebase/firestore';
+import { getFirestore, collection, setDoc, increment, serverTimestamp, orderBy } from 'firebase/firestore';
 import { onMessage } from "firebase/messaging";
 import { Link, useNavigate } from "react-router-dom";
 import LoadingIcon from "@/components/Base/LoadingIcon";
@@ -1226,6 +1226,48 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
     fetchBlastMessageData();
   }, []);
 
+  // Update interface for agent stats
+  interface AgentStats {
+    conversationsAssigned: number;
+    outgoingMessagesSent: number;
+    averageResponseTime: number;
+    closedContacts: number;
+  }
+
+  // Add new state and function near other state declarations
+  const [agentStats, setAgentStats] = useState<AgentStats | null>(null);
+  const [loadingStats, setLoadingStats] = useState(false);
+
+  // Update fetch function
+  const fetchAgentStats = async (employeeId: string) => {
+    setLoadingStats(true);
+    try {
+      const response = await axios.get(`https://mighty-dane-newly.ngrok-free.app/api/stats/${companyId}/${employeeId}`);
+      const data = response.data;
+
+      const stats: AgentStats = {
+        conversationsAssigned: data.conversationsAssigned || 0,
+        outgoingMessagesSent: data.outgoingMessagesSent || 0,
+        averageResponseTime: data.averageResponseTime || 0,
+        closedContacts: data.closedContacts || 0
+      };
+
+      setAgentStats(stats);
+    } catch (error) {
+      console.error('Error fetching agent stats:', error);
+      setAgentStats(null);
+    } finally {
+      setLoadingStats(false);
+    }
+  };
+
+  // Add useEffect to load current user's stats by default
+  useEffect(() => {
+    if (currentUser?.id) {
+      fetchAgentStats(currentUser.id);
+    }
+  }, [currentUser]);
+
   const dashboardCards = [
     {
       id: 'kpi',
@@ -1346,7 +1388,109 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
           </div>
         </div>
       )
-    }
+    },
+    // {
+    //   id: 'agent-performance',
+    //   title: 'Agent Performance Metrics',
+    //   content: (
+    //     <div className="flex flex-col h-full">
+    //       <div className="mb-4">
+    //         <div className="relative">
+    //           <FormInput
+    //             type="text"
+    //             placeholder="Search employees..."
+    //             value={employeeSearchQuery}
+    //             onChange={(e) => setEmployeeSearchQuery(e.target.value)}
+    //             className="w-full"
+    //           />
+    //           <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
+    //             {filteredEmployees.map((employee) => (
+    //               <div
+    //                 key={employee.id}
+    //                 className={`p-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer ${
+    //                   employee.id === currentUser?.id ? 'bg-blue-100 dark:bg-blue-900' : ''
+    //                 }`}
+    //                 onClick={() => {
+    //                   setEmployeeSearchQuery(employee.name);
+    //                   handleEmployeeSelect(employee);
+    //                   fetchAgentStats(employee.id);
+    //                 }}
+    //               >
+    //                 <span className="text-gray-900 dark:text-gray-100">{employee.name}</span>
+    //                 <span className="text-gray-600 dark:text-gray-400"> ({employee.assignedContacts || 0} assigned contacts)</span>
+    //               </div>
+    //             ))}
+    //           </div>
+    //         </div>
+    //       </div>
+          
+    //       {loadingStats ? (
+    //         <div className="flex items-center justify-center h-64">
+    //           <LoadingIcon icon="spinning-circles" className="w-8 h-8" />
+    //         </div>
+    //       ) : agentStats ? (
+    //         <div className="grid grid-cols-2 gap-4">
+    //           <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+    //             <div className="flex items-center space-x-2">
+    //               <Lucide icon="Users" className="w-4 h-4 text-blue-500" />
+    //               <div className="text-sm text-gray-600 dark:text-gray-400">Conversations Assigned</div>
+    //             </div>
+    //             <div className="text-2xl font-bold text-blue-500 mt-2">
+    //               {agentStats.conversationsAssigned.toLocaleString()}
+    //             </div>
+    //           </div>
+              
+    //           <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+    //             <div className="flex items-center space-x-2">
+    //               <Lucide icon="MessageSquare" className="w-4 h-4 text-green-500" />
+    //               <div className="text-sm text-gray-600 dark:text-gray-400">Outgoing Messages</div>
+    //             </div>
+    //             <div className="text-2xl font-bold text-green-500 mt-2">
+    //               {agentStats.outgoingMessagesSent.toLocaleString()}
+    //             </div>
+    //           </div>
+              
+    //           <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+    //             <div className="flex items-center space-x-2">
+    //               <Lucide icon="Clock" className="w-4 h-4 text-yellow-500" />
+    //               <div className="text-sm text-gray-600 dark:text-gray-400">Avg. Response Time</div>
+    //             </div>
+    //             <div className="text-2xl font-bold text-yellow-500 mt-2">
+    //               {agentStats.averageResponseTime < 60 
+    //                 ? `${agentStats.averageResponseTime}m` 
+    //                 : `${(agentStats.averageResponseTime / 60).toFixed(1)}h`}
+    //             </div>
+    //           </div>
+              
+    //           <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+    //             <div className="flex items-center space-x-2">
+    //               <Lucide icon="CheckCircle" className="w-4 h-4 text-purple-500" />
+    //               <div className="text-sm text-gray-600 dark:text-gray-400">Closed Contacts</div>
+    //             </div>
+    //             <div className="text-2xl font-bold text-purple-500 mt-2">
+    //               {agentStats.closedContacts.toLocaleString()}
+    //             </div>
+    //           </div>
+    //         </div>
+    //       ) : (
+    //         <div className="flex items-center justify-center h-64 text-gray-600 dark:text-gray-400">
+    //           Select an agent to view their performance metrics
+    //         </div>
+    //       )}
+
+    //       {agentStats && agentStats.conversationsAssigned > 0 && (
+    //         <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+    //           <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+    //             Conversion Rate
+    //           </div>
+    //           <div className="text-xl font-bold text-blue-500">
+    //             {((agentStats.closedContacts / agentStats.conversationsAssigned) * 100).toFixed(1)}%
+    //           </div>
+    //         </div>
+    //       )}
+    //     </div>
+    //   )
+    // }
     // Add more cards here as needed
   ];
 

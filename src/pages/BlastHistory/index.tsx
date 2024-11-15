@@ -33,6 +33,10 @@ interface ScheduledMessage {
     status: string;
     count: number;
   }[];
+  recipients: {
+    name: string;
+    phone: string;
+  }[];
 }
 
 const BlastHistoryPage: React.FC = () => {
@@ -43,6 +47,8 @@ const BlastHistoryPage: React.FC = () => {
     const [tags, setTags] = useState<Tag[]>([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<'all' | 'scheduled' | 'completed' | 'failed'>('all');
+    const [selectedRecipients, setSelectedRecipients] = useState<{name: string; phone: string;}[]>([]);
+    const [isRecipientsModalOpen, setIsRecipientsModalOpen] = useState(false);
 
     useEffect(() => {
         fetchTags();
@@ -99,10 +105,53 @@ const BlastHistoryPage: React.FC = () => {
             const messagesRef = collection(firestore, `companies/${userData.companyId}/scheduledMessages`);
             const messagesSnapshot = await getDocs(messagesRef);
             
-            const fetchedMessages = messagesSnapshot.docs.map(doc => ({
-                id: doc.id,
-                ...doc.data(),
-                createdAt: doc.data().createdAt?.toDate() || new Date(),
+            const fetchedMessages = await Promise.all(messagesSnapshot.docs.map(async (docSnapshot) => {
+                const messageData = docSnapshot.data();
+                console.log('Processing message:', docSnapshot.id);
+                console.log('Chat IDs:', messageData.chatIds);
+                
+                // Fetch recipient details for each chatId
+                const recipients = await Promise.all(messageData.chatIds.map(async (chatId: string) => {
+                    // Extract phone number and add '+' prefix
+                    const phoneNumber = '+' + chatId.split('@')[0];
+                    console.log('Looking up contact with ID:', phoneNumber);
+                    
+                    const contactRef = doc(firestore, `companies/${userData.companyId}/contacts`, phoneNumber);
+                    const contactDoc = await getDoc(contactRef);
+                    
+                    if (contactDoc.exists()) {
+                        const contactData = contactDoc.data();
+                        console.log('Contact found:', contactData);
+                        
+                        // Try to get the name in order of preference
+                        const name = contactData.contactName || 
+                                   contactData.name ||
+                                   contactData.fullName ||
+                                   phoneNumber;
+                                   
+                        console.log('Selected name:', name);
+                        
+                        return {
+                            name,
+                            phone: phoneNumber
+                        };
+                    } else {
+                        console.log('No contact found for:', phoneNumber);
+                        return {
+                            name: phoneNumber,
+                            phone: phoneNumber
+                        };
+                    }
+                }));
+                
+                console.log('Final recipients for message:', recipients);
+                
+                return {
+                    id: docSnapshot.id,
+                    ...messageData,
+                    recipients,
+                    createdAt: messageData.createdAt?.toDate() || new Date(),
+                };
             })) as ScheduledMessage[];
 
             setMessages(fetchedMessages);
@@ -235,22 +284,30 @@ const BlastHistoryPage: React.FC = () => {
                                 <div className="flex justify-between items-start">
                                     <div>
                                         <p className="font-medium">{message.message}</p>
-                                        <p className="text-sm text-gray-500">
-                                            Created: {message.createdAt.toLocaleDateString('en-GB')}
-                                        </p>
-                                        <p className="text-sm text-gray-500">
+                                        <button
+                                            onClick={() => {
+                                                setSelectedRecipients(message.recipients || []);
+                                                setIsRecipientsModalOpen(true);
+                                            }}
+                                            className="text-sm text-black hover:text-black hover:underline bg-transparent border-none cursor-pointer"
+                                        >
                                             Recipients: {message.chatIds.length}
+                                        </button>
+                                        <div>
+                                            {message.documentUrl && (
+                                                <a 
+                                                    href={message.documentUrl}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-blue-500 hover:underline text-sm"
+                                                >
+                                                    {message.fileName}
+                                                </a>
+                                            )}
+                                        </div>
+                                        <p className="text-sm text-gray-500">
+                                            {message.createdAt.toLocaleDateString('en-GB')} {message.createdAt.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}
                                         </p>
-                                        {message.documentUrl && (
-                                            <a 
-                                                href={message.documentUrl}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-blue-500 hover:underline text-sm"
-                                            >
-                                                {message.fileName}
-                                            </a>
-                                        )}
                                         {message.mediaUrl && (
                                             <div className="mt-2">
                                                 <img
@@ -300,6 +357,35 @@ const BlastHistoryPage: React.FC = () => {
                     </div>
                 )}
             </div>
+
+            {isRecipientsModalOpen && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-xl font-bold">Recipients List</h2>
+                            <Button
+                                onClick={() => setIsRecipientsModalOpen(false)}
+                                className="text-gray-500 hover:text-gray-700"
+                            >
+                                <span className="text-xl">×</span>
+                            </Button>
+                        </div>
+                        <div className="divide-y">
+                            {selectedRecipients.map((recipient, index) => (
+                                <div key={index} className="py-3 flex justify-between items-center">
+                                    <div>
+                                        <p className="font-medium">{recipient.name}</p>
+                                        <p className="text-gray-600">{recipient.phone}</p>
+                                    </div>
+                                </div>
+                            ))}
+                            {selectedRecipients.length === 0 && (
+                                <p className="text-gray-500 py-2">No recipients found</p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
