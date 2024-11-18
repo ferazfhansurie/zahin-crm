@@ -23,10 +23,10 @@ import { initializeApp } from "firebase/app";
 import { DocumentData, DocumentReference, getDoc,where, query, limit,getDocs, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { getFirestore, collection, setDoc, increment, serverTimestamp } from 'firebase/firestore';
 import { onMessage } from "firebase/messaging";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import LoadingIcon from "@/components/Base/LoadingIcon";
 import { Bar, Doughnut, Line } from "react-chartjs-2";
-import { Chart as ChartJS, ChartData, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, PointElement, LineElement } from 'chart.js';
+import { Chart as ChartJS, ChartData, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, PointElement, LineElement, BarController } from 'chart.js';
 import { BarChart } from "lucide-react";
 import { useContacts } from "@/contact";
 import { User, ChevronRight } from 'lucide-react';
@@ -34,7 +34,7 @@ import { format, subDays, subMonths, startOfDay, endOfDay, eachHourOfInterval, e
 
 
 // Register ChartJS components
-ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, PointElement, LineElement);
+ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend, PointElement, LineElement, BarController);
 
 const firebaseConfig = {
   apiKey: "AIzaSyCc0oSHlqlX7fLeqqonODsOIC3XA8NI7hc",
@@ -868,10 +868,8 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
   // Modify the handleEmployeeSelect function
   const handleEmployeeSelect = async (employee: Employee) => {
     console.log("Employee selected:", employee);
-    const fullEmployeeData = await fetchEmployeeData(employee.id);
-    if (fullEmployeeData) {
-      setSelectedEmployee(fullEmployeeData);
-    }
+    setSelectedEmployee(employee);
+    fetchEmployeeStats(employee.id);
   };
 
   const fetchContactsOverTime = async (filter: 'today' | '7days' | '1month' | '3months' | 'all') => {
@@ -1226,6 +1224,75 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
     fetchBlastMessageData();
   }, []);
 
+  // Add this new interface
+  interface EmployeeStats {
+    conversationsAssigned: number;
+    outgoingMessagesSent: number;
+    averageResponseTime: number;
+    closedContacts: number;
+  }
+
+  // Add this new state
+  const [employeeStats, setEmployeeStats] = useState<EmployeeStats | null>(null);
+
+  // Add this new function
+  const fetchEmployeeStats = async (employeeId: string) => {
+    try {
+      console.log('Fetching stats for employee:', employeeId);
+      // Update the URL to match your actual API endpoint
+      const response = await axios.get(`https://mighty-dane-newly.ngrok-free.app/api/stats/${companyId}?employeeId=${employeeId}`);
+      console.log('Received employee stats:', response.data);
+      setEmployeeStats(response.data);
+    } catch (error) {
+      console.error('Error fetching employee stats:', error);
+      // Add user-friendly error handling
+      setEmployeeStats(null);
+      // Optionally show an error message to the user
+      // setError('Failed to load employee performance metrics');
+    }
+  };
+
+  // Update useEffect to fetch stats for current user by default
+  useEffect(() => {
+    if (currentUser) {
+      fetchEmployeeStats(currentUser.id);
+      setSelectedEmployee(currentUser);
+    }
+  }, [currentUser]); // Dependency on currentUser
+
+  // Add this new type near your other interfaces
+  interface PerformanceMetricsData {
+    labels: string[];
+    datasets: {
+      label: string;
+      data: number[];
+      borderColor: string;
+      backgroundColor: string;
+      fill: boolean;
+    }[];
+  }
+
+  // Inside your Main component, add this new function
+  const getPerformanceMetricsData = (stats: EmployeeStats | null): PerformanceMetricsData => {
+    return {
+      labels: ['Response Time (min)', 'Closed Contacts', 'Conversations', 'Messages Sent'],
+      datasets: [
+        {
+          label: 'Performance Metrics',
+          data: [
+            stats?.averageResponseTime ? Number((stats.averageResponseTime / 60).toFixed(1)) : 0,
+            stats?.closedContacts || 0,
+            stats?.conversationsAssigned || 0,
+            stats?.outgoingMessagesSent || 0
+          ],
+          borderColor: 'rgb(147, 51, 234)', // purple for response time
+          backgroundColor: 'rgba(147, 51, 234, 0.2)',
+          fill: true
+        }
+      ]
+    };
+  };
+
   const dashboardCards = [
     {
       id: 'kpi',
@@ -1346,6 +1413,74 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
           </div>
         </div>
       )
+    },
+    {
+      id: 'performance-metrics',
+      title: 'Employee Performance Metrics',
+      content: (
+        <div className="h-full">
+          {employeeStats ? (
+            <Bar
+              data={getPerformanceMetricsData(employeeStats)}
+              options={{
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y', // This makes it a horizontal bar chart
+                scales: {
+                  x: {
+                    beginAtZero: true,
+                    grid: {
+                      color: 'rgba(107, 114, 128, 0.1)'
+                    },
+                    ticks: {
+                      color: 'rgb(107, 114, 128)'
+                    }
+                  },
+                  y: {
+                    grid: {
+                      display: false
+                    },
+                    ticks: {
+                      color: 'rgb(107, 114, 128)'
+                    }
+                  }
+                },
+                plugins: {
+                  legend: {
+                    display: false
+                  },
+                  title: {
+                    display: true,
+                    text: 'Employee Performance Metrics',
+                    color: 'rgb(31, 41, 55)',
+                    font: {
+                      size: 16
+                    }
+                  },
+                  tooltip: {
+                    callbacks: {
+                      label: function(context) {
+                        const label = context.dataset.label || '';
+                        const value = context.parsed.x;
+                        const metric = context.label;
+                        
+                        if (metric === 'Response Time (min)') {
+                          return `${label}: ${value} minutes`;
+                        }
+                        return `${label}: ${value}`;
+                      }
+                    }
+                  }
+                }
+              }}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full text-gray-500">
+              No performance data available
+            </div>
+          )}
+        </div>
+      ),
     }
     // Add more cards here as needed
   ];
@@ -1415,10 +1550,14 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
                         )}
                       </div>
                     </div>
-                  ) :  card.id === 'blast-messages' ? (
+                  ) : card.id === 'blast-messages' ? (
                     <div>
                     <div className="mb-4">
-                      {/* You can add any controls or filters here if needed */}
+                    <Link to="blast-history">
+                      <Button variant="primary" className="mr-2 shadow-md">
+                          Blast History
+                      </Button>
+                    </Link>
                     </div>
                     <div className="h-64">
                       {blastMessageData.labels.length > 0 ? (
@@ -1459,30 +1598,93 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
                       )}
                     </div>
                     <div className="mt-4">
-      {blastMessageData.labels.length > 0 && (
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Total Scheduled:</p>
-            <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-              {blastMessageData.datasets[0].data.reduce((a, b) => a + b, 0).toLocaleString()}
-            </p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Total Completed:</p>
-            <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-              {blastMessageData.datasets[1].data.reduce((a, b) => a + b, 0).toLocaleString()}
-            </p>
-          </div>
-          <div>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Total Failed:</p>
-            <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-              {blastMessageData.datasets[2].data.reduce((a, b) => a + b, 0).toLocaleString()}
-            </p>
-          </div>
-        </div>
-      )}
-    </div>
+                      {blastMessageData.labels.length > 0 && (
+                        <div className="grid grid-cols-3 gap-4">
+                          <div>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">Total Scheduled:</p>
+                            <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                              {blastMessageData.datasets[0].data.reduce((a, b) => a + b, 0).toLocaleString()}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">Total Completed:</p>
+                            <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                              {blastMessageData.datasets[1].data.reduce((a, b) => a + b, 0).toLocaleString()}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">Total Failed:</p>
+                            <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                              {blastMessageData.datasets[2].data.reduce((a, b) => a + b, 0).toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
+                  ) : card.id === 'performance-metrics' ? (
+                    <div className="h-full">
+                      {employeeStats ? (
+                        <Bar
+                          data={getPerformanceMetricsData(employeeStats)}
+                          options={{
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            indexAxis: 'y', // This makes it a horizontal bar chart
+                            scales: {
+                              x: {
+                                beginAtZero: true,
+                                grid: {
+                                  color: 'rgba(107, 114, 128, 0.1)'
+                                },
+                                ticks: {
+                                  color: 'rgb(107, 114, 128)'
+                                }
+                              },
+                              y: {
+                                grid: {
+                                  display: false
+                                },
+                                ticks: {
+                                  color: 'rgb(107, 114, 128)'
+                                }
+                              }
+                            },
+                            plugins: {
+                              legend: {
+                                display: false
+                              },
+                              // title: {
+                              //   display: true,
+                              //   text: 'Employee Performance Metrics',
+                              //   color: 'rgb(31, 41, 55)',
+                              //   font: {
+                              //     size: 16
+                              //   }
+                              // },
+                              tooltip: {
+                                callbacks: {
+                                  label: function(context) {
+                                    const label = context.dataset.label || '';
+                                    const value = context.parsed.x;
+                                    const metric = context.label;
+                                    
+                                    if (metric === 'Response Time (min)') {
+                                      return `${label}: ${value} minutes`;
+                                    }
+                                    return `${label}: ${value}`;
+                                  }
+                                }
+                              }
+                            }
+                          }}
+                        />
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-gray-500">
+                          No performance data available
+                        </div>
+                      )}
+                    </div>
                   ) : (
                     <div className="text-center text-gray-600 dark:text-gray-400">No data available</div>
                   )}
