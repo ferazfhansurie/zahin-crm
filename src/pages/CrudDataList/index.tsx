@@ -981,8 +981,11 @@ const handleConfirmDeleteTag = async () => {
         tags = response.data.tags;
       }
 
-      // Filter out tags that match with employeeList
-      const filteredTags = tags.filter((tag: Tag) => !employeeList.includes(tag.name));
+      const normalizedEmployeeNames = employeeList.map(name => name.toLowerCase());
+
+      const filteredTags = tags.filter((tag: Tag) => 
+        !normalizedEmployeeNames.includes(tag.name.toLowerCase())
+      );
 
       setTagList(filteredTags);
       setLoading(false);
@@ -991,6 +994,11 @@ const handleConfirmDeleteTag = async () => {
       setLoading(false);
     }
   };
+  useEffect(() => {
+    // Ensure employee names are properly stored when fetched
+    const normalizedEmployeeNames = employeeList.map(employee => employee.name.toLowerCase());
+    setEmployeeNames(normalizedEmployeeNames);
+  }, [employeeList]);
   async function fetchCompanyData() {
     const user = auth.currentUser;
     try {
@@ -2700,7 +2708,8 @@ const sendBlastMessage = async () => {
           <span
             key={index}
             className={`px-2 py-1 text-xs font-semibold rounded-full ${
-              employeeNames.includes(tag.toLowerCase())
+              // Make case-insensitive comparison
+              employeeNames.some(name => name.toLowerCase() === tag.toLowerCase())
                 ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
                 : 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
             }`}
@@ -2880,7 +2889,7 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
                               Users
                             </Tab>
                           </Tab.List>
-                          <Tab.Panels className="mt-2">
+                          <Tab.Panels className="mt-2 max-h-[300px] overflow-y-auto">
                             <Tab.Panel>
                               {tagList.map((tag) => (
                                 <div key={tag.id} className={`flex items-center justify-between m-2 p-2 text-sm w-full rounded-md ${selectedTagFilters.includes(tag.name) ? 'bg-primary dark:bg-primary text-white' : ''}`}>

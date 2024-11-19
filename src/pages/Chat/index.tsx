@@ -2004,15 +2004,29 @@ async function fetchConfigFromDatabase() {
   }, [contacts, userRole, userData?.name]);
 
   const getTimestamp = (timestamp: any): number => {
+    // If timestamp is missing, return 0 to put it at the bottom
+    if (!timestamp) return 0;
+  
+    // If timestamp is already a number
     if (typeof timestamp === 'number') {
+      // Convert to milliseconds if needed (check if it's in seconds)
       return timestamp < 10000000000 ? timestamp * 1000 : timestamp;
-    } else if (typeof timestamp === 'object' && timestamp.seconds) {
-      return timestamp.seconds * 1000;
-    } else if (typeof timestamp === 'string') {
-      return new Date(timestamp).getTime();
-    } else {
-      return 0;
     }
+  
+    // If timestamp is a Firestore timestamp
+    if (timestamp?.seconds) {
+      return timestamp.seconds * 1000;
+    }
+  
+    // If timestamp is an ISO string or other date format
+    if (typeof timestamp === 'string') {
+      const parsed = Date.parse(timestamp);
+      return isNaN(parsed) ? 0 : parsed;
+    }
+  
+    // Default case - invalid timestamp
+    console.warn('Invalid timestamp format:', timestamp);
+    return 0;
   };
 
 const fetchContactsBackground = async (whapiToken: string, locationId: string, ghlToken: string, user_name: string, role: string, userEmail: string | null | undefined) => {
@@ -2077,14 +2091,73 @@ const fetchContactsBackground = async (whapiToken: string, locationId: string, g
 
     await Promise.all(updatePromises);
 
-    // Sort contacts by pinned status and last_message timestamp
+    console.log('Before sorting - First 5 contacts:', allContacts.slice(0, 5).map(c => ({
+      id: c.chat_id,
+      unread: c.unreadCount,
+      timestamp: c.last_message?.timestamp,
+      pinned: c.pinned
+    })));
+
     allContacts.sort((a, b) => {
+      // First priority: pinned status
       if (a.pinned && !b.pinned) return -1;
       if (!a.pinned && b.pinned) return 1;
       
-      const timestampA = getTimestamp(a.last_message?.timestamp || a.last_message?.createdAt);
-      const timestampB = getTimestamp(b.last_message?.timestamp || b.last_message?.createdAt);
+      // Second priority: unread messages
+      if (a.unreadCount && !b.unreadCount) return -1;
+      if (!a.unreadCount && b.unreadCount) return 1;
+      
+      // Get timestamps with validation
+      let timestampA = a.last_message?.timestamp;
+      let timestampB = b.last_message?.timestamp;
+
+      // Convert string timestamps to numbers if needed
+      if (typeof timestampA === 'string') timestampA = parseInt(timestampA, 10);
+      if (typeof timestampB === 'string') timestampB = parseInt(timestampB, 10);
+
+      // Ensure timestamps are in seconds
+      if (timestampA && timestampA > 9999999999) timestampA = Math.floor(timestampA / 1000);
+      if (timestampB && timestampB > 9999999999) timestampB = Math.floor(timestampB / 1000);
+
+      // If either timestamp is invalid, use 0
+      timestampA = timestampA || 0;
+      timestampB = timestampB || 0;
+
+      // Sort descending (newest first)
       return timestampB - timestampA;
+    });
+
+    // Add debugging after sorting
+    console.log('After sorting - First 5 contacts:', allContacts.slice(0, 5).map(c => ({
+      id: c.chat_id,
+      unread: c.unreadCount,
+      timestamp: c.last_message?.timestamp,
+      pinned: c.pinned
+    })));
+
+    // Before setting contacts, ensure all timestamps are in the correct format
+    allContacts = allContacts.map(contact => {
+      if (!contact.last_message) return contact;
+
+      let timestamp = contact.last_message.timestamp;
+      
+      // Convert string timestamps to numbers
+      if (typeof timestamp === 'string') {
+        timestamp = parseInt(timestamp, 10);
+      }
+
+      // Ensure timestamp is in seconds
+      if (timestamp && timestamp > 9999999999) {
+        timestamp = Math.floor(timestamp / 1000);
+      }
+
+      return {
+        ...contact,
+        last_message: {
+          ...contact.last_message,
+          timestamp
+        }
+      };
     });
 
     console.log('Active tag:', activeTags[0]);
@@ -2107,6 +2180,8 @@ const fetchContactsBackground = async (whapiToken: string, locationId: string, g
     console.error('Error fetching contacts:', error);
   }
 };
+
+
 
 useEffect(() => {
   const fetchUserRole = async () => {
@@ -2776,7 +2851,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
         const updatedLastMessage: Message = {
           text: { body: newMessage },
           chat_id: selectedContact.chat_id || '',
-          timestamp:  Math.floor(now.getTime() / 1000),
+          timestamp: Math.floor(Date.now() / 1000),
           id: selectedContact.last_message?.id || `temp_${now.getTime()}`,
           from_me: true,
           type: 'text',
