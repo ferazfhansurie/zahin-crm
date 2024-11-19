@@ -113,6 +113,8 @@ const FollowUpsPage: React.FC = () => {
         fetchTags();
     }, []);
 
+    
+    
     const fetchTags = async () => {
         try {
             const user = auth.currentUser;
@@ -166,7 +168,7 @@ const FollowUpsPage: React.FC = () => {
         };
         specificNumbers: {
             enabled: boolean;
-            numbers: string[];  // Explicitly type as string array
+            numbers: string[];
         };
     }>({
         message: '',
@@ -181,7 +183,7 @@ const FollowUpsPage: React.FC = () => {
         },
         specificNumbers: {
             enabled: false,
-            numbers: []  // Initialize empty string array
+            numbers: []
         }
     });
 
@@ -435,7 +437,6 @@ const FollowUpsPage: React.FC = () => {
             const userRef = doc(firestore, 'user', user.email!);
             const userData = (await getDoc(userRef)).data() as User;
             
-            // Update: Use subcollection path
             const messageRef = doc(firestore, 
                 `companies/${userData.companyId}/followUpTemplates/${selectedTemplate}/messages`, 
                 messageId
@@ -444,6 +445,10 @@ const FollowUpsPage: React.FC = () => {
             const updateData: Partial<FollowUpMessage> = {
                 message: editingMessage.message,
                 delayAfter: editingMessage.delayAfter,
+                specificNumbers: {
+                    enabled: editingMessage.specificNumbers?.enabled || false,
+                    numbers: editingMessage.specificNumbers?.numbers || []
+                }
             };
 
             if (selectedDocument) {
@@ -453,6 +458,9 @@ const FollowUpsPage: React.FC = () => {
                 updateData.image = await uploadImage(selectedImage);
             }
 
+            // Log the update data for debugging
+            console.log('Updating message with data:', updateData);
+
             await updateDoc(messageRef, updateData);
             
             setIsEditingMessage(null);
@@ -461,8 +469,10 @@ const FollowUpsPage: React.FC = () => {
             setSelectedImage(null);
             
             fetchMessages(selectedTemplate);
+            toast.success('Message updated successfully');
         } catch (error) {
             console.error('Error updating message:', error);
+            toast.error('Failed to update message');
         }
     };
     
@@ -599,12 +609,11 @@ const FollowUpsPage: React.FC = () => {
     const addMessage = async () => {
         if (!selectedTemplate || !newMessage.message.trim()) return;
 
-        // Check for duplicate message
+        // Double-check for duplicates before saving
         if (isDuplicateMessage(newMessage.dayNumber, newMessage.sequence)) {
-            toast.error(`Message ${newMessage.sequence} for Day ${newMessage.dayNumber} already exists`);
+            toast.error('A message with this day and sequence number already exists');
             return;
         }
-
         try {
             const user = auth.currentUser;
             if (!user) return;
@@ -612,23 +621,33 @@ const FollowUpsPage: React.FC = () => {
             const userRef = doc(firestore, 'user', user.email!);
             const userData = (await getDoc(userRef)).data() as User;
             
-            // Ensure specificNumbers is properly structured
+            // Create message data with explicit specificNumbers structure
             const messageData = {
-                ...newMessage,
+                message: newMessage.message,
+                dayNumber: newMessage.dayNumber,
+                sequence: newMessage.sequence,
                 status: 'active',
                 createdAt: serverTimestamp(),
                 document: selectedDocument ? await uploadDocument(selectedDocument) : null,
                 image: selectedImage ? await uploadImage(selectedImage) : null,
+                delayAfter: {
+                    value: newMessage.delayAfter.value,
+                    unit: newMessage.delayAfter.unit,
+                    isInstantaneous: newMessage.delayAfter.isInstantaneous
+                },
                 specificNumbers: {
                     enabled: newMessage.specificNumbers.enabled,
-                    numbers: newMessage.specificNumbers.enabled ? 
-                        newMessage.specificNumbers.numbers : []
+                    numbers: newMessage.specificNumbers.numbers // Make sure this array is included
                 }
             };
 
             const messagesRef = collection(firestore, 
                 `companies/${userData.companyId}/followUpTemplates/${selectedTemplate}/messages`
             );
+            
+            // Log the data being saved for debugging
+            console.log('Saving message data:', messageData);
+            
             await addDoc(messagesRef, messageData);
             
             // Reset form
@@ -637,7 +656,7 @@ const FollowUpsPage: React.FC = () => {
                 dayNumber: 1,
                 sequence: getNextSequenceNumber(newMessage.dayNumber),
                 templateId: selectedTemplate,
-                status: 'active' as const,
+                status: 'active',
                 delayAfter: {
                     value: 5,
                     unit: 'minutes',
@@ -651,6 +670,7 @@ const FollowUpsPage: React.FC = () => {
             setNewNumber('');
             setSelectedDocument(null);
             setSelectedImage(null);
+            
             fetchMessages(selectedTemplate);
             toast.success('Message added successfully');
         } catch (error) {
@@ -900,6 +920,13 @@ const FollowUpsPage: React.FC = () => {
                                     </div>
                                 </div>
 
+                                {/* Add warning message if duplicate */}
+                                {isDuplicateMessage(newMessage.dayNumber, newMessage.sequence) && (
+                                    <div className="text-red-500 text-sm mb-4">
+                                        A message with this day and sequence number already exists.
+                                    </div>
+                                )}
+
                                 {/* Message Input */}
                                 <textarea
                                     className="w-full px-4 py-2 mb-4 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
@@ -919,13 +946,16 @@ const FollowUpsPage: React.FC = () => {
                                             type="checkbox"
                                             className="mr-2"
                                             checked={newMessage.specificNumbers.enabled}
-                                            onChange={(e) => setNewMessage({
-                                                ...newMessage,
-                                                specificNumbers: {
-                                                    ...newMessage.specificNumbers,
-                                                    enabled: e.target.checked
-                                                }
-                                            })}
+                                            onChange={(e) => {
+                                                console.log('Checkbox changed:', e.target.checked);
+                                                setNewMessage({
+                                                    ...newMessage,
+                                                    specificNumbers: {
+                                                        enabled: e.target.checked,
+                                                        numbers: e.target.checked ? newMessage.specificNumbers.numbers : []
+                                                    }
+                                                });
+                                            }}
                                         />
                                         Send to specific numbers
                                     </label>
@@ -943,11 +973,15 @@ const FollowUpsPage: React.FC = () => {
                                                 <Button
                                                     onClick={() => {
                                                         if (newNumber.trim()) {
+                                                            console.log('Current numbers:', newMessage.specificNumbers.numbers);
+                                                            const updatedNumbers = [...newMessage.specificNumbers.numbers, newNumber.trim()];
+                                                            console.log('Updated numbers:', updatedNumbers);
+                                                            
                                                             setNewMessage({
                                                                 ...newMessage,
                                                                 specificNumbers: {
-                                                                    ...newMessage.specificNumbers,
-                                                                    numbers: [...newMessage.specificNumbers.numbers, newNumber.trim()]
+                                                                    enabled: true,
+                                                                    numbers: updatedNumbers
                                                                 }
                                                             });
                                                             setNewNumber('');
@@ -970,7 +1004,7 @@ const FollowUpsPage: React.FC = () => {
                                                                 setNewMessage({
                                                                     ...newMessage,
                                                                     specificNumbers: {
-                                                                        ...newMessage.specificNumbers,
+                                                                        enabled: true,
                                                                         numbers: updatedNumbers
                                                                     }
                                                                 });
@@ -1086,8 +1120,15 @@ const FollowUpsPage: React.FC = () => {
                                 <div className="flex justify-end">
                                     <Button 
                                         onClick={addMessage}
-                                        disabled={!newMessage.message.trim()}
-                                        className="w-full"
+                                        disabled={
+                                            !newMessage.message.trim() || 
+                                            isDuplicateMessage(newMessage.dayNumber, newMessage.sequence)
+                                        }
+                                        className={`w-full ${
+                                            isDuplicateMessage(newMessage.dayNumber, newMessage.sequence)
+                                            ? 'opacity-50 cursor-not-allowed'
+                                            : ''
+                                        }`}
                                     >
                                         Add Message
                                     </Button>
