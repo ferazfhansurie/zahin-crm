@@ -3374,20 +3374,6 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
         addTagBeforeQuoteMalay(contact);
       } else if (tagName === 'Before Quote Follow Up CN') {
         addTagBeforeQuoteChinese(contact);
-      } else if (tagName === 'After Quote Follow Up') {
-        addTagAfterQuote(contact);
-      } else if (tagName === 'After Quote Follow Up EN') {
-        addTagAfterQuoteEnglish(contact);
-      } else if (tagName === 'After Quote Follow Up CN') {
-        addTagAfterQuoteChinese(contact);
-      } else if (tagName === 'After Quote Follow Up BM') {
-        addTagAfterQuoteMalay(contact);
-      } else if (tagName === '5 Days Follow Up EN') {
-        fiveDaysFollowUpEnglish(contact);
-      } else if (tagName === '5 Days Follow Up CN') {
-        fiveDaysFollowUpChinese(contact);
-      } else if (tagName === '5 Days Follow Up BM') {
-        fiveDaysFollowUpMalay(contact);
       } else if (tagName === 'Pause Follow Up') {
         pauseFiveDaysFollowUp(contact);
       } else {
@@ -4931,21 +4917,7 @@ const sortContacts = (contacts: Contact[]) => {
       } else if (tagName === 'Before Quote Follow Up BM') {
         removeTagBeforeQuote(contact);
       } else if (tagName === 'Before Quote Follow Up CN') {
-        removeTagBeforeQuote(contact);
-      } else if (tagName === 'After Quote Follow Up') {
-        removeTagAfterQuote(contact);
-      } else if (tagName === 'After Quote Follow Up EN') {
-        removeTagAfterQuote(contact);
-      } else if (tagName === 'After Quote Follow Up CN') {
-        removeTagAfterQuote(contact);
-      } else if (tagName === 'After Quote Follow Up BM') {
-        removeTagAfterQuote(contact);
-      } else if (tagName === '5 Days Follow Up EN') {
-        removeTag5Days(contact);
-      } else if (tagName === '5 Days Follow Up CN') {
-        removeTag5Days(contact);
-      } else if (tagName === '5 Days Follow Up BM') {
-        removeTag5Days(contact);
+        removeTagBeforeQuote(contact); 
       } else if (tagName === 'Pause Follow Up') {
         removeTagPause(contact);
       } else if (tagName === 'Edward Follow Up') {
