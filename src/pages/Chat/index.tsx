@@ -597,18 +597,7 @@ function Main() {
   }, [contacts, searchQuery, activeTags, currentUserName, employeeList, phoneNames]);
 
   // Initial chat selection from URL
-  useEffect(() => {
-    const params = new URLSearchParams(location.search);
-    const chatIdFromUrl = params.get('chatId');
-    
-    if (chatIdFromUrl && contacts.length > 0) {
-      const fullChatId = `${chatIdFromUrl}@c.us`;
-      const contact = contacts.find(c => c.chat_id === fullChatId);
-      if (contact && contact.id) {
-        selectChat(fullChatId, contact.id, contact);
-      }
-    }
-  }, [location.search, contacts]);
+
 
   // Update this useEffect
   useEffect(() => {
