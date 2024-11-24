@@ -7669,7 +7669,9 @@ console.log(prompt);
                           if (reply.image) {
                             const imageFile = new File([reply.image], "image.png", { type: "image/png" });
                             const imageUrl = URL.createObjectURL(imageFile);
-                            setPastedImageUrl(imageUrl);
+                            console.log("reply image:", JSON.stringify(reply, null, 2));
+                            setPastedImageUrl(reply.image);
+                            setDocumentCaption(reply.text);
                             setImageModalOpen2(true);
                           }
                           if (reply.document) {
@@ -8111,7 +8113,7 @@ console.log(prompt);
   initialCaption={documentCaption}
 />
       <ImageModal isOpen={isImageModalOpen} onClose={closeImageModal} imageUrl={modalImageUrl} />
-      <ImageModal2 isOpen={isImageModalOpen2} onClose={() => setImageModalOpen2(false)} imageUrl={pastedImageUrl} onSend={sendImage} />
+      <ImageModal2 isOpen={isImageModalOpen2} onClose={() => setImageModalOpen2(false)} imageUrl={pastedImageUrl} onSend={sendImage}  initialCaption={documentCaption} />
 
       <ToastContainer
         position="top-right"
@@ -8194,16 +8196,22 @@ interface ImageModalProps2 {
   onClose: () => void;
   imageUrl: string;
   onSend: (url: string | null, caption: string) => void;
+  initialCaption?: string; // Add this line
 }
 
-const ImageModal2: React.FC<ImageModalProps2> = ({ isOpen, onClose, imageUrl, onSend }) => {
-  const [caption, setCaption] = useState('');
+const ImageModal2: React.FC<ImageModalProps2> = ({ isOpen, onClose, imageUrl, onSend, initialCaption }) => {
+  const [caption, setCaption] = useState(initialCaption); // Initialize with initialCaption
+
+  useEffect(() => {
+    // Update caption when initialCaption changes
+    setCaption(initialCaption || "" );
+  }, [initialCaption]);
 
 
   const handleSendClick = () => {
     setCaption('');
-    onSend(imageUrl, caption);
-   onClose(); // Close the modal after sending
+    onSend(imageUrl, caption || ''); // Provide empty string fallback for caption
+    onClose(); // Close the modal after sending
   };
 
   if (!isOpen) return null;
