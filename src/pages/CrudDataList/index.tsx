@@ -1132,6 +1132,51 @@ const handleConfirmDeleteTag = async () => {
       }
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
+
+      // Special handling for company '0123'
+    if (companyId === '0123') {
+      // Check if the new tag is an employee name
+      const isNewTagEmployee = employeeList.some(emp => emp.name === tagName);
+      
+      if (isNewTagEmployee) {
+        const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id!);
+        const contactDoc = await getDoc(contactRef);
+
+        if (!contactDoc.exists()) {
+          console.error(`Contact document does not exist: ${contact.id}`);
+          toast.error(`Failed to add tag: Contact not found`);
+          return;
+        }
+
+        const currentTags = contactDoc.data().tags || [];
+        // Find and remove any existing employee tags
+        const updatedTags = currentTags.filter((tag: string) => !employeeList.some(emp => emp.name === tag));
+        
+        // Add the new employee tag
+        updatedTags.push(tagName);
+
+        // Update Firestore with the new tags
+        await updateDoc(contactRef, {
+          tags: updatedTags
+        });
+
+        // Update local state
+        setContacts(prevContacts =>
+          prevContacts.map(c =>
+            c.id === contact.id
+              ? { ...c, tags: updatedTags }
+              : c
+          )
+        );
+
+        console.log(`Employee tag updated to ${tagName} for contact ${contact.id}`);
+        toast.success(`Contact reassigned to ${tagName}`);
+
+        // Send assignment notification for the new employee
+        await sendAssignmentNotification(tagName, contact);
+        return;
+      }
+    }
   
       console.log(`Adding tag: ${tagName} to contact: ${contact.id}`);
   

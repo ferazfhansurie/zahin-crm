@@ -3280,6 +3280,51 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
     const userData = docUserSnapshot.data();
     const companyId = userData.companyId;
 
+    // Special handling for company '0123'
+    if (companyId === '0123') {
+      // Check if the new tag is an employee name
+      const isNewTagEmployee = employeeList.some(emp => emp.name === tagName);
+      
+      if (isNewTagEmployee) {
+        const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id!);
+        const contactDoc = await getDoc(contactRef);
+
+        if (!contactDoc.exists()) {
+          console.error(`Contact document does not exist: ${contact.id}`);
+          toast.error(`Failed to add tag: Contact not found`);
+          return;
+        }
+
+        const currentTags = contactDoc.data().tags || [];
+        // Find and remove any existing employee tags
+        const updatedTags = currentTags.filter((tag: string) => !employeeList.some(emp => emp.name === tag));
+        
+        // Add the new employee tag
+        updatedTags.push(tagName);
+
+        // Update Firestore with the new tags
+        await updateDoc(contactRef, {
+          tags: updatedTags
+        });
+
+        // Update local state
+        setContacts(prevContacts =>
+          prevContacts.map(c =>
+            c.id === contact.id
+              ? { ...c, tags: updatedTags }
+              : c
+          )
+        );
+
+        console.log(`Employee tag updated to ${tagName} for contact ${contact.id}`);
+        toast.success(`Contact reassigned to ${tagName}`);
+
+        // Send assignment notification for the new employee
+        await sendAssignmentNotification(tagName, contact);
+        return;
+      }
+    }
+
     // Check if tag is a trigger tag by looking up follow-up templates
     const templatesRef = collection(firestore, 'companies', companyId, 'followUpTemplates');
     const templatesSnapshot = await getDocs(templatesRef);
@@ -4971,36 +5016,45 @@ const sortContacts = (contacts: Contact[]) => {
   
   const handleEditMessage = async () => {
     if (!editedMessageText.trim() || !editingMessage) return;
-    
+
     try {
+      const messageTimestamp = new Date(editingMessage.timestamp).getTime();
+      const currentTime = new Date().getTime();
+      const diffInMinutes = (currentTime - messageTimestamp) / (1000 * 60);
+
+      if (diffInMinutes > 15) {
+        toast.error('Message cannot be edited as it has been more than 15 minutes since it was sent.');
+        return;
+      }
+
       const user = auth.currentUser;
       if (!user) throw new Error('No authenticated user');
-  
+
       const docUserRef = doc(firestore, 'user', user.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) throw new Error('No such document for user');
-  
+
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
       const chatId = editingMessage.id.split('_')[1];
-      console.log('editing this chat id', chatId)
+      console.log('editing this chat id', chatId);
       const response = await axios.put(
         `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/${companyId}/${chatId}/${editingMessage.id}`,
         { newMessage: editedMessageText }
       );
-  
+
       if (response.data.success) {
         toast.success('Message edited successfully');
-        
+
         // Update the message locally
-        setMessages(prevMessages => 
-          prevMessages.map(msg => 
-            msg.id === editingMessage.id 
+        setMessages(prevMessages =>
+          prevMessages.map(msg =>
+            msg.id === editingMessage.id
               ? { ...msg, text: { ...msg.text, body: editedMessageText }, edited: true }
               : msg
           )
         );
-  
+
         setEditingMessage(null);
         setEditedMessageText("");
       } else {
@@ -6507,9 +6561,9 @@ console.log(prompt);
                     </svg>
                   )}
                   </button>
-                    {uniqueTags.length > 0 && (
+                    {uniqueTags.filter(tag => tag.toLowerCase() !== 'stop bot').length > 0 && (
                       <Tippy
-                        content={uniqueTags.join(', ')}
+                        content={uniqueTags.filter(tag => tag.toLowerCase() !== 'stop bot').join(', ')}
                         options={{ 
                           interactive: true,
                           appendTo: () => document.body
@@ -6517,7 +6571,7 @@ console.log(prompt);
                       >
                         <span className="bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200 text-xs font-semibold mr-1 px-2.5 py-0.5 rounded-full cursor-pointer">
                           <Lucide icon="Tag" className="w-4 h-4 inline-block" />
-                          <span className="ml-1">{uniqueTags.length}</span>
+                          <span className="ml-1">{uniqueTags.filter(tag => tag.toLowerCase() !== 'stop bot').length}</span>
                         </span>
                       </Tippy>
                     )}
@@ -8055,7 +8109,10 @@ console.log(prompt);
               {selectedContact && selectedContact.tags && selectedContact.tags.length > 0 ? (
                 <>
                   {selectedContact.tags
-                    .filter((tag: string) => !employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase()))
+                    .filter((tag: string) => 
+                      tag.toLowerCase() !== 'stop bot' && 
+                      !employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase())
+                    )
                     .map((tag: string, index: number) => (
                       <div key={index} className="inline-flex items-center bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-200 text-sm font-semibold px-3 py-1 rounded-full border border-blue-400 dark:border-blue-600">
                         <span>{tag}</span>
