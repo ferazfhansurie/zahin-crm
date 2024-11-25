@@ -5182,7 +5182,7 @@ const toggleBot = async () => {
 
     const userData = docUserSnapshot.data();
     const companyId = userData.companyId;
-    const currentPhoneIndex = userData.phone || 0; // Get current phone index
+    const currentPhoneIndex = userData.phone || 0;
 
     const companyRef = doc(firestore, 'companies', companyId);
     const companySnapshot = await getDoc(companyRef);
@@ -5193,20 +5193,26 @@ const toggleBot = async () => {
     // Initialize or get existing stopbots object
     const currentStopbots = companyData.stopbots || {};
     
-    // Toggle the stopbot value for the specific phone index
-    const newStopbots = {
-      ...currentStopbots,
-      [currentPhoneIndex]: !currentStopbots[currentPhoneIndex]
-    };
-
-    // Update the company document with the new stopbots object
-    await updateDoc(companyRef, {
-      stopbots: newStopbots
-    });
-
-    // Update local state
-    setCompanyStopBot(newStopbots[currentPhoneIndex]);
-    toast.success(`Bot for ${phoneNames[currentPhoneIndex]} ${newStopbots[currentPhoneIndex] ? 'disabled' : 'enabled'} successfully`);
+    if (currentStopbots[currentPhoneIndex]) {
+      // If bot is currently stopped (true), remove the entry to enable it
+      const { [currentPhoneIndex]: _, ...newStopbots } = currentStopbots;
+      await updateDoc(companyRef, {
+        stopbots: newStopbots
+      });
+      setCompanyStopBot(false);
+      toast.success(`Bot for ${phoneNames[currentPhoneIndex]} enabled successfully`);
+    } else {
+      // If bot is currently running (no entry or false), add entry with true to disable it
+      const newStopbots = {
+        ...currentStopbots,
+        [currentPhoneIndex]: true
+      };
+      await updateDoc(companyRef, {
+        stopbots: newStopbots
+      });
+      setCompanyStopBot(true);
+      toast.success(`Bot for ${phoneNames[currentPhoneIndex]} disabled successfully`);
+    }
 
   } catch (error) {
     console.error('Error toggling bot status:', error);
