@@ -322,7 +322,53 @@ function Main() {
         return [];
     }
   };
+  const handleRemoveTagsFromContact = async (contact: Contact, tagsToRemove: string[]) => {
+    if (userRole === "3") {
+      toast.error("You don't have permission to remove tags.");
+      return;
+    }
   
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        console.error('No authenticated user');
+        return;
+      }
+  
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) return;
+  
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+  
+      // Include empty tags in the tagsToRemove array
+      const allTagsToRemove = [...tagsToRemove, ""];
+  
+      const response = await axios.post('https://mighty-dane-newly.ngrok-free.app/api/contacts/remove-tags', {
+        companyId,
+        contactPhone: contact.phone,
+        tagsToRemove: allTagsToRemove
+      });
+  
+      if (response.data.success) {
+        // Update local state
+        setContacts(prevContacts =>
+          prevContacts.map(c =>
+            c.id === contact.id
+              ? { ...c, tags: response.data.updatedTags }
+              : c
+          )
+        );
+  
+        toast.success('Tags removed successfully!');
+        await fetchContacts();
+      }
+    } catch (error) {
+      console.error('Error removing tags:', error);
+      toast.error('Failed to remove tags');
+    }
+  };
   const fetchContacts = useCallback(async () => {
     setLoading(true);
     try {
@@ -2896,6 +2942,43 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
                         ))}
                       </Menu.Items>
                     </Menu>
+                    <Menu>
+    {showAddUserButton && (
+      <Menu.Button as={Button} className="flex items-center justify-start p-2 !box bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+        <Lucide icon="Tags" className="w-5 h-5 mr-2" />
+        <span>Remove Tag</span>
+      </Menu.Button>
+    )}
+    <Menu.Items className="w-full bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-md mt-1 shadow-lg">
+      <div className="p-2">
+        <button 
+          className="flex items-center p-2 font-medium hover:bg-gray-100 dark:hover:bg-gray-700 w-full rounded-md text-red-500"
+          onClick={() => {
+            selectedContacts.forEach(contact => {
+              handleRemoveTagsFromContact(contact, contact.tags || []);
+            });
+          }}
+        >
+          <Lucide icon="XCircle" className="w-4 h-4 mr-2" />
+          Remove All Tags
+        </button>
+      </div>
+      {tagList.map((tag) => (
+        <div key={tag.id} className="flex items-center justify-between w-full hover:bg-gray-100 dark:hover:bg-gray-700 p-1 rounded-md">
+          <button
+            className="flex-grow p-2 text-sm text-left"
+            onClick={() => {
+              selectedContacts.forEach(contact => {
+                handleRemoveTagsFromContact(contact, [tag.name]);
+              });
+            }}
+          >
+            {tag.name}
+          </button>
+        </div>
+      ))}
+    </Menu.Items>
+  </Menu>
                     <Menu>
                       <Menu.Button as={Button} className="flex items-center justify-start p-2 !box bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
                         <Lucide icon="Filter" className="w-5 h-5 mr-2" />
