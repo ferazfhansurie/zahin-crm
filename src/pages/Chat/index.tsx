@@ -5141,63 +5141,78 @@ const sortContacts = (contacts: Contact[]) => {
   }, [contacts]);
 
   const [companyStopBot, setCompanyStopBot] = useState(false);
-
-  useEffect(() => {
-    const fetchCompanyStopBot = async () => {
-      try {
-        const user = auth.currentUser;
-        if (!user) return;
-
-        const docUserRef = doc(firestore, 'user', user.email!);
-        const docUserSnapshot = await getDoc(docUserRef);
-        if (!docUserSnapshot.exists()) return;
-
-        const userData = docUserSnapshot.data();
-        const companyId = userData.companyId;
-
-        const companyRef = doc(firestore, 'companies', companyId);
-        const companySnapshot = await getDoc(companyRef);
-        if (!companySnapshot.exists()) return;
-
-        const companyData = companySnapshot.data();
-        setCompanyStopBot(companyData.stopbot || false);
-      } catch (error) {
-        console.error('Error fetching company stopbot status:', error);
-      }
-    };
-
-    fetchCompanyStopBot();
-  }, []); 
-
-  const toggleBot = async () => {
+// Update the useEffect that fetches company stop bot status
+useEffect(() => {
+  const fetchCompanyStopBot = async () => {
     try {
       const user = auth.currentUser;
       if (!user) return;
-  
+
       const docUserRef = doc(firestore, 'user', user.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) return;
-  
+
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-  
+      const currentPhoneIndex = userData.phone || 0;
+
       const companyRef = doc(firestore, 'companies', companyId);
-      
-      // Toggle the stopbot value
-      const newStopBotValue = !companyStopBot;
-      await updateDoc(companyRef, {
-        stopbot: newStopBotValue
-      });
-  
-      setCompanyStopBot(newStopBotValue);
-      toast.success(`Bot ${newStopBotValue ? 'disabled' : 'enabled'} successfully`);
-  
+      const companySnapshot = await getDoc(companyRef);
+      if (!companySnapshot.exists()) return;
+
+      const companyData = companySnapshot.data();
+      const stopbots = companyData.stopbots || {};
+      setCompanyStopBot(stopbots[currentPhoneIndex] || false);
     } catch (error) {
-      console.error('Error toggling bot status:', error);
-      toast.error('Failed to toggle bot status');
+      console.error('Error fetching company stopbot status:', error);
     }
   };
 
+  fetchCompanyStopBot();
+}, [userData?.phone]); // Add userData?.phone as dependency
+
+const toggleBot = async () => {
+  try {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const docUserRef = doc(firestore, 'user', user.email!);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) return;
+
+    const userData = docUserSnapshot.data();
+    const companyId = userData.companyId;
+    const currentPhoneIndex = userData.phone || 0; // Get current phone index
+
+    const companyRef = doc(firestore, 'companies', companyId);
+    const companySnapshot = await getDoc(companyRef);
+    if (!companySnapshot.exists()) return;
+
+    const companyData = companySnapshot.data();
+    
+    // Initialize or get existing stopbots object
+    const currentStopbots = companyData.stopbots || {};
+    
+    // Toggle the stopbot value for the specific phone index
+    const newStopbots = {
+      ...currentStopbots,
+      [currentPhoneIndex]: !currentStopbots[currentPhoneIndex]
+    };
+
+    // Update the company document with the new stopbots object
+    await updateDoc(companyRef, {
+      stopbots: newStopbots
+    });
+
+    // Update local state
+    setCompanyStopBot(newStopbots[currentPhoneIndex]);
+    toast.success(`Bot for ${phoneNames[currentPhoneIndex]} ${newStopbots[currentPhoneIndex] ? 'disabled' : 'enabled'} successfully`);
+
+  } catch (error) {
+    console.error('Error toggling bot status:', error);
+    toast.error('Failed to toggle bot status');
+  }
+};
 
   const { show } = useContextMenu({
     id: 'contact-context-menu',
