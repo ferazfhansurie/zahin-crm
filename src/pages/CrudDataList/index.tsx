@@ -3760,7 +3760,7 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
                                         ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
                                         : 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
                                     }`}>
-                                      {tag}
+                                      {tag.charAt(0).toUpperCase() + tag.slice(1)}
                                       <button
                                         className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-white hover:text-red-500 hidden group-hover:block"
                                         onClick={(e) => {

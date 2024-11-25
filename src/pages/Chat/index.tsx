@@ -6563,7 +6563,7 @@ console.log(prompt);
                   </button>
                     {uniqueTags.filter(tag => tag.toLowerCase() !== 'stop bot').length > 0 && (
                       <Tippy
-                        content={uniqueTags.filter(tag => tag.toLowerCase() !== 'stop bot').join(', ')}
+                        content={uniqueTags.filter(tag => tag.toLowerCase() !== 'stop bot').map(tag => tag.charAt(0).toUpperCase() + tag.slice(1)).join(', ')}
                         options={{ 
                           interactive: true,
                           appendTo: () => document.body
@@ -6588,7 +6588,7 @@ console.log(prompt);
                       >
                         <span className="bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200 text-xs font-semibold mr-1 px-2.5 py-0.5 rounded-full cursor-pointer">
                           <Lucide icon="Users" className="w-4 h-4 inline-block" />
-                          <span className="ml-1 text-xxs">
+                          <span className="ml-1 text-xxs capitalize">
                             {employeeTags.length === 1 
                               ? (employeeList.find(e => e.name.toLowerCase() === employeeTags[0].toLowerCase())?.employeeId || 
                                  (employeeTags[0].length > 8 ? employeeTags[0].slice(0, 6) : employeeTags[0]))
