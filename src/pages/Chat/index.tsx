@@ -5040,7 +5040,9 @@ const sortContacts = (contacts: Contact[]) => {
       console.log('editing this chat id', chatId);
       const response = await axios.put(
         `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/${companyId}/${chatId}/${editingMessage.id}`,
-        { newMessage: editedMessageText }
+        { newMessage: editedMessageText,
+          phoneIndex: userData.phoneIndex || 0
+         }
       );
 
       if (response.data.success) {
@@ -7003,7 +7005,7 @@ console.log(prompt);
                       onMouseEnter={() => setHoveredMessageId(message.id)}
                       onMouseLeave={() => setHoveredMessageId(null)}
                     >
-                      {hoveredMessageId === message.id && (
+                      {/* {hoveredMessageId === message.id && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -7014,7 +7016,7 @@ console.log(prompt);
                         >
                           <Lucide icon="Smile" className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                         </button>
-                      )}
+                      )} */}
                       {message.isPrivateNote && (
                         <div className="flex items-center mb-1">
                           <Lock size={16} className="mr-1" />
