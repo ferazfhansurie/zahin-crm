@@ -5,7 +5,7 @@ import { FormInput, FormCheck } from "@/components/Base/Form";
 import Button from "@/components/Base/Button";
 import clsx from "clsx";
 import { Link, useNavigate } from "react-router-dom";
-import { getAuth, signInWithEmailAndPassword } from "firebase/auth"; // Import Firebase authentication methods
+import { getAuth, signInWithEmailAndPassword, sendPasswordResetEmail } from "firebase/auth"; // Import Firebase authentication methods
 import { initializeApp } from 'firebase/app';
 import { useState } from "react";
 import { co } from "@fullcalendar/core/internal-common";
@@ -29,6 +29,9 @@ const firebaseConfig = {
     const [error, setError] = useState("");
     const [signedIn, setSignedIn] = useState(false);
     const navigate = useNavigate(); // Initialize useNavigate
+    const [resetEmail, setResetEmail] = useState("");
+    const [resetMessage, setResetMessage] = useState("");
+    const [showResetModal, setShowResetModal] = useState(false);
     const handleSignIn = () => {
       setError(""); // Clear previous errors
       const auth = getAuth(app);
@@ -69,6 +72,40 @@ const firebaseConfig = {
     const handleStartFreeTrial = () => {
       navigate('/register');
     };
+
+    const handleForgotPassword = async () => {
+      const auth = getAuth(app);
+      setError("");
+      setResetMessage("");
+      
+      if (!resetEmail) {
+        setResetMessage("Please enter your email address.");
+        return;
+      }
+
+      try {
+        await sendPasswordResetEmail(auth, resetEmail);
+        setResetMessage("Password reset email sent! Please check your inbox.");
+        setResetEmail("");
+        // Close modal after 3 seconds
+        setTimeout(() => {
+          setShowResetModal(false);
+          setResetMessage("");
+        }, 3000);
+      } catch (error: any) {
+        switch (error.code) {
+          case "auth/invalid-email":
+            setResetMessage("Please enter a valid email address.");
+            break;
+          case "auth/user-not-found":
+            setResetMessage("No account found with this email.");
+            break;
+          default:
+            setResetMessage("An error occurred. Please try again later.");
+        }
+      }
+    };
+
     return (
       <>
         <div
@@ -134,6 +171,14 @@ const firebaseConfig = {
                     </Button>
                     
                   </div>
+                  <div className="mt-4 text-center intro-x">
+                    <button 
+                      onClick={() => setShowResetModal(true)} 
+                      className="text-primary hover:underline"
+                    >
+                      Forgot Password?
+                    </button>
+                  </div>
                   {error && (
                     <div className="mt-5 text-center text-red-500">{error}</div>
                   )}
@@ -142,6 +187,47 @@ const firebaseConfig = {
             </div>
           </div>
         </div>
+
+        {/* Password Reset Modal */}
+        {showResetModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+            <div className="p-8 bg-white rounded-lg shadow-lg dark:bg-darkmode-600 w-96">
+              <h3 className="mb-4 text-xl font-bold">Reset Password</h3>
+              <FormInput
+                type="email"
+                className="block w-full px-4 py-3 mb-4"
+                placeholder="Enter your email"
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+              />
+              <div className="flex justify-end space-x-2">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setShowResetModal(false);
+                    setResetMessage("");
+                    setResetEmail("");
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={handleForgotPassword}
+                >
+                  Send Reset Link
+                </Button>
+              </div>
+              {resetMessage && (
+                <div className={`mt-4 text-center ${
+                  resetMessage.includes("sent") ? "text-green-500" : "text-red-500"
+                }`}>
+                  {resetMessage}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </>
     );
   }
