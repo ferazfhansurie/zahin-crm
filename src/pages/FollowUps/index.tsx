@@ -6,6 +6,7 @@ import Button from "@/components/Base/Button";
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import Select from 'react-select';
+import { useNavigate } from 'react-router-dom';
 
 interface FollowUpTemplate {
     id: string;
@@ -113,6 +114,18 @@ const FollowUpsPage: React.FC = () => {
         fetchTags();
     }, []);
 
+    const BackButton: React.FC = () => {
+        const navigate = useNavigate();
+        
+        return (
+            <Button
+                onClick={() => navigate('/users-layout-2/follow-ups-select')}
+                className="mr-4"
+            >
+                ← Back
+            </Button>
+        );
+    };
     
     
     const fetchTags = async () => {
@@ -693,6 +706,7 @@ const FollowUpsPage: React.FC = () => {
             <div className="flex-grow overflow-y-auto">
                 <div className="p-5 min-h-full">
                     <div className="flex justify-between items-center mb-5">
+                        <BackButton />
                         <h2 className="text-2xl font-bold">Follow Up Templates</h2>
                         <Button onClick={() => setIsAddingTemplate(true)}>
                             Add Template

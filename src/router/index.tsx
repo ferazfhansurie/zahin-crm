@@ -71,6 +71,8 @@ import QuickReplies from "../pages/QuickReplies";
 import Automations from "../pages/Automations";
 import Builder from "../pages/Builder";
 import FollowUps from "../pages/FollowUps";
+import OldFollowUps from "../pages/FollowUpsOld";
+import SelectFollowUpMode from "../pages/FollowUpsSelect";
 import BlastHistory from "../pages/BlastHistory"
 import Layout from "../themes";
 import { getAuth } from "firebase/auth";
@@ -110,6 +112,8 @@ function Router() {
         { path: "users-layout-2/quick-replies", element: <QuickReplies /> },
         { path: "users-layout-2/automations", element: <Automations /> },
         { path: "users-layout-2/follow-ups", element: <FollowUps /> },
+        { path: "users-layout-2/follow-ups-select", element: <SelectFollowUpMode /> },
+        { path: "users-layout-2/follow-ups-old", element: <OldFollowUps /> },
         { path: "users-layout-2/a-i-image-response", element: <AIImageResponse /> },
         { path: "users-layout-2/builder", element: <Builder /> },
         { path: "dashboard-overview-3", element: <DashboardOverview3 /> },

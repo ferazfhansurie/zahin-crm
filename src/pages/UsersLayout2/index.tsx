@@ -372,7 +372,7 @@ const paginatedEmployees = filteredEmployees
                 Image Response
               </Button>
             </Link>
-            <Link to="follow-ups">
+            <Link to="follow-ups-select">
             <Button variant="primary" className="mr-2 shadow-md">
                   Follow Ups
                 </Button>
