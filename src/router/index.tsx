@@ -79,7 +79,7 @@ import { getAuth } from "firebase/auth";
 import { useState, useEffect } from "react";
 import AIImageResponse from "../pages/AIImageResponse";
 import { ContactsProvider, useContacts } from "../contact"; // Adjust the path as needed
-
+import DatabaseManager from "../pages/DatabaseManager";
 function Router() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const auth = getAuth();
@@ -108,6 +108,10 @@ function Router() {
         { path: "/", element: <Chat /> },
         { path: "chat", element: <Chat /> },
         { path: "/dashboard", element: <DashboardOverview1 /> },
+        {
+          path: "/database-manager",
+          element: <DatabaseManager />
+        },
         { path: "/dashboard/blast-history", element: <BlastHistory /> },
         { path: "users-layout-2/quick-replies", element: <QuickReplies /> },
         { path: "users-layout-2/automations", element: <Automations /> },

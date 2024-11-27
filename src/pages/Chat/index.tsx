@@ -78,6 +78,7 @@ interface Contact {
   profilePicUrl?:string;
   phoneIndex?:number |null;
   points?:number |null;
+  phoneIndexes?:number[] |null;
 }
 interface GhlConfig {
   ghl_id: string;
@@ -2806,13 +2807,14 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
           }),
         });
   
-   
+
   
         if (!response.ok) {
           throw new Error('Failed to send message');
         }
         const now = new Date();
         const data = await response.json();
+        console.log('response:', data);
         // Update the local state
         setContacts(prevContacts => 
           prevContacts.map(contact => 
@@ -3875,20 +3877,28 @@ const sortContacts = (contacts: Contact[]) => {
     userPhoneIndex = 0;
   }
   console.log("userPhoneIndex", userPhoneIndex);
+  
   // Filter by user's selected phone first
   if (userPhoneIndex !== -1) {
-    fil = fil.filter(contact => contact.phoneIndex === userPhoneIndex);
+    fil = fil.filter(contact => 
+      contact.phoneIndexes 
+        ? contact.phoneIndexes.includes(userPhoneIndex)
+        : contact.phoneIndex === userPhoneIndex
+    );
   }
-
+  
   // Check if the active tag matches any of the phone names
   const phoneIndex = Object.entries(phoneNames).findIndex(([_, name]) => 
     name.toLowerCase() === activeTag
   );
-
+  
   if (phoneIndex !== -1) {
-    fil = fil.filter(contact => contact.phoneIndex === phoneIndex);
+    fil = fil.filter(contact => 
+      contact.phoneIndexes 
+        ? contact.phoneIndexes.includes(phoneIndex)
+        : contact.phoneIndex === phoneIndex
+    );
   }
-
   // Apply search filter
   if (searchQuery.trim() !== '') {
     fil = fil.filter((contact) =>
@@ -4100,7 +4110,11 @@ const sortContacts = (contacts: Contact[]) => {
     if (userData?.phone !== undefined && userData.phone !== -1) {
       const userPhoneIndex = parseInt(userData.phone, 10);
       setMessageMode(`phone${userPhoneIndex + 1}`);
-      filteredContacts = filteredContacts.filter(contact => contact.phoneIndex === userPhoneIndex);
+      filteredContacts = filteredContacts.filter(contact => 
+        contact.phoneIndexes 
+          ? contact.phoneIndexes.includes(userPhoneIndex)
+          : contact.phoneIndex === userPhoneIndex
+      );
       console.log('After phone filter:', filteredContacts.length);
     }
   
@@ -6932,7 +6946,10 @@ console.log(prompt);
             {messages
               .filter((message) => message.type !== 'action'&& 
               message.type !== 'e2e_notification' && 
-              message.type !== 'notification_template')
+              message.type !== 'notification_template' &&   (
+                message.phoneIndex === userData?.phone ||(userData?.phone === undefined)||
+                (message.from_me && message.phoneIndex === undefined)
+              ))
               .slice()
               .reverse()
               .map((message, index, array) => {
