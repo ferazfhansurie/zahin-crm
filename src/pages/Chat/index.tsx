@@ -2775,23 +2775,8 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
     }
     const dataUser = docUserSnapshot.data();
     companyId = dataUser.companyId;
-    let phoneIndex;
-    if (dataUser?.phone !== undefined) {
-        if (dataUser.phone === 0) {
-            // Handle case for phone index 0
-            phoneIndex = 0;
-        } else if (dataUser.phone === -1) {
-            // Handle case for phone index -1
-            phoneIndex = 0;
-        } else {
-            // Handle other cases
-            console.log(`User phone index is: ${dataUser.phone}`);
-            phoneIndex = dataUser.phone;
-        }
-    } else {
-        console.error('User phone is not defined');
-        phoneIndex = 0; // Default value if phone is not defined
-    }
+  // Use contact's phoneIndex instead of user's phone
+  let phoneIndex = selectedContact?.phoneIndex ?? 0;
     
     const userName = dataUser.name || dataUser.email || ''; // Get the user's name
     const docRef = doc(firestore, 'companies', companyId);
@@ -4574,7 +4559,6 @@ const sortContacts = (contacts: Contact[]) => {
     return downloadURL;
   };
   
-  
   const sendImageMessage = async (chatId: string, imageUrl: string, caption?: string) => {
     try {
       console.log(`Sending image message. ChatId: ${chatId}`);
@@ -4588,10 +4572,13 @@ const sortContacts = (contacts: Contact[]) => {
   
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-      const phoneIndex = userData.phone || 0; // Use the same approach as in sendMessage
-      const userName = userData.name || userData.email || '';
       
-      console.log(`Using phoneIndex: ${phoneIndex}`);
+      // Use selectedContact's phoneIndex
+      if (!selectedContact) throw new Error('No contact selected');
+      const phoneIndex = selectedContact.phoneIndex ?? 0;
+      console.log(`Using contact's phoneIndex: ${phoneIndex}`);
+      
+      const userName = userData.name || userData.email || '';
   
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
@@ -4630,7 +4617,6 @@ const sortContacts = (contacts: Contact[]) => {
       throw error;
     }
   };
-  
   const sendDocumentMessage = async (chatId: string, documentUrl: string, mimeType: string, fileName: string, caption?: string) => {
     try {
       console.log(`Sending document message. ChatId: ${chatId}`);
@@ -4644,10 +4630,13 @@ const sortContacts = (contacts: Contact[]) => {
   
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-      const phoneIndex = userData.phone || 0; // Use the same approach as in sendMessage
-      const userName = userData.name || userData.email || '';
       
-      console.log(`Using phoneIndex: ${phoneIndex}`);
+      // Use selectedContact's phoneIndex
+      if (!selectedContact) throw new Error('No contact selected');
+      const phoneIndex = selectedContact.phoneIndex ?? 0;
+      console.log(`Using contact's phoneIndex: ${phoneIndex}`);
+      
+      const userName = userData.name || userData.email || '';
   
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
@@ -7956,6 +7945,7 @@ console.log(prompt);
     </span>
   )}
 </div>
+
           <div className="flex flex-col">
             {isEditing ? (
               <div className="flex items-center">
@@ -8027,8 +8017,49 @@ console.log(prompt);
               )}
             </div>
           </div>
+          
           <div className="p-4">
+              {/* Phone Index Selector */}
+              <div className="mb-4 flex justify-between items-center">
+    <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Active Phone:</p>
+    <select
+      value={selectedContact.phoneIndex ?? 0}
+      onChange={async (e) => {
+        const newPhoneIndex = parseInt(e.target.value);
+        // Update local state
+        setSelectedContact({ ...selectedContact, phoneIndex: newPhoneIndex });
+        const user = auth.currentUser;
+        const docUserRef = doc(firestore, 'user', user?.email!);
+        const docUserSnapshot = await getDoc(docUserRef);
+        if (!docUserSnapshot.exists()) {
+          console.log('No such document for user!');
+          return;
+        }
+        const userData = docUserSnapshot.data();
+        const companyId = userData.companyId;
+        // Update Firestore
+        try {
+          const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
+          await updateDoc(contactRef, { phoneIndex: newPhoneIndex });
+          toast.success('Phone updated successfully');
+        } catch (error) {
+          console.error('Error updating phone:', error);
+          toast.error('Failed to update phone');
+          // Revert local state on error
+          setSelectedContact({ ...selectedContact });
+        }
+      }}
+      className="px-2 py-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 ml-4 w-32"
+    >
+      {Object.entries(phoneNames).map(([index, name]) => (
+        <option key={index} value={index}>
+          {name}
+        </option>
+      ))}
+    </select>
+  </div>
             <div className="grid grid-cols-2 gap-4">
+
               {[
                   { label: "First Name", key: "contactName" },
                   { label: "Last Name", key: "lastName" },
