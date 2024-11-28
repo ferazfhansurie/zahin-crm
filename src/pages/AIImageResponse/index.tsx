@@ -14,15 +14,15 @@ import { selectDarkMode } from "@/stores/darkModeSlice";
 interface AIImageResponse {
     id: string;
     keyword: string;
-    imageUrl: string;
+    imageUrls: string[];
     createdAt: Date;
     status: 'active' | 'inactive';
 }
 
 function AIImageResponses() {
     const [responses, setResponses] = useState<AIImageResponse[]>([]);
-    const [selectedImage, setSelectedImage] = useState<File | null>(null);
-    const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
+    const [selectedImages, setSelectedImages] = useState<File[]>([]);
+    const [selectedImageUrls, setSelectedImageUrls] = useState<string[]>([]);
     const [isEditing, setIsEditing] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     
@@ -43,12 +43,10 @@ function AIImageResponses() {
     }, []);
 
     useEffect(() => {
-        if (selectedImage) {
-            const imageUrl = URL.createObjectURL(selectedImage);
-            setSelectedImageUrl(imageUrl);
-            return () => URL.revokeObjectURL(imageUrl);
-        }
-    }, [selectedImage]);
+        const urls = selectedImages.map(image => URL.createObjectURL(image));
+        setSelectedImageUrls(urls);
+        return () => urls.forEach(url => URL.revokeObjectURL(url));
+    }, [selectedImages]);
 
     const fetchResponses = async () => {
         try {
@@ -68,7 +66,7 @@ function AIImageResponses() {
             const fetchedResponses: AIImageResponse[] = responsesSnapshot.docs.map(doc => ({
                 id: doc.id,
                 keyword: doc.data().keyword || '',
-                imageUrl: doc.data().imageUrl || '',
+                imageUrls: doc.data().imageUrls || [],
                 createdAt: doc.data().createdAt.toDate(),
                 status: doc.data().status || 'active',
             }));
@@ -80,15 +78,18 @@ function AIImageResponses() {
         }
     };
 
-    const uploadImage = async (file: File): Promise<string> => {
-        const storageRef = ref(storage, `aiResponses/${file.name}`);
-        await uploadBytes(storageRef, file);
-        return await getDownloadURL(storageRef);
+    const uploadImages = async (files: File[]): Promise<string[]> => {
+        const uploadPromises = files.map(async file => {
+            const storageRef = ref(storage, `aiResponses/${file.name}`);
+            await uploadBytes(storageRef, file);
+            return await getDownloadURL(storageRef);
+        });
+        return Promise.all(uploadPromises);
     };
 
     const addResponse = async () => {
-        if (newResponse.keyword.trim() === '' || !selectedImage) {
-            toast.error('Please provide both keyword and image');
+        if (newResponse.keyword.trim() === '' || selectedImages.length === 0) {
+            toast.error('Please provide both keyword and at least one image');
             return;
         }
 
@@ -102,11 +103,11 @@ function AIImageResponses() {
             const userData = userSnapshot.data();
             const companyId = userData.companyId;
 
-            const imageUrl = await uploadImage(selectedImage);
+            const imageUrls = await uploadImages(selectedImages);
 
             const newResponseData = {
                 keyword: newResponse.keyword.toLowerCase(),
-                imageUrl,
+                imageUrls,
                 status: newResponse.status,
                 createdAt: serverTimestamp(),
             };
@@ -118,8 +119,8 @@ function AIImageResponses() {
                 keyword: '',
                 status: 'active'
             });
-            setSelectedImage(null);
-            setSelectedImageUrl(null);
+            setSelectedImages([]);
+            setSelectedImageUrls([]);
             fetchResponses();
             toast.success('Response added successfully');
         } catch (error) {
@@ -145,14 +146,14 @@ function AIImageResponses() {
                 status
             };
 
-            if (selectedImage) {
-                updatedData.imageUrl = await uploadImage(selectedImage);
+            if (selectedImages.length > 0) {
+                updatedData.imageUrls = await uploadImages(selectedImages);
             }
 
             await updateDoc(responseRef, updatedData);
             setIsEditing(null);
-            setSelectedImage(null);
-            setSelectedImageUrl(null);
+            setSelectedImages([]);
+            setSelectedImageUrls([]);
             fetchResponses();
             toast.success('Response updated successfully');
         } catch (error) {
@@ -211,23 +212,33 @@ function AIImageResponses() {
                                     />
                                 </div>
                                 <div className="col-span-12">
-                                    <FormLabel className="dark:text-slate-200">Image</FormLabel>
+                                    <FormLabel className="dark:text-slate-200">Images</FormLabel>
                                     <div className="border-2 border-dashed dark:border-darkmode-400 rounded-md pt-4">
                                         <div className="flex flex-wrap px-4">
-                                            {selectedImageUrl && (
-                                                <div className="w-24 h-24 relative image-fit mb-5 mr-5">
-                                                    <img className="rounded-md" src={selectedImageUrl} alt="Preview" />
+                                            {selectedImageUrls.map((url, index) => (
+                                                <div key={index} className="w-24 h-24 relative image-fit mb-5 mr-5">
+                                                    <img className="rounded-md" src={url} alt={`Preview ${index + 1}`} />
+                                                    <button
+                                                        className="absolute top-0 right-0 bg-danger text-white rounded-full p-1"
+                                                        onClick={() => {
+                                                            setSelectedImages(prev => prev.filter((_, i) => i !== index));
+                                                            setSelectedImageUrls(prev => prev.filter((_, i) => i !== index));
+                                                        }}
+                                                    >
+                                                        <Lucide icon="X" className="w-4 h-4" />
+                                                    </button>
                                                 </div>
-                                            )}
+                                            ))}
                                         </div>
                                         <div className="px-4 pb-4 flex items-center cursor-pointer relative">
                                             <Lucide icon="Image" className="w-4 h-4 mr-2 dark:text-slate-200" />
-                                            <span className="text-primary mr-1 dark:text-slate-200">Upload an image</span>
+                                            <span className="text-primary mr-1 dark:text-slate-200">Upload images</span>
                                             <FormInput
                                                 type="file"
                                                 accept="image/*"
+                                                multiple
                                                 className="w-full h-full top-0 left-0 absolute opacity-0"
-                                                onChange={(e) => setSelectedImage(e.target.files?.[0] || null)}
+                                                onChange={(e) => setSelectedImages(Array.from(e.target.files || []))}
                                             />
                                         </div>
                                     </div>
@@ -282,16 +293,17 @@ function AIImageResponses() {
                                                         }}
                                                     />
                                                     <div>
-                                                        <FormLabel>New Image (optional)</FormLabel>
+                                                        <FormLabel>New Images (optional)</FormLabel>
                                                         <div className="border-2 border-dashed dark:border-darkmode-400 rounded-md pt-4">
                                                             <div className="px-4 pb-4 flex items-center cursor-pointer relative">
                                                                 <Lucide icon="Image" className="w-4 h-4 mr-2" />
-                                                                <span className="text-primary mr-1">Upload new image</span>
+                                                                <span className="text-primary mr-1">Upload new images</span>
                                                                 <FormInput
                                                                     type="file"
                                                                     accept="image/*"
+                                                                    multiple
                                                                     className="w-full h-full top-0 left-0 absolute opacity-0"
-                                                                    onChange={(e) => setSelectedImage(e.target.files?.[0] || null)}
+                                                                    onChange={(e) => setSelectedImages(Array.from(e.target.files || []))}
                                                                 />
                                                             </div>
                                                         </div>
@@ -351,11 +363,16 @@ function AIImageResponses() {
                                                         </div>
                                                     </div>
                                                     <div className="rounded-md border border-slate-200/60 dark:border-darkmode-400 p-2">
-                                                        <img 
-                                                            src={response.imageUrl} 
-                                                            alt={response.keyword} 
-                                                            className="w-full h-48 object-contain"
-                                                        />
+                                                        <div className="grid grid-cols-2 gap-2">
+                                                            {response.imageUrls.map((url, index) => (
+                                                                <img 
+                                                                    key={index}
+                                                                    src={url} 
+                                                                    alt={`${response.keyword} ${index + 1}`} 
+                                                                    className="w-full h-48 object-contain"
+                                                                />
+                                                            ))}
+                                                        </div>
                                                     </div>
                                                 </div>
                                             )}

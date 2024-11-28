@@ -15,7 +15,8 @@ interface FollowUpTemplate {
     createdAt: Date;
     startTime: Date;
     isCustomStartTime: boolean;
-    triggerTags?: string[];  // Add this line
+    triggerTags?: string[];
+    triggerKeywords?: string[];
 }
 
 // Add Tag interface
@@ -110,6 +111,8 @@ const FollowUpsPage: React.FC = () => {
         unit: 'minutes' as 'minutes' | 'hours' | 'days'  // Update this type
     });
     const [tags, setTags] = useState<Tag[]>([]);
+    const [isEditingTemplate, setIsEditingTemplate] = useState<string | null>(null);
+    const [editingTemplate, setEditingTemplate] = useState<FollowUpTemplate | null>(null);
     useEffect(() => {
         fetchTags();
     }, []);
@@ -153,6 +156,7 @@ const FollowUpsPage: React.FC = () => {
     const [newTemplate, setNewTemplate] = useState({
         name: '',
         triggerTags: [] as string[],
+        triggerKeywords: [] as string[],
         startType: 'immediate' as 'immediate' | 'delayed' | 'custom'
     });
 
@@ -413,32 +417,34 @@ const FollowUpsPage: React.FC = () => {
                     startTime = new Date();
             }
             
-        const templateData = {
-            name: newTemplate.name,
-            status: 'active',
-            createdAt: serverTimestamp(),
-            startTime: startTime,
-            isCustomStartTime: newTemplate.startType === 'custom',
-            triggerTags: newTemplate.triggerTags
-        };
+            const templateData = {
+                name: newTemplate.name,
+                status: 'active',
+                createdAt: serverTimestamp(),
+                startTime: startTime,
+                isCustomStartTime: newTemplate.startType === 'custom',
+                triggerTags: newTemplate.triggerTags,
+                triggerKeywords: newTemplate.triggerKeywords
+            };
 
-        const templateRef = collection(firestore, `companies/${userData.companyId}/followUpTemplates`);
-        await addDoc(templateRef, templateData);
-        
-        setIsAddingTemplate(false);
-        setNewTemplate({
-            name: '',
-            triggerTags: [],
-            startType: 'immediate'
-        });
-        setCustomStartTime('');
-        fetchTemplates();
-        toast.success('Template created successfully');
-    } catch (error) {
-        console.error('Error adding template:', error);
-        toast.error('Failed to create template');
-    }
-};
+            const templateRef = collection(firestore, `companies/${userData.companyId}/followUpTemplates`);
+            await addDoc(templateRef, templateData);
+            
+            setIsAddingTemplate(false);
+            setNewTemplate({
+                name: '',
+                triggerTags: [],
+                triggerKeywords: [],
+                startType: 'immediate'
+            });
+            setCustomStartTime('');
+            fetchTemplates();
+            toast.success('Template created successfully');
+        } catch (error) {
+            console.error('Error adding template:', error);
+            toast.error('Failed to create template');
+        }
+    };
 
     const updateMessage = async (messageId: string) => {
         if (!editingMessage || !selectedTemplate) return;
@@ -701,6 +707,37 @@ const FollowUpsPage: React.FC = () => {
         return maxSequence + 1;
     };
 
+    const editTemplate = async (templateId: string) => {
+        try {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            const userRef = doc(firestore, 'user', user.email!);
+            const userData = (await getDoc(userRef)).data() as User;
+            
+            const templateRef = doc(firestore, `companies/${userData.companyId}/followUpTemplates`, templateId);
+            
+            const updateData = {
+                name: editingTemplate!.name,
+                triggerTags: editingTemplate!.triggerTags || [],
+                triggerKeywords: editingTemplate!.triggerKeywords || [],
+                // Preserve other fields
+                status: editingTemplate!.status,
+                startTime: editingTemplate!.startTime,
+                isCustomStartTime: editingTemplate!.isCustomStartTime
+            };
+
+            await updateDoc(templateRef, updateData);
+            setIsEditingTemplate(null);
+            setEditingTemplate(null);
+            fetchTemplates();
+            toast.success('Template updated successfully');
+        } catch (error) {
+            console.error('Error updating template:', error);
+            toast.error('Failed to update template');
+        }
+    };
+
     return (
         <div className="flex flex-col h-screen overflow-hidden">
             <div className="flex-grow overflow-y-auto">
@@ -734,23 +771,187 @@ const FollowUpsPage: React.FC = () => {
                                         <p className="text-sm text-gray-500">
                                             Created: {template.createdAt.toLocaleDateString()}
                                         </p>
+                                        {/* Display tags and keywords */}
+                                        {template.triggerTags && template.triggerTags.length > 0 && (
+                                            <div className="mt-2">
+                                                <p className="text-sm text-gray-600">Trigger Tags:</p>
+                                                <div className="flex flex-wrap gap-1">
+                                                    {template.triggerTags.map((tag, index) => (
+                                                        <span key={index} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                                            {tag}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {template.triggerKeywords && template.triggerKeywords.length > 0 && (
+                                            <div className="mt-2">
+                                                <p className="text-sm text-gray-600">Trigger Keywords:</p>
+                                                <div className="flex flex-wrap gap-1">
+                                                    {template.triggerKeywords.map((keyword, index) => (
+                                                        <span key={index} className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                                                            {keyword}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
-                                    <Button
-                                        onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
-                                            e.stopPropagation();
-                                            if (window.confirm('Are you sure you want to delete this template? This will also delete all associated messages.')) {
-                                                deleteTemplate(template.id);
-                                            }
-                                        }}
-                                        className="text-white bg-red-500 hover:bg-red-600"
-                                    >
-                                        Delete
-                                    </Button>
+                                    <div className="flex gap-2">
+                                        <Button
+                                            onClick={(e: React.MouseEvent) => {
+                                                e.stopPropagation();
+                                                setIsEditingTemplate(template.id);
+                                                setEditingTemplate(template);
+                                            }}
+                                            className="text-white bg-primary hover:bg-primary-dark"
+                                        >
+                                            Edit
+                                        </Button>
+                                        <Button
+                                            onClick={(e: React.MouseEvent) => {
+                                                e.stopPropagation();
+                                                if (window.confirm('Are you sure you want to delete this template?')) {
+                                                    deleteTemplate(template.id);
+                                                }
+                                            }}
+                                            className="text-white bg-red-500 hover:bg-red-600"
+                                        >
+                                            Delete
+                                        </Button>
+                                    </div>
                                 </div>
                             </div>
                         ))}
                     </div>
 
+{/* Add Edit Template Modal */}
+{isEditingTemplate && editingTemplate && (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg w-96">
+            <h3 className="text-lg font-semibold mb-4">Edit Template</h3>
+            
+            {/* Template Name */}
+            <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Template Name
+                </label>
+                <input
+                    type="text"
+                    className="w-full px-4 py-2 border rounded-lg"
+                    value={editingTemplate.name}
+                    onChange={(e) => setEditingTemplate({
+                        ...editingTemplate,
+                        name: e.target.value
+                    })}
+                />
+            </div>
+
+            {/* Trigger Tags */}
+            <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Trigger Tags
+                </label>
+                <Select
+                    isMulti
+                    options={tags.map(tag => ({ value: tag.name, label: tag.name }))}
+                    value={(editingTemplate.triggerTags || []).map(tag => ({ value: tag, label: tag }))}
+                    onChange={(selected) => {
+                        const selectedTags = selected ? selected.map(option => option.value) : [];
+                        setEditingTemplate({
+                            ...editingTemplate,
+                            triggerTags: selectedTags
+                        });
+                    }}
+                    className="basic-multi-select"
+                    classNamePrefix="select"
+                />
+            </div>
+
+            {/* Trigger Keywords */}
+            <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Trigger Keywords
+                </label>
+                <div className="flex gap-2">
+                    <input
+                        type="text"
+                        className="flex-1 px-4 py-2 border rounded-lg"
+                        placeholder="Enter keyword and press Enter"
+                        value={newNumber}
+                        onChange={(e) => setNewNumber(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && newNumber.trim()) {
+                                setEditingTemplate({
+                                    ...editingTemplate,
+                                    triggerKeywords: [...(editingTemplate.triggerKeywords || []), newNumber.trim()]
+                                });
+                                setNewNumber('');
+                                e.preventDefault();
+                            }
+                        }}
+                    />
+                    <Button
+                        onClick={() => {
+                            if (newNumber.trim()) {
+                                setEditingTemplate({
+                                    ...editingTemplate,
+                                    triggerKeywords: [...(editingTemplate.triggerKeywords || []), newNumber.trim()]
+                                });
+                                setNewNumber('');
+                            }
+                        }}
+                    >
+                        Add
+                    </Button>
+                </div>
+
+                {/* Display Keywords */}
+                <div className="flex flex-wrap gap-2 mt-2">
+                    {(editingTemplate.triggerKeywords || []).map((keyword, index) => (
+                        <div 
+                            key={index} 
+                            className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded"
+                        >
+                            <span>{keyword}</span>
+                            <button
+                                onClick={() => {
+                                    setEditingTemplate({
+                                        ...editingTemplate,
+                                        triggerKeywords: editingTemplate.triggerKeywords?.filter((_, i) => i !== index)
+                                    });
+                                }}
+                                className="text-red-500 hover:text-red-700 ml-1"
+                            >
+                                ×
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-2">
+                <Button 
+                    onClick={() => {
+                        setIsEditingTemplate(null);
+                        setEditingTemplate(null);
+                    }}
+                    className="text-white bg-gray-500 hover:bg-gray-600"
+                >
+                    Cancel
+                </Button>
+                <Button 
+                    onClick={() => editTemplate(editingTemplate.id)}
+                    disabled={!editingTemplate.name.trim()}
+                    className="text-white bg-primary hover:bg-primary-dark"
+                >
+                    Save Changes
+                </Button>
+            </div>
+        </div>
+    </div>
+)}
                     {/* Add Template Modal */}
                     {isAddingTemplate && (
                         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -790,6 +991,71 @@ const FollowUpsPage: React.FC = () => {
                                     />
                                     <p className="mt-1 text-sm text-gray-500">
                                         Follow-up sequence will start when any of these tags are applied
+                                    </p>
+                                </div>
+
+                                {/* Add Trigger Keywords section */}
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                        Trigger Keywords
+                                    </label>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            className="flex-1 px-4 py-2 border rounded-lg"
+                                            placeholder="Enter keyword and press Enter"
+                                            value={newNumber}
+                                            onChange={(e) => setNewNumber(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' && newNumber.trim()) {
+                                                    setNewTemplate(prev => ({
+                                                        ...prev,
+                                                        triggerKeywords: [...prev.triggerKeywords, newNumber.trim()]
+                                                    }));
+                                                    setNewNumber('');
+                                                    e.preventDefault();
+                                                }
+                                            }}
+                                        />
+                                        <Button
+                                            onClick={() => {
+                                                if (newNumber.trim()) {
+                                                    setNewTemplate(prev => ({
+                                                        ...prev,
+                                                        triggerKeywords: [...prev.triggerKeywords, newNumber.trim()]
+                                                    }));
+                                                    setNewNumber('');
+                                                }
+                                            }}
+                                        >
+                                            Add
+                                        </Button>
+                                    </div>
+                                    
+                                    {/* Display added keywords */}
+                                    <div className="flex flex-wrap gap-2 mt-2">
+                                        {newTemplate.triggerKeywords.map((keyword, index) => (
+                                            <div 
+                                                key={index} 
+                                                className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded"
+                                            >
+                                                <span>{keyword}</span>
+                                                <button
+                                                    onClick={() => {
+                                                        setNewTemplate(prev => ({
+                                                            ...prev,
+                                                            triggerKeywords: prev.triggerKeywords.filter((_, i) => i !== index)
+                                                        }));
+                                                    }}
+                                                    className="text-red-500 hover:text-red-700 ml-1"
+                                                >
+                                                    ×
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <p className="mt-1 text-sm text-gray-500">
+                                        Follow-up sequence will start when any of these keywords are detected
                                     </p>
                                 </div>
 
@@ -868,6 +1134,7 @@ const FollowUpsPage: React.FC = () => {
                                             setNewTemplate({
                                                 name: '',
                                                 triggerTags: [],
+                                                triggerKeywords: [],
                                                 startType: 'immediate'
                                             });
                                         }}
@@ -881,6 +1148,7 @@ const FollowUpsPage: React.FC = () => {
                                             setNewTemplate({
                                                 name: '',
                                                 triggerTags: [],
+                                                triggerKeywords: [],
                                                 startType: 'immediate'
                                             });
                                         }}

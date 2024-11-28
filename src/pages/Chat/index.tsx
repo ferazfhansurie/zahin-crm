@@ -2806,15 +2806,14 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
             userName: userName
           }),
         });
-  
-
-  
+    
         if (!response.ok) {
           throw new Error('Failed to send message');
         }
         const now = new Date();
         const data = await response.json();
         console.log('response:', data);
+        
         // Update the local state
         setContacts(prevContacts => 
           prevContacts.map(contact => 
@@ -2823,20 +2822,72 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
               : contact
           )
         );
-        const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
-        const updatedLastMessage: Message = {
-          text: { body: newMessage },
-          chat_id: selectedContact.chat_id || '',
-          timestamp: Math.floor(Date.now() / 1000),
-          id: selectedContact.last_message?.id || `temp_${now.getTime()}`,
-          from_me: true,
-          type: 'text',
-          phoneIndex: phoneIndex,
-        };
-        
-        await updateDoc(contactRef, {
-          last_message: updatedLastMessage
-        });
+    
+        // Add "stop bot" tag for companyId 0123
+        if (companyId === '0123' && selectedContact?.id) {
+          const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
+          
+          // Get current contact data
+          const contactSnapshot = await getDoc(contactRef);
+          if (contactSnapshot.exists()) {
+            const currentTags = contactSnapshot.data().tags || [];
+            
+            // Only add "stop bot" if it's not already present
+            if (!currentTags.includes('stop bot')) {
+              await updateDoc(contactRef, {
+                tags: arrayUnion('stop bot'),
+                last_message: {
+                  text: { body: newMessage },
+                  chat_id: selectedContact.chat_id || '',
+                  timestamp: Math.floor(Date.now() / 1000),
+                  id: selectedContact.last_message?.id || `temp_${now.getTime()}`,
+                  from_me: true,
+                  type: 'text',
+                  phoneIndex: phoneIndex,
+                }
+              });
+              
+              // Update local state to reflect the new tag
+              setContacts(prevContacts =>
+                prevContacts.map(contact =>
+                  contact.id === selectedContact.id
+                    ? { ...contact, tags: [...(contact.tags || []), 'stop bot'] }
+                    : contact
+                )
+              );
+            } else {
+              // If "stop bot" tag already exists, just update the last message
+              await updateDoc(contactRef, {
+                last_message: {
+                  text: { body: newMessage },
+                  chat_id: selectedContact.chat_id || '',
+                  timestamp: Math.floor(Date.now() / 1000),
+                  id: selectedContact.last_message?.id || `temp_${now.getTime()}`,
+                  from_me: true,
+                  type: 'text',
+                  phoneIndex: phoneIndex,
+                }
+              });
+            }
+          }
+        } else {
+          // Original update for non-0123 companies
+          const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
+          const updatedLastMessage: Message = {
+            text: { body: newMessage },
+            chat_id: selectedContact.chat_id || '',
+            timestamp: Math.floor(Date.now() / 1000),
+            id: selectedContact.last_message?.id || `temp_${now.getTime()}`,
+            from_me: true,
+            type: 'text',
+            phoneIndex: phoneIndex,
+          };
+          
+          await updateDoc(contactRef, {
+            last_message: updatedLastMessage
+          });
+        }
+    
         console.log('Message sent successfully:', data);
         fetchMessagesBackground(selectedChatId!, data2.apiToken);
       } catch (error) {
