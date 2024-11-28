@@ -6946,10 +6946,7 @@ console.log(prompt);
             {messages
               .filter((message) => message.type !== 'action'&& 
               message.type !== 'e2e_notification' && 
-              message.type !== 'notification_template' &&   (
-                message.phoneIndex === userData?.phone ||(userData?.phone === undefined)||
-                (message.from_me && message.phoneIndex === undefined)
-              ))
+              message.type !== 'notification_template')
               .slice()
               .reverse()
               .map((message, index, array) => {
