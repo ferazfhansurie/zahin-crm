@@ -547,7 +547,9 @@ function Main() {
   const [totalGlobalSearchPages, setTotalGlobalSearchPages] = useState(1);
   const [messageUsage, setMessageUsage] = useState<number>(0);
   const [companyPlan, setCompanyPlan] = useState<string>('');
-
+  const [selectedVideo, setSelectedVideo] = useState<File | null>(null);
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [videoCaption, setVideoCaption] = useState('');
 
   useEffect(() => {
     if (contextContacts.length > 0) {
@@ -654,7 +656,47 @@ function Main() {
       setAudioBlob(null);
     }
   };
+// Add a handler for video uploads
+const handleVideoUpload = async (caption: string = '') => {
+  if (!selectedVideo || !selectedChatId || !userData) return;
 
+  try {
+    // First upload the video file to get a URL
+    const videoFile = new File([selectedVideo], `video_${Date.now()}.mp4`, { type: selectedVideo.type });
+    const videoUrl = await uploadFile(videoFile);
+
+    // Get company ID and other necessary data
+    const docUserRef = doc(firestore, 'user', userData.email);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) {
+      throw new Error('No such document for user!');
+    }
+    const userDataFromDb = docUserSnapshot.data();
+    const companyId = userDataFromDb.companyId;
+
+    // Format chat ID
+    const phoneNumber = selectedChatId.split('+')[1];
+    const chat_id = phoneNumber + "@s.whatsapp.net";
+
+    // Call the video message API
+    const response = await axios.post(`/api/v2/messages/video/${companyId}/${chat_id}`, {
+      videoUrl,
+      caption,
+      phoneIndex: selectedContact.phoneIndex || 0,
+      userName: userData.name
+    });
+
+    if (response.data.success) {
+      setVideoModalOpen(false);
+      setSelectedVideo(null);
+      setVideoCaption('');
+      toast.success('Video sent successfully');
+    }
+  } catch (error) {
+    console.error('Error uploading video:', error);
+    toast.error('Failed to send video message');
+  }
+};
   const convertToOggOpus = async (blob: Blob): Promise<Blob> => {
     const ffmpeg = new FFmpeg();
     await ffmpeg.load();
@@ -7193,6 +7235,28 @@ console.log(prompt);
                             )}
                         </div>
                       )}
+{message.type === 'order' && message.order && (
+  <div className="p-0 message-content">
+    <div className="flex items-center space-x-3 bg-emerald-800 rounded-lg p-2">
+      <img
+        src={`data:image/jpeg;base64,${message.order.thumbnail}`}
+        alt="Order"
+        className="w-12 h-12 rounded-lg object-cover"
+        onError={(e) => {
+          console.error("Error loading order image:", e.currentTarget.src);
+          e.currentTarget.src = logoImage;
+        }}
+      />
+      <div className="text-white">
+        <div className="flex items-center">
+          <Lucide icon="ShoppingCart" className="w-4 h-4 mr-1" />
+          <span className="text-sm">{message.order.itemCount} item</span>
+        </div>
+        <p className="text-sm opacity-90">MYR {(message.order.totalAmount1000 / 1000).toFixed(2)}</p>
+      </div>
+    </div>
+  </div>
+)}
                       {message.type === 'video' && message.video && (
                         <div className="video-content p-0 message-content image-message">
                           <video
@@ -7525,6 +7589,25 @@ console.log(prompt);
     />
   </label>
 </button>
+<button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
+    <label htmlFor="videoUpload" className="flex items-center cursor-pointer text-gray-800 dark:text-gray-200 w-full">
+      <Lucide icon="Video" className="w-4 h-4 mr-2" />
+      Video
+      <input
+        type="file"
+        id="videoUpload"
+        accept="video/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            setSelectedVideo(file);
+            setVideoModalOpen(true);
+          }
+        }}
+      />
+    </label>
+  </button>
 <button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
   <label htmlFor="documentUpload" className="flex items-center cursor-pointer text-gray-800 dark:text-gray-200 w-full">
     <Lucide icon="File" className="w-4 h-4 mr-2" />
@@ -8290,7 +8373,43 @@ console.log(prompt);
 />
       <ImageModal isOpen={isImageModalOpen} onClose={closeImageModal} imageUrl={modalImageUrl} />
       <ImageModal2 isOpen={isImageModalOpen2} onClose={() => setImageModalOpen2(false)} imageUrl={pastedImageUrl} onSend={sendImage}  initialCaption={documentCaption} />
-
+      {videoModalOpen && selectedVideo && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-2xl w-full">
+      <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-200">Send Video</h2>
+      <video
+        src={URL.createObjectURL(selectedVideo)}
+        controls
+        className="w-full mb-4 rounded"
+        style={{ maxHeight: '400px' }}
+      />
+      <textarea
+        value={videoCaption}
+        onChange={(e) => setVideoCaption(e.target.value)}
+        placeholder="Add a caption..."
+        className="w-full p-2 mb-4 border rounded bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+      />
+      <div className="flex justify-end space-x-2">
+        <button
+          onClick={() => {
+            setVideoModalOpen(false);
+            setSelectedVideo(null);
+            setVideoCaption('');
+          }}
+          className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={() => handleVideoUpload(videoCaption)}
+          className="px-4 py-2 bg-primary text-white rounded"
+        >
+          Send
+        </button>
+      </div>
+    </div>
+  </div>
+)}
       <ToastContainer
         position="top-right"
         autoClose={5000}
