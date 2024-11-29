@@ -7059,7 +7059,8 @@ console.log(prompt);
             {messages
               .filter((message) => message.type !== 'action'&& 
               message.type !== 'e2e_notification' && 
-              message.type !== 'notification_template')
+              message.type !== 'notification_template'&&
+              (userData?.phone === undefined || message.phoneIndex === undefined || message.phoneIndex === null || message.phoneIndex === userData?.phone))
               .slice()
               .reverse()
               .map((message, index, array) => {
@@ -7490,8 +7491,15 @@ console.log(prompt);
                               </>
                             )}
                             {message.name && <span className="ml-2 text-gray-400 dark:text-gray-600">{message.name}</span>}
+                            {message.phoneIndex !== undefined && (
+                            <div className="text-xs text-white-500 dark:text-gray-400 px-2 py-1">
+                              {phoneNames[message.phoneIndex] || `Phone ${message.phoneIndex + 1}`}
+                            </div>
+                          )}
                             {formatTimestamp(message.createdAt || message.dateAdded)}
+                          
                           </div>
+                          
                         </div>
                       </div>
                     </div>
