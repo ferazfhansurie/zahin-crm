@@ -2340,6 +2340,16 @@ useEffect(() => {
                           } : null
                         };                
                         break;
+                        case 'chat':
+                          formattedMessage.text = {
+                              body: message.text ? message.text.body : '', // Include the message body
+                              context: message.text && message.text.context ? {
+                                  quoted_author: message.text.context.quoted_author,
+                                  quoted_content: {
+                                      body: message.text.context.quoted_content?.body || ''
+                                  }
+                              } : null
+                          }; 
                     case 'image':
                         formattedMessage.image = message.image ? message.image : undefined;
                         break;
@@ -2573,6 +2583,16 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
                 } : null // Include the context with quoted content
             };
             break;
+            case 'chat':
+              formattedMessage.text = {
+                  body: message.text ? message.text.body : '', // Include the message body
+                  context: message.text && message.text.context ? {
+                      quoted_author: message.text.context.quoted_author,
+                      quoted_content: {
+                          body: message.text.context.quoted_content?.body || ''
+                      }
+                  } : null
+              }; 
           case 'image':
             formattedMessage.image = message.image ? message.image : undefined;
             break;
@@ -7199,7 +7219,7 @@ console.log(prompt);
                           })()}
                         </div>
                       )}
-                      {message.type === 'text' && message.text?.body && (
+                      {(message.type === 'text' || message.type === 'chat') && message.text?.body && (
                         <div>
                         {message.from_me && message.userName && message.userName !== '' && (
                           <div className="text-sm text-gray-300 dark:text-gray-300 mb-1 capitalize font-medium">{message.userName}</div>
