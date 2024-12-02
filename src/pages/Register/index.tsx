@@ -204,7 +204,8 @@ function Main() {
                   <div className="grid grid-cols-1 gap-2 mt-4 md:grid-cols-2">
                     {[
                       ['blaster', 'WhatsApp Blaster', '50'],
-                      ['enterprise', 'Standard AI', '168']
+                      ['enterprise', 'Standard AI', '168'],
+                      ['unlimited', 'Unlimited', '688']
                     ].map(([id, name, price]) => (
                       <div 
                         key={id}

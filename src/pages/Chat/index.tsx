@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, Fragment } from "react";
-import { getAuth } from "firebase/auth";
+import { getAuth, signOut } from "firebase/auth";
 import { initializeApp } from "firebase/app";
 import logoImage from '@/assets/images/placeholder.svg';
 import { getFirestore,Timestamp,  collection, doc, getDoc, onSnapshot, setDoc, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, arrayRemove,arrayUnion, writeBatch, serverTimestamp, runTransaction, increment, getCountFromServer } from "firebase/firestore";
@@ -550,7 +550,55 @@ function Main() {
   const [selectedVideo, setSelectedVideo] = useState<File | null>(null);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
   const [videoCaption, setVideoCaption] = useState('');
-
+  const [trialExpired, setTrialExpired] = useState(false);
+  useEffect(() => {
+    const checkTrialStatus = async () => {
+      try {
+        const auth = getAuth();
+        const user = auth.currentUser;
+        
+        if (!user?.email) {
+          return;
+        }
+  
+        const docUserRef = doc(firestore, 'user', user.email);
+        const docUserSnapshot = await getDoc(docUserRef);
+        
+        if (!docUserSnapshot.exists()) {
+          throw new Error("User document not found");
+        }
+  
+        const userData = docUserSnapshot.data();
+        const companyId = userData.companyId;
+  
+        const companyRef = doc(firestore, 'companies', companyId);
+        const companySnapshot = await getDoc(companyRef);
+  
+        if (!companySnapshot.exists()) {
+          throw new Error("Company document not found");
+        }
+  
+        const companyData = companySnapshot.data();
+        
+        if (companyData.trialEndDate) {
+          const trialEnd = companyData.trialEndDate.toDate();
+          const now = new Date();
+          
+          if (now > trialEnd) {
+            setTrialExpired(true);
+            toast.error("Your trial period has expired. Please contact support to continue using the service.");
+            await signOut(auth);
+            navigate('/login');
+          }
+        }
+      } catch (error) {
+        console.error("Error checking trial status:", error);
+        toast.error("Error checking subscription status");
+      }
+    };
+  
+    checkTrialStatus();
+  }, []); // Run once when component mounts
   useEffect(() => {
     if (contextContacts.length > 0) {
       setContacts(contextContacts as Contact[]);
