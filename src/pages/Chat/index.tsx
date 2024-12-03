@@ -7388,63 +7388,50 @@ console.log(prompt);
                       )}
                       {message.type === 'document' && message.document && (
                         <div className="document-content flex flex-col items-center p-4 rounded-md shadow-md bg-white dark:bg-gray-800">
-                          {message.document.mimetype && message.document.mimetype.startsWith('video/') ? (
-                            <video
-                              src={message.document.link || `data:${message.document.mimetype};base64,${message.document.data}`}
-                              controls
-                              className="w-full max-w-md h-auto rounded cursor-pointer"
-                              onClick={() => openPDFModal(message.document?.link ?? `data:${message.document?.mimetype};base64,${message.document?.data}`)}
-                            />
-                          ) : message.document.link ? (
-                            <iframe
-                              src={message.document.link}
-                              width="auto"
-                              height="auto"
-                              title="Document"
-                              className="border rounded cursor-pointer"
-                              onClick={() => openPDFModal(message.document?.link || '')}
-                            />
-                          ) : message.document.data ? (
-                            <iframe
-                              src={`data:${message.document.mimetype};base64,${message.document.data}`}
-                              width="auto"
-                              height="auto"
-                              title="Document"
-                              className="border rounded cursor-pointer"
-                              onClick={() => message.document && openPDFModal(`data:${message.document.mimetype};base64,${message.document.data}`)}
-                            />
-                          ) : (
-                            <div className="text-gray-600 dark:text-gray-400">Document preview not available</div>
-                          )}
-                          <div className="flex-1 text-justify mt-3 w-full">
-                            <div className="font-semibold text-gray-800 dark:text-gray-200 truncate">
-                              {message.document.file_name || message.document.filename || 'Document'}
-                            </div>
-                            <div className="text-gray-600 dark:text-gray-400">
-                              {message.document.page_count && `${message.document.page_count} page${message.document.page_count > 1 ? 's' : ''} • `}
-                              {message.document.mimetype || 'Unknown'} •{' '}
-                              {((message.document.file_size || message.document.fileSize || 0) / (1024 * 1024)).toFixed(2)} MB
-                            </div>
-                      
-                          </div>
-                  
-                          <button
+                          <div 
+                            className="w-full cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200 p-4 rounded-lg"
                             onClick={() => {
                               if (message.document) {
-                                openPDFModal(message.document.link || `data:${message.document.mimetype};base64,${message.document.data}`);
+                                const docUrl = message.document.link || 
+                                  (message.document.data ? `data:${message.document.mimetype};base64,${message.document.data}` : null);
+                                if (docUrl) {
+                                  openPDFModal(docUrl);
+                                }
                               }
                             }}
-                            className="mt-3"
                           >
-                            <Lucide icon="ExternalLink" className="w-6 h-6 text-gray-800 dark:text-gray-200" />
-                          </button>
-                   
+                            <div className="flex items-center">
+                              {message.document.mimetype?.startsWith('video/') ? (
+                                <Lucide icon="Video" className="w-8 h-8 text-gray-500 dark:text-gray-400 mr-3" />
+                              ) : message.document.mimetype?.startsWith('image/') ? (
+                                <Lucide icon="Image" className="w-8 h-8 text-gray-500 dark:text-gray-400 mr-3" />
+                              ) : message.document.mimetype?.includes('pdf') ? (
+                                <Lucide icon="FileText" className="w-8 h-8 text-gray-500 dark:text-gray-400 mr-3" />
+                              ) : (
+                                <Lucide icon="File" className="w-8 h-8 text-gray-500 dark:text-gray-400 mr-3" />
+                              )}
+                              
+                              <div className="flex-1">
+                                <div className="font-semibold text-gray-800 dark:text-gray-200 truncate">
+                                  {message.document.file_name || message.document.filename || 'Document'}
+                                </div>
+                                <div className="text-sm text-gray-600 dark:text-gray-400">
+                                  {message.document.page_count && `${message.document.page_count} page${message.document.page_count > 1 ? 's' : ''} • `}
+                                  {message.document.mimetype || 'Unknown'} •{' '}
+                                  {((message.document.file_size || message.document.fileSize || 0) / (1024 * 1024)).toFixed(2)} MB
+                                </div>
+                              </div>
+                              <Lucide icon="ExternalLink" className="w-5 h-5 text-gray-400 dark:text-gray-500 ml-3" />
+                            </div>
+                          </div>
+
+                          {message.document?.caption && (
+                            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                              {message.document.caption}
+                            </p>
+                          )}
                         </div>
-                        
                       )}
-                             {message.document?.caption && (
-                <p className="mt-2 text-sm">{message.document.caption}</p>
-              )}
                       {message.type === 'link_preview' && message.link_preview && (
                         <div className="link-preview-content p-0 message-content image-message rounded-lg overflow-hidden text-gray-800 dark:text-gray-200">
                           <a href={message.link_preview.body} target="_blank" rel="noopener noreferrer" className="block">
@@ -7461,17 +7448,17 @@ console.log(prompt);
                           </a>
                         </div>
                       )}
-                    {message.type === 'sticker' && message.sticker && (
-  <div className="sticker-content p-0 message-content image-message">
-    <img
-      src={`data:${message.sticker.mimetype};base64,${message.sticker.data}`}
-      alt="Sticker"
-      className="rounded-lg message-image cursor-pointer"
-      style={{ maxWidth: 'auto', maxHeight: 'auto', objectFit: 'contain' }}
-      onClick={() => openImageModal(`data:${message.sticker?.mimetype};base64,${message.sticker?.data}`)}
-    />
-  </div>
-)}
+                      {message.type === 'sticker' && message.sticker && (
+                        <div className="sticker-content p-0 message-content image-message">
+                          <img
+                            src={`data:${message.sticker.mimetype};base64,${message.sticker.data}`}
+                            alt="Sticker"
+                            className="rounded-lg message-image cursor-pointer"
+                            style={{ maxWidth: 'auto', maxHeight: 'auto', objectFit: 'contain' }}
+                            onClick={() => openImageModal(`data:${message.sticker?.mimetype};base64,${message.sticker?.data}`)}
+                          />
+                        </div>
+                      )}
                       {message.type === 'location' && message.location && (
                         <div className="location-content p-0 message-content image-message">
                           <div className="text-sm text-gray-800 dark:text-gray-200">Location: {message.location.latitude}, {message.location.longitude}</div>
