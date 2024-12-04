@@ -7135,12 +7135,13 @@ console.log(prompt);
               .filter((message) => message.type !== 'action'&& 
               message.type !== 'e2e_notification' && 
               message.type !== 'notification_template'&&
-              (userData?.phone === undefined || 
+              (userData?.company !== "0123" || 
+                (userData?.phone === undefined || 
                 phoneCount === undefined || 
                 phoneCount === 0 ||
                 message.phoneIndex === undefined || 
                 message.phoneIndex === null || 
-                message.phoneIndex === userData?.phone))
+                message.phoneIndex === userData?.phone)))
               .slice()
               .reverse()
               .map((message, index, array) => {
