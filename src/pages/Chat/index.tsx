@@ -192,6 +192,18 @@ interface ImageModalProps {
   onClose: () => void;
   imageUrl: string;
 }
+interface Template {
+  id: string;
+  triggerTags?: string[];
+  name?: string;
+  messages?: {
+    text: string;
+    delay: number;
+    delayUnit: string;
+  }[];
+  createdAt?: any;
+  updatedAt?: any;
+}
 interface DocumentModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -5008,7 +5020,21 @@ const sortContacts = (contacts: Contact[]) => {
     };
   }, []);
   
-  const handleRemoveTag = async (contactId: string, tagName: string) => {
+// First, ensure you have the Template interface defined
+interface Template {
+  id: string;
+  triggerTags?: string[];
+  name?: string;
+  messages?: {
+    text: string;
+    delay: number;
+    delayUnit: string;
+  }[];
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+ const handleRemoveTag = async (contactId: string, tagName: string) => {
     try {
       const user = auth.currentUser;
       const docUserRef = doc(firestore, 'user', user?.email!);
@@ -5147,7 +5173,8 @@ const sortContacts = (contacts: Contact[]) => {
       toast.error('Failed to remove tag.');
     }
   };
-
+  
+ 
 
   const adjustHeight = (textarea: HTMLTextAreaElement, reset = false) => {
     if (reset) {
@@ -8554,6 +8581,7 @@ console.log(prompt);
     </div>
   );
 };
+
 interface ImageModalProps2 {
   isOpen: boolean;
   onClose: () => void;
