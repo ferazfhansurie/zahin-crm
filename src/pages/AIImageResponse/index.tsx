@@ -277,7 +277,7 @@ function AIImageResponses() {
                                 className="mb-5 dark:bg-darkmode-800 dark:border-darkmode-400 dark:text-slate-200"
                             />
 
-                            <div className="grid grid-cols-12 gap-5">
+                            <div className="grid grid-cols-12 gap-5 max-h-[calc(100vh-300px)] overflow-y-auto">
                                 {filteredResponses.map((response) => (
                                     <div key={response.id} className="intro-y col-span-12">
                                         <div className="box p-5 dark:bg-gray-700">
