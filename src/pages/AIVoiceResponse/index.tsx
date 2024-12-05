@@ -217,6 +217,7 @@ function AIVoiceResponses() {
 
     return (
         <>
+        <div className="h-screen overflow-y-auto pb-10">
             <h2 className="mt-10 text-lg font-medium intro-y">AI Voice Responses</h2>
             <div className="grid grid-cols-12 gap-6 mt-5">
                 <div className="intro-y col-span-12 lg:col-span-6">
@@ -453,7 +454,8 @@ function AIVoiceResponses() {
                     </div>
                 </div>
             </div>
-            <ToastContainer theme={darkMode ? "dark" : "light"} />
+                <ToastContainer theme={darkMode ? "dark" : "light"} />
+            </div>
         </>
     );
 }

@@ -236,6 +236,7 @@ function AITagResponses() {
 
     return (
         <>
+        <div className="h-screen overflow-y-auto pb-10">
             <h2 className="mt-10 text-lg font-medium intro-y">AI Tag Responses</h2>
             <div className="grid grid-cols-12 gap-6 mt-5">
                 <div className="intro-y col-span-12 lg:col-span-6">
@@ -445,7 +446,8 @@ function AITagResponses() {
                     </div>
                 </div>
             </div>
-            <ToastContainer theme={darkMode ? "dark" : "light"} />
+                <ToastContainer theme={darkMode ? "dark" : "light"} />
+            </div>
         </>
     );
 }

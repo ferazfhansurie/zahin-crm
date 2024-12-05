@@ -2017,7 +2017,7 @@ async function fetchConfigFromDatabase() {
     console.log('Attempting to select chat:', { chatId, userRole, userName: userData?.name });
     
     try {
-      // Permission check
+      // Only check permissions for role '3', allow role '2' full access
       if (userRole === "3" && contactSelect && contactSelect.assignedTo?.toLowerCase() !== userData?.name.toLowerCase()) {
         console.log('Permission denied for role 3 user');
         toast.error("You don't have permission to view this chat.");
@@ -2030,6 +2030,10 @@ async function fetchConfigFromDatabase() {
         console.error('Contact not found');
         return;
       }
+
+      // Debug logging
+      console.log('Selected contact:', contact);
+      console.log('User role:', userRole);
   
       // Update local state first for immediate UI response
       setContacts(prevContacts => {
@@ -2313,6 +2317,8 @@ useEffect(() => {
             return;
         }
         const dataUser = docUserSnapshot.data();
+
+        console.log('Fetching messages for user role:', dataUser.role);
         
         const companyId = dataUser.companyId;
         const docRef = doc(firestore, 'companies', companyId);
@@ -2325,10 +2331,9 @@ useEffect(() => {
         
         setToken(data2.whapiToken);
         console.log('fetching messages');
-        let messages;
-        messages = await fetchMessagesFromFirebase(companyId, selectedChatId);
-            console.log('messages');
-            console.log(messages);
+        let messages = await fetchMessagesFromFirebase(companyId, selectedChatId);
+        console.log('messages');
+        console.log(messages);
         
         const formattedMessages: any[] = [];
         const reactionsMap: Record<string, any[]> = {};
@@ -2488,13 +2493,13 @@ useEffect(() => {
                     case 'reactions':
                         formattedMessage.reactions = message.reactions ? message.reactions : undefined;
                         break;
-                        case 'privateNote':
-    console.log('Private note data:', message);
-    formattedMessage.text = typeof message.text === 'string' ? message.text : message.text?.body || '';
-    console.log('Formatted private note text:', formattedMessage.text);
-    formattedMessage.from_me = true;
-    formattedMessage.from_name = message.from;
-    break;
+                    case 'privateNote':
+                        console.log('Private note data:', message);
+                        formattedMessage.text = typeof message.text === 'string' ? message.text : message.text?.body || '';
+                        console.log('Formatted private note text:', formattedMessage.text);
+                        formattedMessage.from_me = true;
+                        formattedMessage.from_name = message.from;
+                        break;
                     default:
                         console.warn(`Unknown message type: ${message.type}`);
                 }

@@ -190,6 +190,7 @@ function AIImageResponses() {
 
     return (
         <>
+        <div className="h-screen overflow-y-auto pb-10">
             <h2 className="mt-10 text-lg font-medium intro-y">AI Image Responses</h2>
             <div className="grid grid-cols-12 gap-6 mt-5">
                 <div className="intro-y col-span-12 lg:col-span-6">
@@ -264,7 +265,7 @@ function AIImageResponses() {
                     </div>
                 </div>
 
-                <div className="intro-y col-span-12 lg:col-span-6">
+                <div className="intro-y col-span-12 lg:col-span-6 overflow-y-auto">
                     {/* Search and list */}
                     <div className="intro-y box dark:bg-gray-700">
                         <div className="p-5">
@@ -385,6 +386,7 @@ function AIImageResponses() {
                 </div>
             </div>
             <ToastContainer theme={darkMode ? "dark" : "light"} />
+            </div>
         </>
     );
 }
