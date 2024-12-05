@@ -367,19 +367,9 @@ const paginatedEmployees = filteredEmployees
                   Quick Replies
                 </Button>
             </Link>
-            <Link to="a-i-image-response">
+            <Link to="a-i-responses">
               <Button variant="primary" className="mr-2 shadow-md">
-                Image Response
-              </Button>
-            </Link>
-            <Link to="a-i-tag-response">
-              <Button variant="primary" className="mr-2 shadow-md">
-                Tag Response
-              </Button>
-            </Link>
-            <Link to="a-i-voice-response">
-              <Button variant="primary" className="mr-2 shadow-md">
-                Voice Response
+                AI Responses
               </Button>
             </Link>
             <Link to="follow-ups-select">
