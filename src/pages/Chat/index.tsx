@@ -20,7 +20,7 @@ import LZString from 'lz-string';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import Tippy from "@/components/Base/Tippy";
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
-import { ReactMic as ReactMicComponent } from 'react-mic';
+import { ReactMic } from 'react-mic';
 import {  useNavigate } from "react-router-dom";
 import noti from "../../assets/audio/noti.mp3";
 import { FFmpeg } from '@ffmpeg/ffmpeg';
@@ -235,6 +235,10 @@ interface EditMessagePopupProps {
   handleEditMessage: () => void;
   cancelEditMessage: () => void;
 }
+
+const DatePickerComponent = DatePicker as any;
+
+const ReactMicComponent = ReactMic as any;
 
 const DocumentModal: React.FC<DocumentModalProps> = ({ isOpen, onClose, document, onSend, type, initialCaption }) => {
   const [caption, setCaption] = useState(initialCaption); // Initialize with initialCaption
@@ -6203,13 +6207,13 @@ console.log(prompt);
                   <div className="mt-4">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Start Date & Time</label>
                     <div className="flex space-x-2">
-                      <DatePicker
+                      <DatePickerComponent
                         selected={blastStartDate}
                         onChange={(date: Date) => setBlastStartDate(date)}
                         dateFormat="MMMM d, yyyy"
                         className="w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                       />
-                      <DatePicker
+                      <DatePickerComponent
                         selected={blastStartTime}
                         onChange={(date: Date) => setBlastStartTime(date)}
                         showTimeSelect
@@ -8553,7 +8557,7 @@ console.log(prompt);
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Reminder Date and Time
               </label>
-              <DatePicker
+              <DatePickerComponent
                 selected={reminderDate}
                 onChange={(date: Date) => setReminderDate(date)}
                 showTimeSelect
