@@ -361,25 +361,34 @@ function AIResponses() {
             if (!response) return;
 
             const responseRef = doc(firestore, `companies/${companyId}/ai${responseType}Responses`, id);
+            
             let updatedData: any = {
                 keywords: response.keywords,
                 description: response.description,
-                status: response.status
+                status: response.status,
+                keyword: response.keywords[0]
             };
 
-            // Handle different response types
             switch (responseType) {
                 case 'Image':
+                    let imageUrls = (response as AIImageResponse).imageUrls || [];
                     if (selectedImages.length > 0) {
-                        const imageUrls = await uploadFiles(selectedImages, 'image');
-                        updatedData.imageUrl = imageUrls[0];
+                        // Upload and add new images
+                        const newImageUrls = await uploadFiles(selectedImages, 'image');
+                        imageUrls = [...imageUrls, ...newImageUrls];
                     }
+                    updatedData.imageUrls = imageUrls;
+                    updatedData.imageUrl = imageUrls[0] || '';
                     break;
                 case 'Voice':
                     if (selectedAudios.length > 0) {
                         const voiceUrls = await uploadFiles(selectedAudios, 'voice');
                         updatedData.voiceUrls = voiceUrls;
                         updatedData.captions = selectedAudios.map(() => '');
+                    } else {
+                        // Keep existing audio if no new ones selected
+                        updatedData.voiceUrls = (response as AIVoiceResponse).voiceUrls;
+                        updatedData.captions = (response as AIVoiceResponse).captions;
                     }
                     break;
                 case 'Document':
@@ -387,6 +396,10 @@ function AIResponses() {
                         const docUrls = await uploadFiles(selectedDocs, 'document');
                         updatedData.documentUrls = docUrls;
                         updatedData.documentNames = selectedDocs.map(doc => doc.name);
+                    } else {
+                        // Keep existing documents if no new ones selected
+                        updatedData.documentUrls = (response as AIDocumentResponse).documentUrls;
+                        updatedData.documentNames = (response as AIDocumentResponse).documentNames;
                     }
                     break;
                 case 'Tag':
@@ -395,6 +408,9 @@ function AIResponses() {
                             const tag = availableTags.find(t => t.id === tagId);
                             return tag ? tag.name : '';
                         }).filter(name => name !== '');
+                    } else {
+                        // Keep existing tags if no new ones selected
+                        updatedData.tags = (response as AITagResponse).tags;
                     }
                     break;
             }
@@ -434,6 +450,27 @@ function AIResponses() {
             response.description?.toLowerCase().includes(searchQuery.toLowerCase() || '')
         )
     );
+
+    // When starting to edit, set the selected items based on the response type
+    const startEditing = (response: AIResponse) => {
+        setIsEditing(response.id);
+        
+        // Set the form state based on response type
+        switch (response.type) {
+            case 'Tag':
+                const tagResponse = response as AITagResponse;
+                const selectedTagIds = tagResponse.tags
+                    .map(tagName => availableTags.find(t => t.name === tagName)?.id)
+                    .filter((id): id is string => id !== undefined);
+                setSelectedTags(selectedTagIds);
+                break;
+            case 'Image':
+                const imageResponse = response as AIImageResponse;
+                // Set existing image URLs to show them in edit mode
+                setSelectedImageUrls(imageResponse.imageUrls || []);
+                break;
+        }
+    };
 
     return (
         <div className="h-screen overflow-y-auto pb-10">
@@ -657,11 +694,14 @@ function AIResponses() {
                                                         />
                                                     )}
                                                     {response.type === 'Image' && (
-                                                        <ImageResponseForm
-                                                            selectedImageUrls={selectedImageUrls}
-                                                            onImageSelect={handleImageSelect}
-                                                            onImageRemove={handleImageRemove}
-                                                        />
+                                                        <div>
+                                                            {/* Form to add new images */}
+                                                            <ImageResponseForm
+                                                                selectedImageUrls={selectedImageUrls}
+                                                                onImageSelect={handleImageSelect}
+                                                                onImageRemove={handleImageRemove}
+                                                            />
+                                                        </div>
                                                     )}
                                                     {response.type === 'Voice' && (
                                                         <VoiceResponseForm
@@ -736,7 +776,7 @@ function AIResponses() {
                                                             )}
                                                         </div>
                                                         <div className="flex space-x-2">
-                                                            <Button variant="primary" onClick={() => setIsEditing(response.id)}>
+                                                            <Button variant="primary" onClick={() => startEditing(response)}>
                                                                 <Lucide icon="PenSquare" className="w-4 h-4" />
                                                             </Button>
                                                             <Button variant="danger" onClick={() => deleteResponse(response.id)}>
@@ -755,18 +795,19 @@ function AIResponses() {
                                                             </div>
                                                         )}
                                                         {response.type === 'Image' && (
-                                                            <div className="grid grid-cols-1 gap-4">
+                                                            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                                                 {((response as AIImageResponse).imageUrls ?? []).map((url, idx) => (
-                                                                    <img 
-                                                                        key={idx}
-                                                                        src={url} 
-                                                                        alt={`Response ${idx + 1}`}
-                                                                        className="w-full h-48 object-contain rounded"
-                                                                        onError={(e) => {
-                                                                            console.error(`Error loading image: ${url}`);
-                                                                            (e.target as HTMLImageElement).src = '/placeholder-image.png';
-                                                                        }}
-                                                                    />
+                                                                    <div key={idx} className="relative">
+                                                                        <img 
+                                                                            src={url} 
+                                                                            alt={`Response ${idx + 1}`}
+                                                                            className="w-full h-48 object-cover rounded-lg shadow-md"
+                                                                            onError={(e) => {
+                                                                                console.error(`Error loading image: ${url}`);
+                                                                                (e.target as HTMLImageElement).src = '/placeholder-image.png';
+                                                                            }}
+                                                                        />
+                                                                    </div>
                                                                 ))}
                                                             </div>
                                                         )}
