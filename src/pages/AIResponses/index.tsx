@@ -17,6 +17,7 @@ import AssignResponseForm from "@/components/AIResponses/AssignResponseForm";
 import DocumentResponseForm from "@/components/AIResponses/DocumentResponseForm";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
+
 interface Tag {
     id: string;
     name: string;
@@ -949,6 +950,17 @@ function AIResponses() {
                     </div>
                 </div>
             </div>
+            <ToastContainer
+                position="top-right"
+                autoClose={5000}
+                hideProgressBar={false}
+                newestOnTop={false}
+                closeOnClick
+                rtl={false}
+                pauseOnFocusLoss
+                draggable
+                pauseOnHover
+            />
         </div>
     );
 }
