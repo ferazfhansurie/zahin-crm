@@ -1767,6 +1767,51 @@ const chatId = tempphone + "@c.us"
         const userData = docUserSnapshot.data();
         const companyId = userData.companyId;
   
+        // Check for active templates
+        const templatesRef = collection(firestore, `companies/${companyId}/followUpTemplates`);
+        const templatesSnapshot = await getDocs(templatesRef);
+        
+        // Get all active templates
+        const activeTemplates = templatesSnapshot.docs
+          .filter(doc => doc.data().status === 'active')
+          .map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+  
+        // Remove templates for this contact
+        if (activeTemplates.length > 0) {
+          const phoneNumber = currentContact.phone?.replace(/\D/g, '');
+          
+          for (const template of activeTemplates) {
+            try {
+              const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/tag/followup', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  requestType: 'removeTemplate',
+                  phone: phoneNumber,
+                  first_name: currentContact.contactName || phoneNumber,
+                  phoneIndex: userData.phone || 0,
+                  templateId: template.id,
+                  idSubstring: companyId
+                }),
+              });
+  
+              if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Failed to remove template messages:', errorText);
+              } else {
+                console.log(`Follow-up template ${template.id} removed for contact ${phoneNumber}`);
+              }
+            } catch (error) {
+              console.error('Error removing template messages:', error);
+            }
+          }
+        }
+  
         // Delete the contact from Firestore
         const contactRef = doc(firestore, `companies/${companyId}/contacts`, currentContact.id!);
         await deleteDoc(contactRef);
