@@ -20,7 +20,7 @@ import LZString from 'lz-string';
 import 'react-pdf/dist/esm/Page/AnnotationLayer.css';
 import Tippy from "@/components/Base/Tippy";
 import EmojiPicker, { EmojiClickData } from 'emoji-picker-react';
-import { ReactMic } from 'react-mic';
+import { ReactMic as ReactMicComponent } from 'react-mic';
 import {  useNavigate } from "react-router-dom";
 import noti from "../../assets/audio/noti.mp3";
 import { FFmpeg } from '@ffmpeg/ffmpeg';
@@ -28,7 +28,7 @@ import { fetchFile } from '@ffmpeg/util';
 import { Lock, MessageCircle } from "lucide-react";
 import { Menu as ContextMenu, Item, Separator, useContextMenu } from 'react-contexify';
 import 'react-contexify/dist/ReactContexify.css';
-import ReactDatePicker from 'react-datepicker';
+import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import ReactPaginate from 'react-paginate';
 import { getFileTypeFromMimeType } from '../../utils/fileUtils';
@@ -6203,13 +6203,13 @@ console.log(prompt);
                   <div className="mt-4">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Start Date & Time</label>
                     <div className="flex space-x-2">
-                      <ReactDatePicker
+                      <DatePicker
                         selected={blastStartDate}
                         onChange={(date: Date) => setBlastStartDate(date)}
                         dateFormat="MMMM d, yyyy"
                         className="w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                       />
-                      <ReactDatePicker
+                      <DatePicker
                         selected={blastStartTime}
                         onChange={(date: Date) => setBlastStartTime(date)}
                         showTimeSelect
@@ -7750,7 +7750,7 @@ console.log(prompt);
             >
               <Lucide icon={isRecording ? "StopCircle" : "Mic"} className="w-5 h-5" />
             </button>
-            <ReactMic
+            <ReactMicComponent
               record={isRecording}
               className="w-44 rounded-md h-10 mr-2 ml-2"
               onStop={onStop}
@@ -8553,7 +8553,7 @@ console.log(prompt);
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                 Reminder Date and Time
               </label>
-              <ReactDatePicker
+              <DatePicker
                 selected={reminderDate}
                 onChange={(date: Date) => setReminderDate(date)}
                 showTimeSelect
