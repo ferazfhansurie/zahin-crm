@@ -21,13 +21,14 @@ export interface AIImageResponse extends BaseAIResponse {
 
 export interface AIVoiceResponse extends BaseAIResponse {
   type: 'Voice';
-  audioUrl: string;
+  voiceUrls: string[];
+  captions?: string[];
 }
 
 export interface AIDocumentResponse extends BaseAIResponse {
   type: 'Document';
-  documentUrl: string;
-  documentName: string;
+  documentUrls: string[];
+  documentNames: string[];
 }
 
 export type AIResponse = AITagResponse | AIImageResponse | AIVoiceResponse | AIDocumentResponse; 

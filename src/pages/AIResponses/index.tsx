@@ -91,13 +91,18 @@ function AIResponses() {
                             imageUrl: data.imageUrl
                         } as AIImageResponse;
                     case 'Voice':
-                        return { ...baseResponse, type: 'Voice', audioUrl: data.audioUrl } as AIVoiceResponse;
+                        return { 
+                            ...baseResponse, 
+                            type: 'Voice', 
+                            voiceUrls: data.voiceUrls || [],
+                            captions: data.captions || []
+                        } as AIVoiceResponse;
                     case 'Document':
                         return { 
                             ...baseResponse, 
                             type: 'Document', 
-                            documentUrl: data.documentUrl,
-                            documentName: data.documentName 
+                            documentUrls: data.documentUrls || [],
+                            documentNames: data.documentNames || []
                         } as AIDocumentResponse;
                 }
             });
@@ -202,8 +207,11 @@ function AIResponses() {
                         toast.error('Please select an audio file');
                         return;
                     }
-                    const audioUrls = await uploadFiles(selectedAudios, 'voice');
-                    additionalData = { audioUrl: audioUrls[0] };
+                    const voiceUrls = await uploadFiles(selectedAudios, 'voice');
+                    additionalData = { 
+                        voiceUrls: voiceUrls,
+                        captions: selectedAudios.map(() => '')
+                    };
                     break;
                 case 'Document':
                     if (selectedDocs.length === 0) {
@@ -212,8 +220,8 @@ function AIResponses() {
                     }
                     const docUrls = await uploadFiles(selectedDocs, 'document');
                     additionalData = { 
-                        documentUrl: docUrls[0],
-                        documentName: selectedDocs[0].name 
+                        documentUrls: docUrls,
+                        documentNames: selectedDocs.map(doc => doc.name)
                     };
                     break;
                 case 'Tag':
@@ -369,15 +377,16 @@ function AIResponses() {
                     break;
                 case 'Voice':
                     if (selectedAudios.length > 0) {
-                        const audioUrls = await uploadFiles(selectedAudios, 'voice');
-                        updatedData.audioUrl = audioUrls[0];
+                        const voiceUrls = await uploadFiles(selectedAudios, 'voice');
+                        updatedData.voiceUrls = voiceUrls;
+                        updatedData.captions = selectedAudios.map(() => '');
                     }
                     break;
                 case 'Document':
                     if (selectedDocs.length > 0) {
                         const docUrls = await uploadFiles(selectedDocs, 'document');
-                        updatedData.documentUrl = docUrls[0];
-                        updatedData.documentName = selectedDocs[0].name;
+                        updatedData.documentUrls = docUrls;
+                        updatedData.documentNames = selectedDocs.map(doc => doc.name);
                     }
                     break;
                 case 'Tag':
@@ -762,25 +771,33 @@ function AIResponses() {
                                                             </div>
                                                         )}
                                                         {response.type === 'Voice' && (
-                                                            <audio controls className="w-full">
-                                                                <source src={(response as AIVoiceResponse).audioUrl} type="audio/mpeg" />
-                                                                Your browser does not support the audio element.
-                                                            </audio>
+                                                            <div className="space-y-2">
+                                                                {(response as AIVoiceResponse).voiceUrls.map((url, idx) => (
+                                                                    <audio key={idx} controls className="w-full">
+                                                                        <source src={url} type="audio/mpeg" />
+                                                                        Your browser does not support the audio element.
+                                                                    </audio>
+                                                                ))}
+                                                            </div>
                                                         )}
                                                         {response.type === 'Document' && (
-                                                            <div className="flex items-center justify-between p-2 bg-slate-50 dark:bg-darkmode-400 rounded">
-                                                                <div className="flex items-center">
-                                                                    <Lucide icon="FileText" className="w-4 h-4 mr-2" />
-                                                                    <span>{(response as AIDocumentResponse).documentName}</span>
-                                                                </div>
-                                                                <a 
-                                                                    href={(response as AIDocumentResponse).documentUrl}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="text-primary hover:underline"
-                                                                >
-                                                                    <Lucide icon="Download" className="w-4 h-4" />
-                                                                </a>
+                                                            <div className="space-y-2">
+                                                                {(response as AIDocumentResponse).documentUrls.map((url, idx) => (
+                                                                    <div key={idx} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-darkmode-400 rounded">
+                                                                        <div className="flex items-center">
+                                                                            <Lucide icon="FileText" className="w-4 h-4 mr-2" />
+                                                                            <span>{(response as AIDocumentResponse).documentNames[idx]}</span>
+                                                                        </div>
+                                                                        <a 
+                                                                            href={url}
+                                                                            target="_blank"
+                                                                            rel="noopener noreferrer"
+                                                                            className="text-primary hover:underline"
+                                                                        >
+                                                                            <Lucide icon="Download" className="w-4 h-4" />
+                                                                        </a>
+                                                                    </div>
+                                                                ))}
                                                             </div>
                                                         )}
                                                     </div>

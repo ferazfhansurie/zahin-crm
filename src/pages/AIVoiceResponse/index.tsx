@@ -14,7 +14,7 @@ import { selectDarkMode } from "@/stores/darkModeSlice";
 interface AIVoiceResponse {
     id: string;
     keyword: string;
-    audioUrls: string[];
+    voiceUrls: string[];
     createdAt: Date;
     status: 'active' | 'inactive';
 }
@@ -71,7 +71,7 @@ function AIVoiceResponses() {
             const fetchedResponses: AIVoiceResponse[] = responsesSnapshot.docs.map(doc => ({
                 id: doc.id,
                 keyword: doc.data().keyword || '',
-                audioUrls: doc.data().audioUrls || [],
+                voiceUrls: doc.data().voiceUrls || [],
                 createdAt: doc.data().createdAt.toDate(),
                 status: doc.data().status || 'active',
             }));
@@ -108,11 +108,11 @@ function AIVoiceResponses() {
             const userData = userSnapshot.data();
             const companyId = userData.companyId;
 
-            const audioUrls = await uploadAudios(selectedAudios);
+            const voiceUrls = await uploadAudios(selectedAudios);
 
             const newResponseData = {
                 keyword: newResponse.keyword.toLowerCase(),
-                audioUrls,
+                voiceUrls,
                 status: newResponse.status,
                 createdAt: serverTimestamp(),
             };
@@ -152,7 +152,7 @@ function AIVoiceResponses() {
             };
 
             if (selectedAudios.length > 0) {
-                updatedData.audioUrls = await uploadAudios(selectedAudios);
+                updatedData.voiceUrls = await uploadAudios(selectedAudios);
             }
 
             await updateDoc(responseRef, updatedData);
@@ -432,7 +432,7 @@ function AIVoiceResponses() {
                                                     </div>
                                                     <div className="rounded-md border border-slate-200/60 dark:border-darkmode-400 p-2">
                                                     <div className="space-y-2">
-                                                        {response.audioUrls.map((url, index) => (
+                                                        {response.voiceUrls.map((url, index) => (
                                                             <audio 
                                                                 key={index}
                                                                 controls
