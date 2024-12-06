@@ -1,5 +1,5 @@
 import "@/assets/css/themes/icewall/side-nav.css";
-import { Transition as ReactTransition } from "react-transition-group";
+import { Transition as HeadlessTransition } from '@headlessui/react';
 import { useState, useEffect } from "react";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import { selectMenu } from "@/stores/menuSlice";
@@ -91,11 +91,10 @@ function Main() {
                     </Tippy>
                     {/* BEGIN: Second Child */}
                     {menu.subMenu && (
-                      <ReactTransition
-                        in={menu.activeDropdown}
-                        onEnter={enter}
-                        onExit={leave}
-                        timeout={300}
+                      <HeadlessTransition
+                        show={menu.activeDropdown}
+                        enter="transition ease-out duration-300"
+                        leave="transition ease-in duration-300"
                       >
                         <ul
                           className={clsx({
@@ -142,11 +141,10 @@ function Main() {
                               </Tippy>
                               {/* BEGIN: Third Child */}
                               {subMenu.subMenu && (
-                                <ReactTransition
-                                  in={subMenu.activeDropdown}
-                                  onEnter={enter}
-                                  onExit={leave}
-                                  timeout={300}
+                                <HeadlessTransition
+                                  show={subMenu.activeDropdown}
+                                  enter="transition ease-out duration-300"
+                                  leave="transition ease-in duration-300"
                                 >
                                   <ul
                                     className={clsx({
@@ -194,13 +192,13 @@ function Main() {
                                       )
                                     )}
                                   </ul>
-                                </ReactTransition>
+                                </HeadlessTransition>
                               )}
                               {/* END: Third Child */}
                             </li>
                           ))}
                         </ul>
-                      </ReactTransition>
+                      </HeadlessTransition>
                     )}
                     {/* END: Second Child */}
                   </li>
