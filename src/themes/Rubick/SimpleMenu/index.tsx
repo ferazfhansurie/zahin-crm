@@ -1,5 +1,5 @@
 import "@/assets/css/themes/rubick/side-nav.css";
-import { Transition } from "react-transition-group";
+import { Transition as ReactTransition } from "react-transition-group";
 import { useState, useEffect } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { selectMenu } from "@/stores/menuSlice";
@@ -86,7 +86,7 @@ function Main() {
                   </Tippy>
                   {/* BEGIN: Second Child */}
                   {menu.subMenu && (
-                    <Transition
+                    <ReactTransition
                       in={menu.activeDropdown}
                       onEnter={enter}
                       onExit={leave}
@@ -137,7 +137,7 @@ function Main() {
                             </Tippy>
                             {/* BEGIN: Third Child */}
                             {subMenu.subMenu && (
-                              <Transition
+                              <ReactTransition
                                 in={subMenu.activeDropdown}
                                 onEnter={enter}
                                 onExit={leave}
@@ -189,13 +189,13 @@ function Main() {
                                     )
                                   )}
                                 </ul>
-                              </Transition>
+                              </ReactTransition>
                             )}
                             {/* END: Third Child */}
                           </li>
                         ))}
                       </ul>
-                    </Transition>
+                    </ReactTransition>
                   )}
                   {/* END: Second Child */}
                 </li>

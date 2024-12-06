@@ -1,5 +1,5 @@
 import "@/assets/css/themes/tinker/side-nav.css";
-import { Transition } from "react-transition-group";
+import { Transition as ReactTransition } from "react-transition-group";
 import { useState, useEffect, ReactElement, JSXElementConstructor, ReactNode, ReactPortal, Key, useCallback, useRef } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { selectMenu } from "@/stores/menuSlice";
@@ -268,7 +268,7 @@ const clearAllNotifications = async () => {
                   </Tippy>
                   {/* BEGIN: Second Child */}
                   {menu.subMenu && (
-                    <Transition
+                    <ReactTransition
                       in={menu.activeDropdown}
                       onEnter={enter}
                       onExit={leave}
@@ -304,7 +304,7 @@ const clearAllNotifications = async () => {
                             </Tippy>
                             {/* BEGIN: Third Child */}
                             {subMenu.subMenu && (
-                              <Transition
+                              <ReactTransition
                                 in={subMenu.activeDropdown}
                                 onEnter={enter}
                                 onExit={leave}
@@ -345,13 +345,13 @@ const clearAllNotifications = async () => {
                                     </li>
                                   ))}
                                 </ul>
-                              </Transition>
+                              </ReactTransition>
                             )}
                             {/* END: Third Child */}
                           </li>
                         ))}
                       </ul>
-                    </Transition>
+                    </ReactTransition>
                   )}
                   {/* END: Second Child */}
                 </li>
