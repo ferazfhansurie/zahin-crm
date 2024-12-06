@@ -22,6 +22,7 @@ import { useContacts } from "@/contact";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import LZString from 'lz-string';
 import DatePicker from "react-datepicker";
+import type { ReactDatePicker } from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { format, compareAsc, parseISO } from 'date-fns';
 import { saveAs } from 'file-saver';
