@@ -78,6 +78,7 @@ import Layout from "../themes";
 import { getAuth } from "firebase/auth";
 import { useState, useEffect } from "react";
 import AIResponses from "../pages/AIResponses";
+import StoragePricing from "../pages/StoragePricing";
 import { ContactsProvider, useContacts } from "../contact"; // Adjust the path as needed
 import DatabaseManager from "../pages/DatabaseManager";
 function Router() {
@@ -120,6 +121,7 @@ function Router() {
         { path: "users-layout-2/follow-ups-old", element: <OldFollowUps /> },
         { path: "users-layout-2/a-i-responses", element: <AIResponses /> },
         { path: "users-layout-2/builder", element: <Builder /> },
+        { path: "users-layout-2/storage-pricing", element: <StoragePricing /> },
         { path: "dashboard-overview-3", element: <DashboardOverview3 /> },
         { path: "dashboard-overview-4", element: <DashboardOverview4 /> },
         { path: "profile", element: <ProfileOverview1 /> },
