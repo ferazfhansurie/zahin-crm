@@ -8239,78 +8239,112 @@ console.log(prompt);
           <div className="bg-blue-50 dark:bg-blue-900 px-4 py-3 border-b border-gray-200 dark:border-gray-600">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Contact Information</h3>
-              {!isEditing ? (
-                <button
-                  onClick={() => {
-                    setIsEditing(true);
-                    setEditedContact({ ...selectedContact });
-                  }}
-                  className="px-3 py-1 bg-primary text-white rounded-md hover:bg-primary-dark transition duration-200"
-                >
-                  Edit
-                </button>
-              ) : (
-                <div className="flex space-x-2">
-                  <button
-                    onClick={handleSaveContact}
-                    className="px-3 py-1 bg-green-500 text-white rounded-md hover:bg-green-600 transition duration-200"
-                  >
-                    Save
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsEditing(false);
-                      setEditedContact(null);
-                    }}
-                    className="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition duration-200"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
+              <div className="flex space-x-2">
+                {!isEditing ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        setIsEditing(true);
+                        setEditedContact({ ...selectedContact });
+                      }}
+                      className="px-3 py-1 bg-primary text-white rounded-md hover:bg-primary-dark transition duration-200"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (window.confirm('Are you sure you want to delete this contact? This action cannot be undone.')) {
+                          const user = auth.currentUser;
+                          const docUserRef = doc(firestore, 'user', user?.email!);
+                          getDoc(docUserRef).then((docUserSnapshot) => {
+                            if (!docUserSnapshot.exists()) {
+                              console.log('No such document for user!');
+                              return;
+                            }
+                            const userData = docUserSnapshot.data();
+                            const companyId = userData.companyId;
+                            const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
+                            deleteDoc(contactRef).then(() => {
+                              toast.success('Contact deleted successfully');
+                              handleEyeClick();
+                              setSelectedContact(null);
+                              setContacts(contacts.filter(contact => contact.id !== selectedContact.id));
+                              setIsTabOpen(false);
+                            }).catch((error) => {
+                              console.error('Error deleting contact:', error);
+                              toast.error('Failed to delete contact');
+                            });
+                          });
+                        }
+                      }}
+                      className="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition duration-200"
+                    >
+                      Delete
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={handleSaveContact}
+                      className="px-3 py-1 bg-green-500 text-white rounded-md hover:bg-green-600 transition duration-200"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsEditing(false);
+                        setEditedContact(null);
+                      }}
+                      className="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition duration-200"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           
           <div className="p-4">
               {/* Phone Index Selector */}
               <div className="mb-4 flex justify-between items-center">
-    <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Active Phone:</p>
-    <select
-      value={selectedContact.phoneIndex ?? 0}
-      onChange={async (e) => {
-        const newPhoneIndex = parseInt(e.target.value);
-        // Update local state
-        setSelectedContact({ ...selectedContact, phoneIndex: newPhoneIndex });
-        const user = auth.currentUser;
-        const docUserRef = doc(firestore, 'user', user?.email!);
-        const docUserSnapshot = await getDoc(docUserRef);
-        if (!docUserSnapshot.exists()) {
-          console.log('No such document for user!');
-          return;
-        }
-        const userData = docUserSnapshot.data();
-        const companyId = userData.companyId;
-        // Update Firestore
-        try {
-          const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
-          await updateDoc(contactRef, { phoneIndex: newPhoneIndex });
-          toast.success('Phone updated successfully');
-        } catch (error) {
-          console.error('Error updating phone:', error);
-          toast.error('Failed to update phone');
-          // Revert local state on error
-          setSelectedContact({ ...selectedContact });
-        }
-      }}
-      className="px-2 py-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 ml-4 w-32"
-    >
-      {Object.entries(phoneNames).map(([index, name]) => (
-        <option key={index} value={index}>
-          {name}
-        </option>
-      ))}
-    </select>
-  </div>
+                <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Active Phone:</p>
+                <select
+                  value={selectedContact.phoneIndex ?? 0}
+                  onChange={async (e) => {
+                    const newPhoneIndex = parseInt(e.target.value);
+                    // Update local state
+                    setSelectedContact({ ...selectedContact, phoneIndex: newPhoneIndex });
+                    const user = auth.currentUser;
+                    const docUserRef = doc(firestore, 'user', user?.email!);
+                    const docUserSnapshot = await getDoc(docUserRef);
+                    if (!docUserSnapshot.exists()) {
+                      console.log('No such document for user!');
+                      return;
+                    }
+                    const userData = docUserSnapshot.data();
+                    const companyId = userData.companyId;
+                    // Update Firestore
+                    try {
+                      const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
+                      await updateDoc(contactRef, { phoneIndex: newPhoneIndex });
+                      toast.success('Phone updated successfully');
+                    } catch (error) {
+                      console.error('Error updating phone:', error);
+                      toast.error('Failed to update phone');
+                      // Revert local state on error
+                      setSelectedContact({ ...selectedContact });
+                    }
+                  }}
+                  className="px-2 py-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 ml-4 w-32"
+                >
+                  {Object.entries(phoneNames).map(([index, name]) => (
+                    <option key={index} value={index}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             <div className="grid grid-cols-2 gap-4">
 
               {[
