@@ -6,6 +6,7 @@ import Button from "@/components/Base/Button";
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import Select from 'react-select';
+import { useNavigate } from 'react-router-dom';
 
 interface FollowUpTemplate {
     id: string;
@@ -14,7 +15,8 @@ interface FollowUpTemplate {
     createdAt: Date;
     startTime: Date;
     isCustomStartTime: boolean;
-    triggerTags?: string[];  // Add this line
+    triggerTags?: string[];
+    triggerKeywords?: string[];
 }
 
 // Add Tag interface
@@ -109,10 +111,26 @@ const FollowUpsPage: React.FC = () => {
         unit: 'minutes' as 'minutes' | 'hours' | 'days'  // Update this type
     });
     const [tags, setTags] = useState<Tag[]>([]);
+    const [isEditingTemplate, setIsEditingTemplate] = useState<string | null>(null);
+    const [editingTemplate, setEditingTemplate] = useState<FollowUpTemplate | null>(null);
     useEffect(() => {
         fetchTags();
     }, []);
 
+    const BackButton: React.FC = () => {
+        const navigate = useNavigate();
+        
+        return (
+            <Button
+                onClick={() => navigate('/users-layout-2/follow-ups-select')}
+                className="mr-4"
+            >
+                ← Back
+            </Button>
+        );
+    };
+    
+    
     const fetchTags = async () => {
         try {
             const user = auth.currentUser;
@@ -138,6 +156,7 @@ const FollowUpsPage: React.FC = () => {
     const [newTemplate, setNewTemplate] = useState({
         name: '',
         triggerTags: [] as string[],
+        triggerKeywords: [] as string[],
         startType: 'immediate' as 'immediate' | 'delayed' | 'custom'
     });
 
@@ -166,7 +185,7 @@ const FollowUpsPage: React.FC = () => {
         };
         specificNumbers: {
             enabled: boolean;
-            numbers: string[];  // Explicitly type as string array
+            numbers: string[];
         };
     }>({
         message: '',
@@ -181,7 +200,7 @@ const FollowUpsPage: React.FC = () => {
         },
         specificNumbers: {
             enabled: false,
-            numbers: []  // Initialize empty string array
+            numbers: []
         }
     });
 
@@ -398,32 +417,34 @@ const FollowUpsPage: React.FC = () => {
                     startTime = new Date();
             }
             
-        const templateData = {
-            name: newTemplate.name,
-            status: 'active',
-            createdAt: serverTimestamp(),
-            startTime: startTime,
-            isCustomStartTime: newTemplate.startType === 'custom',
-            triggerTags: newTemplate.triggerTags
-        };
+            const templateData = {
+                name: newTemplate.name,
+                status: 'active',
+                createdAt: serverTimestamp(),
+                startTime: startTime,
+                isCustomStartTime: newTemplate.startType === 'custom',
+                triggerTags: newTemplate.triggerTags,
+                triggerKeywords: newTemplate.triggerKeywords
+            };
 
-        const templateRef = collection(firestore, `companies/${userData.companyId}/followUpTemplates`);
-        await addDoc(templateRef, templateData);
-        
-        setIsAddingTemplate(false);
-        setNewTemplate({
-            name: '',
-            triggerTags: [],
-            startType: 'immediate'
-        });
-        setCustomStartTime('');
-        fetchTemplates();
-        toast.success('Template created successfully');
-    } catch (error) {
-        console.error('Error adding template:', error);
-        toast.error('Failed to create template');
-    }
-};
+            const templateRef = collection(firestore, `companies/${userData.companyId}/followUpTemplates`);
+            await addDoc(templateRef, templateData);
+            
+            setIsAddingTemplate(false);
+            setNewTemplate({
+                name: '',
+                triggerTags: [],
+                triggerKeywords: [],
+                startType: 'immediate'
+            });
+            setCustomStartTime('');
+            fetchTemplates();
+            toast.success('Template created successfully');
+        } catch (error) {
+            console.error('Error adding template:', error);
+            toast.error('Failed to create template');
+        }
+    };
 
     const updateMessage = async (messageId: string) => {
         if (!editingMessage || !selectedTemplate) return;
@@ -435,7 +456,6 @@ const FollowUpsPage: React.FC = () => {
             const userRef = doc(firestore, 'user', user.email!);
             const userData = (await getDoc(userRef)).data() as User;
             
-            // Update: Use subcollection path
             const messageRef = doc(firestore, 
                 `companies/${userData.companyId}/followUpTemplates/${selectedTemplate}/messages`, 
                 messageId
@@ -444,6 +464,10 @@ const FollowUpsPage: React.FC = () => {
             const updateData: Partial<FollowUpMessage> = {
                 message: editingMessage.message,
                 delayAfter: editingMessage.delayAfter,
+                specificNumbers: {
+                    enabled: editingMessage.specificNumbers?.enabled || false,
+                    numbers: editingMessage.specificNumbers?.numbers || []
+                }
             };
 
             if (selectedDocument) {
@@ -453,6 +477,9 @@ const FollowUpsPage: React.FC = () => {
                 updateData.image = await uploadImage(selectedImage);
             }
 
+            // Log the update data for debugging
+            console.log('Updating message with data:', updateData);
+
             await updateDoc(messageRef, updateData);
             
             setIsEditingMessage(null);
@@ -461,8 +488,10 @@ const FollowUpsPage: React.FC = () => {
             setSelectedImage(null);
             
             fetchMessages(selectedTemplate);
+            toast.success('Message updated successfully');
         } catch (error) {
             console.error('Error updating message:', error);
+            toast.error('Failed to update message');
         }
     };
     
@@ -599,12 +628,11 @@ const FollowUpsPage: React.FC = () => {
     const addMessage = async () => {
         if (!selectedTemplate || !newMessage.message.trim()) return;
 
-        // Check for duplicate message
+        // Double-check for duplicates before saving
         if (isDuplicateMessage(newMessage.dayNumber, newMessage.sequence)) {
-            toast.error(`Message ${newMessage.sequence} for Day ${newMessage.dayNumber} already exists`);
+            toast.error('A message with this day and sequence number already exists');
             return;
         }
-
         try {
             const user = auth.currentUser;
             if (!user) return;
@@ -612,23 +640,33 @@ const FollowUpsPage: React.FC = () => {
             const userRef = doc(firestore, 'user', user.email!);
             const userData = (await getDoc(userRef)).data() as User;
             
-            // Ensure specificNumbers is properly structured
+            // Create message data with explicit specificNumbers structure
             const messageData = {
-                ...newMessage,
+                message: newMessage.message,
+                dayNumber: newMessage.dayNumber,
+                sequence: newMessage.sequence,
                 status: 'active',
                 createdAt: serverTimestamp(),
                 document: selectedDocument ? await uploadDocument(selectedDocument) : null,
                 image: selectedImage ? await uploadImage(selectedImage) : null,
+                delayAfter: {
+                    value: newMessage.delayAfter.value,
+                    unit: newMessage.delayAfter.unit,
+                    isInstantaneous: newMessage.delayAfter.isInstantaneous
+                },
                 specificNumbers: {
                     enabled: newMessage.specificNumbers.enabled,
-                    numbers: newMessage.specificNumbers.enabled ? 
-                        newMessage.specificNumbers.numbers : []
+                    numbers: newMessage.specificNumbers.numbers // Make sure this array is included
                 }
             };
 
             const messagesRef = collection(firestore, 
                 `companies/${userData.companyId}/followUpTemplates/${selectedTemplate}/messages`
             );
+            
+            // Log the data being saved for debugging
+            console.log('Saving message data:', messageData);
+            
             await addDoc(messagesRef, messageData);
             
             // Reset form
@@ -637,7 +675,7 @@ const FollowUpsPage: React.FC = () => {
                 dayNumber: 1,
                 sequence: getNextSequenceNumber(newMessage.dayNumber),
                 templateId: selectedTemplate,
-                status: 'active' as const,
+                status: 'active',
                 delayAfter: {
                     value: 5,
                     unit: 'minutes',
@@ -651,6 +689,7 @@ const FollowUpsPage: React.FC = () => {
             setNewNumber('');
             setSelectedDocument(null);
             setSelectedImage(null);
+            
             fetchMessages(selectedTemplate);
             toast.success('Message added successfully');
         } catch (error) {
@@ -668,11 +707,43 @@ const FollowUpsPage: React.FC = () => {
         return maxSequence + 1;
     };
 
+    const editTemplate = async (templateId: string) => {
+        try {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            const userRef = doc(firestore, 'user', user.email!);
+            const userData = (await getDoc(userRef)).data() as User;
+            
+            const templateRef = doc(firestore, `companies/${userData.companyId}/followUpTemplates`, templateId);
+            
+            const updateData = {
+                name: editingTemplate!.name,
+                triggerTags: editingTemplate!.triggerTags || [],
+                triggerKeywords: editingTemplate!.triggerKeywords || [],
+                // Preserve other fields
+                status: editingTemplate!.status,
+                startTime: editingTemplate!.startTime,
+                isCustomStartTime: editingTemplate!.isCustomStartTime
+            };
+
+            await updateDoc(templateRef, updateData);
+            setIsEditingTemplate(null);
+            setEditingTemplate(null);
+            fetchTemplates();
+            toast.success('Template updated successfully');
+        } catch (error) {
+            console.error('Error updating template:', error);
+            toast.error('Failed to update template');
+        }
+    };
+
     return (
         <div className="flex flex-col h-screen overflow-hidden">
             <div className="flex-grow overflow-y-auto">
                 <div className="p-5 min-h-full">
                     <div className="flex justify-between items-center mb-5">
+                        <BackButton />
                         <h2 className="text-2xl font-bold">Follow Up Templates</h2>
                         <Button onClick={() => setIsAddingTemplate(true)}>
                             Add Template
@@ -700,23 +771,187 @@ const FollowUpsPage: React.FC = () => {
                                         <p className="text-sm text-gray-500">
                                             Created: {template.createdAt.toLocaleDateString()}
                                         </p>
+                                        {/* Display tags and keywords */}
+                                        {template.triggerTags && template.triggerTags.length > 0 && (
+                                            <div className="mt-2">
+                                                <p className="text-sm text-gray-600">Trigger Tags:</p>
+                                                <div className="flex flex-wrap gap-1">
+                                                    {template.triggerTags.map((tag, index) => (
+                                                        <span key={index} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                                            {tag}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {template.triggerKeywords && template.triggerKeywords.length > 0 && (
+                                            <div className="mt-2">
+                                                <p className="text-sm text-gray-600">Trigger Keywords:</p>
+                                                <div className="flex flex-wrap gap-1">
+                                                    {template.triggerKeywords.map((keyword, index) => (
+                                                        <span key={index} className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                                                            {keyword}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
-                                    <Button
-                                        onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
-                                            e.stopPropagation();
-                                            if (window.confirm('Are you sure you want to delete this template? This will also delete all associated messages.')) {
-                                                deleteTemplate(template.id);
-                                            }
-                                        }}
-                                        className="text-white bg-red-500 hover:bg-red-600"
-                                    >
-                                        Delete
-                                    </Button>
+                                    <div className="flex gap-2">
+                                        <Button
+                                            onClick={(e: React.MouseEvent) => {
+                                                e.stopPropagation();
+                                                setIsEditingTemplate(template.id);
+                                                setEditingTemplate(template);
+                                            }}
+                                            className="text-white bg-primary hover:bg-primary-dark"
+                                        >
+                                            Edit
+                                        </Button>
+                                        <Button
+                                            onClick={(e: React.MouseEvent) => {
+                                                e.stopPropagation();
+                                                if (window.confirm('Are you sure you want to delete this template?')) {
+                                                    deleteTemplate(template.id);
+                                                }
+                                            }}
+                                            className="text-white bg-red-500 hover:bg-red-600"
+                                        >
+                                            Delete
+                                        </Button>
+                                    </div>
                                 </div>
                             </div>
                         ))}
                     </div>
 
+{/* Add Edit Template Modal */}
+{isEditingTemplate && editingTemplate && (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg w-96">
+            <h3 className="text-lg font-semibold mb-4">Edit Template</h3>
+            
+            {/* Template Name */}
+            <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Template Name
+                </label>
+                <input
+                    type="text"
+                    className="w-full px-4 py-2 border rounded-lg"
+                    value={editingTemplate.name}
+                    onChange={(e) => setEditingTemplate({
+                        ...editingTemplate,
+                        name: e.target.value
+                    })}
+                />
+            </div>
+
+            {/* Trigger Tags */}
+            <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Trigger Tags
+                </label>
+                <Select
+                    isMulti
+                    options={tags.map(tag => ({ value: tag.name, label: tag.name }))}
+                    value={(editingTemplate.triggerTags || []).map(tag => ({ value: tag, label: tag }))}
+                    onChange={(selected) => {
+                        const selectedTags = selected ? selected.map(option => option.value) : [];
+                        setEditingTemplate({
+                            ...editingTemplate,
+                            triggerTags: selectedTags
+                        });
+                    }}
+                    className="basic-multi-select"
+                    classNamePrefix="select"
+                />
+            </div>
+
+            {/* Trigger Keywords */}
+            <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Trigger Keywords
+                </label>
+                <div className="flex gap-2">
+                    <input
+                        type="text"
+                        className="flex-1 px-4 py-2 border rounded-lg"
+                        placeholder="Enter keyword and press Enter"
+                        value={newNumber}
+                        onChange={(e) => setNewNumber(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && newNumber.trim()) {
+                                setEditingTemplate({
+                                    ...editingTemplate,
+                                    triggerKeywords: [...(editingTemplate.triggerKeywords || []), newNumber.trim()]
+                                });
+                                setNewNumber('');
+                                e.preventDefault();
+                            }
+                        }}
+                    />
+                    <Button
+                        onClick={() => {
+                            if (newNumber.trim()) {
+                                setEditingTemplate({
+                                    ...editingTemplate,
+                                    triggerKeywords: [...(editingTemplate.triggerKeywords || []), newNumber.trim()]
+                                });
+                                setNewNumber('');
+                            }
+                        }}
+                    >
+                        Add
+                    </Button>
+                </div>
+
+                {/* Display Keywords */}
+                <div className="flex flex-wrap gap-2 mt-2">
+                    {(editingTemplate.triggerKeywords || []).map((keyword, index) => (
+                        <div 
+                            key={index} 
+                            className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded"
+                        >
+                            <span>{keyword}</span>
+                            <button
+                                onClick={() => {
+                                    setEditingTemplate({
+                                        ...editingTemplate,
+                                        triggerKeywords: editingTemplate.triggerKeywords?.filter((_, i) => i !== index)
+                                    });
+                                }}
+                                className="text-red-500 hover:text-red-700 ml-1"
+                            >
+                                ×
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex justify-end gap-2">
+                <Button 
+                    onClick={() => {
+                        setIsEditingTemplate(null);
+                        setEditingTemplate(null);
+                    }}
+                    className="text-white bg-gray-500 hover:bg-gray-600"
+                >
+                    Cancel
+                </Button>
+                <Button 
+                    onClick={() => editTemplate(editingTemplate.id)}
+                    disabled={!editingTemplate.name.trim()}
+                    className="text-white bg-primary hover:bg-primary-dark"
+                >
+                    Save Changes
+                </Button>
+            </div>
+        </div>
+    </div>
+)}
                     {/* Add Template Modal */}
                     {isAddingTemplate && (
                         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -756,6 +991,71 @@ const FollowUpsPage: React.FC = () => {
                                     />
                                     <p className="mt-1 text-sm text-gray-500">
                                         Follow-up sequence will start when any of these tags are applied
+                                    </p>
+                                </div>
+
+                                {/* Add Trigger Keywords section */}
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                        Trigger Keywords
+                                    </label>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            className="flex-1 px-4 py-2 border rounded-lg"
+                                            placeholder="Enter keyword and press Enter"
+                                            value={newNumber}
+                                            onChange={(e) => setNewNumber(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter' && newNumber.trim()) {
+                                                    setNewTemplate(prev => ({
+                                                        ...prev,
+                                                        triggerKeywords: [...prev.triggerKeywords, newNumber.trim()]
+                                                    }));
+                                                    setNewNumber('');
+                                                    e.preventDefault();
+                                                }
+                                            }}
+                                        />
+                                        <Button
+                                            onClick={() => {
+                                                if (newNumber.trim()) {
+                                                    setNewTemplate(prev => ({
+                                                        ...prev,
+                                                        triggerKeywords: [...prev.triggerKeywords, newNumber.trim()]
+                                                    }));
+                                                    setNewNumber('');
+                                                }
+                                            }}
+                                        >
+                                            Add
+                                        </Button>
+                                    </div>
+                                    
+                                    {/* Display added keywords */}
+                                    <div className="flex flex-wrap gap-2 mt-2">
+                                        {newTemplate.triggerKeywords.map((keyword, index) => (
+                                            <div 
+                                                key={index} 
+                                                className="flex items-center gap-1 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded"
+                                            >
+                                                <span>{keyword}</span>
+                                                <button
+                                                    onClick={() => {
+                                                        setNewTemplate(prev => ({
+                                                            ...prev,
+                                                            triggerKeywords: prev.triggerKeywords.filter((_, i) => i !== index)
+                                                        }));
+                                                    }}
+                                                    className="text-red-500 hover:text-red-700 ml-1"
+                                                >
+                                                    ×
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <p className="mt-1 text-sm text-gray-500">
+                                        Follow-up sequence will start when any of these keywords are detected
                                     </p>
                                 </div>
 
@@ -834,6 +1134,7 @@ const FollowUpsPage: React.FC = () => {
                                             setNewTemplate({
                                                 name: '',
                                                 triggerTags: [],
+                                                triggerKeywords: [],
                                                 startType: 'immediate'
                                             });
                                         }}
@@ -847,6 +1148,7 @@ const FollowUpsPage: React.FC = () => {
                                             setNewTemplate({
                                                 name: '',
                                                 triggerTags: [],
+                                                triggerKeywords: [],
                                                 startType: 'immediate'
                                             });
                                         }}
@@ -900,6 +1202,13 @@ const FollowUpsPage: React.FC = () => {
                                     </div>
                                 </div>
 
+                                {/* Add warning message if duplicate */}
+                                {isDuplicateMessage(newMessage.dayNumber, newMessage.sequence) && (
+                                    <div className="text-red-500 text-sm mb-4">
+                                        A message with this day and sequence number already exists.
+                                    </div>
+                                )}
+
                                 {/* Message Input */}
                                 <textarea
                                     className="w-full px-4 py-2 mb-4 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
@@ -919,13 +1228,16 @@ const FollowUpsPage: React.FC = () => {
                                             type="checkbox"
                                             className="mr-2"
                                             checked={newMessage.specificNumbers.enabled}
-                                            onChange={(e) => setNewMessage({
-                                                ...newMessage,
-                                                specificNumbers: {
-                                                    ...newMessage.specificNumbers,
-                                                    enabled: e.target.checked
-                                                }
-                                            })}
+                                            onChange={(e) => {
+                                                console.log('Checkbox changed:', e.target.checked);
+                                                setNewMessage({
+                                                    ...newMessage,
+                                                    specificNumbers: {
+                                                        enabled: e.target.checked,
+                                                        numbers: e.target.checked ? newMessage.specificNumbers.numbers : []
+                                                    }
+                                                });
+                                            }}
                                         />
                                         Send to specific numbers
                                     </label>
@@ -943,11 +1255,15 @@ const FollowUpsPage: React.FC = () => {
                                                 <Button
                                                     onClick={() => {
                                                         if (newNumber.trim()) {
+                                                            console.log('Current numbers:', newMessage.specificNumbers.numbers);
+                                                            const updatedNumbers = [...newMessage.specificNumbers.numbers, newNumber.trim()];
+                                                            console.log('Updated numbers:', updatedNumbers);
+                                                            
                                                             setNewMessage({
                                                                 ...newMessage,
                                                                 specificNumbers: {
-                                                                    ...newMessage.specificNumbers,
-                                                                    numbers: [...newMessage.specificNumbers.numbers, newNumber.trim()]
+                                                                    enabled: true,
+                                                                    numbers: updatedNumbers
                                                                 }
                                                             });
                                                             setNewNumber('');
@@ -970,7 +1286,7 @@ const FollowUpsPage: React.FC = () => {
                                                                 setNewMessage({
                                                                     ...newMessage,
                                                                     specificNumbers: {
-                                                                        ...newMessage.specificNumbers,
+                                                                        enabled: true,
                                                                         numbers: updatedNumbers
                                                                     }
                                                                 });
@@ -1086,8 +1402,15 @@ const FollowUpsPage: React.FC = () => {
                                 <div className="flex justify-end">
                                     <Button 
                                         onClick={addMessage}
-                                        disabled={!newMessage.message.trim()}
-                                        className="w-full"
+                                        disabled={
+                                            !newMessage.message.trim() || 
+                                            isDuplicateMessage(newMessage.dayNumber, newMessage.sequence)
+                                        }
+                                        className={`w-full ${
+                                            isDuplicateMessage(newMessage.dayNumber, newMessage.sequence)
+                                            ? 'opacity-50 cursor-not-allowed'
+                                            : ''
+                                        }`}
                                     >
                                         Add Message
                                     </Button>

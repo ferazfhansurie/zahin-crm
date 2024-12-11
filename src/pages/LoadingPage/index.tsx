@@ -83,6 +83,7 @@ function LoadingPage() {
 
   const [loadingPhase, setLoadingPhase] = useState<string>('initializing');
   const [loadingProgress, setLoadingProgress] = useState(0);
+  const [trialExpired, setTrialExpired] = useState(false);
   
   const fetchQRCode = async () => {
     const auth = getAuth(app);
@@ -100,8 +101,8 @@ function LoadingPage() {
 
       const dataUser = docUserSnapshot.data();
       const companyId = dataUser.companyId;
-      setCompanyId(companyId); // Store companyId in state
-      console.log(companyId);
+      setCompanyId(companyId);
+
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
@@ -109,6 +110,17 @@ function LoadingPage() {
       }
 
       const companyData = docSnapshot.data();
+      
+      if (companyData.trialEndDate) {
+        const trialEnd = companyData.trialEndDate.toDate();
+        const now = new Date();
+        if (now > trialEnd) {
+          setTrialExpired(true);
+        
+          return;
+        }
+      }
+
       v2 = companyData.v2;
       setV2(v2);
       if (!v2) {
@@ -235,7 +247,7 @@ function LoadingPage() {
           ws.current.onmessage = async (event) => {
             const data = JSON.parse(event.data);
             console.log('WebSocket message received:', data);
-            setBotStatus(data.status);
+      
             if (data.type === 'auth_status') {
               console.log(`Bot status: ${data.status}`);
               setBotStatus(data.status);
@@ -247,15 +259,18 @@ function LoadingPage() {
                 
               }
             } else if (data.type === 'progress') {
+              setBotStatus(data.status);
               setCurrentAction(data.action);
               setFetchedChats(data.fetchedChats);
               setTotalChats(data.totalChats);
 
               if (data.action === 'done_process') {
+                setBotStatus(data.status);
                 setProcessingComplete(true);
               }
             }
             if(data.status === 'authenticated' || data.status === 'ready'){
+              setBotStatus(data.status);
               navigate('/chat');
             }
           };
@@ -293,7 +308,7 @@ function LoadingPage() {
     console.log("useEffect triggered. shouldFetchContacts:", shouldFetchContacts, "isLoading:", isLoading);
     if (shouldFetchContacts && !isLoading) {
       console.log("Conditions met, calling fetchContacts");
-      fetchContacts();
+      navigate('/chat');
     }
   }, [shouldFetchContacts, isLoading]);
 

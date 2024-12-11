@@ -367,16 +367,23 @@ const paginatedEmployees = filteredEmployees
                   Quick Replies
                 </Button>
             </Link>
-            <Link to="a-i-image-response">
+            <Link to="a-i-responses">
               <Button variant="primary" className="mr-2 shadow-md">
-                Image Response
+                AI Responses
               </Button>
             </Link>
-            <Link to="follow-ups">
+            <Link to="follow-ups-select">
             <Button variant="primary" className="mr-2 shadow-md">
                   Follow Ups
                 </Button>
             </Link>
+            {companyId === "0123" && (
+              <Link to="storage-pricing">
+                <Button variant="primary" className="mr-2 shadow-md">
+                  Storage Pricing
+                </Button>
+              </Link>
+            )}
             {/* Add a dropdown to show phone names */}
             {phoneCount >= 2 && (
               <Menu className="mr-2">

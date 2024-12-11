@@ -158,6 +158,8 @@ function Main() {
       placeholdersUsed: string[];
     };
   }
+
+  const DatePickerComponent = DatePicker as any;
   
   const [deleteConfirmationModal, setDeleteConfirmationModal] = useState(false);
   const [editContactModal, setEditContactModal] = useState(false);
@@ -250,6 +252,8 @@ function Main() {
   const [phoneNames, setPhoneNames] = useState<{ [key: number]: string }>({});
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [selectedPhoneIndex, setSelectedPhoneIndex] = useState<number | null>(null);
+  const [showRecipients, setShowRecipients] = useState<string | null>(null);
+  const [recipientSearch, setRecipientSearch] = useState('');
 
  
 
@@ -324,7 +328,53 @@ function Main() {
         return [];
     }
   };
+  const handleRemoveTagsFromContact = async (contact: Contact, tagsToRemove: string[]) => {
+    if (userRole === "3") {
+      toast.error("You don't have permission to remove tags.");
+      return;
+    }
   
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        console.error('No authenticated user');
+        return;
+      }
+  
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) return;
+  
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+  
+      // Include empty tags in the tagsToRemove array
+      const allTagsToRemove = [...tagsToRemove, ""];
+  
+      const response = await axios.post('https://mighty-dane-newly.ngrok-free.app/api/contacts/remove-tags', {
+        companyId,
+        contactPhone: contact.phone,
+        tagsToRemove: allTagsToRemove
+      });
+  
+      if (response.data.success) {
+        // Update local state
+        setContacts(prevContacts =>
+          prevContacts.map(c =>
+            c.id === contact.id
+              ? { ...c, tags: response.data.updatedTags }
+              : c
+          )
+        );
+  
+        toast.success('Tags removed successfully!');
+        await fetchContacts();
+      }
+    } catch (error) {
+      console.error('Error removing tags:', error);
+      toast.error('Failed to remove tags');
+    }
+  };
   const fetchContacts = useCallback(async () => {
     setLoading(true);
     try {
@@ -985,8 +1035,11 @@ const handleConfirmDeleteTag = async () => {
         tags = response.data.tags;
       }
 
-      // Filter out tags that match with employeeList
-      const filteredTags = tags.filter((tag: Tag) => !employeeList.includes(tag.name));
+      const normalizedEmployeeNames = employeeList.map(name => name.toLowerCase());
+
+      const filteredTags = tags.filter((tag: Tag) => 
+        !normalizedEmployeeNames.includes(tag.name.toLowerCase())
+      );
 
       setTagList(filteredTags);
       setLoading(false);
@@ -995,6 +1048,11 @@ const handleConfirmDeleteTag = async () => {
       setLoading(false);
     }
   };
+  useEffect(() => {
+    // Ensure employee names are properly stored when fetched
+    const normalizedEmployeeNames = employeeList.map(employee => employee.name.toLowerCase());
+    setEmployeeNames(normalizedEmployeeNames);
+  }, [employeeList]);
   async function fetchCompanyData() {
     const user = auth.currentUser;
     try {
@@ -1128,6 +1186,51 @@ const handleConfirmDeleteTag = async () => {
       }
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
+
+      // Special handling for company '0123'
+    if (companyId === '0123') {
+      // Check if the new tag is an employee name
+      const isNewTagEmployee = employeeList.some(emp => emp.name === tagName);
+      
+      if (isNewTagEmployee) {
+        const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id!);
+        const contactDoc = await getDoc(contactRef);
+
+        if (!contactDoc.exists()) {
+          console.error(`Contact document does not exist: ${contact.id}`);
+          toast.error(`Failed to add tag: Contact not found`);
+          return;
+        }
+
+        const currentTags = contactDoc.data().tags || [];
+        // Find and remove any existing employee tags
+        const updatedTags = currentTags.filter((tag: string) => !employeeList.some(emp => emp.name === tag));
+        
+        // Add the new employee tag
+        updatedTags.push(tagName);
+
+        // Update Firestore with the new tags
+        await updateDoc(contactRef, {
+          tags: updatedTags
+        });
+
+        // Update local state
+        setContacts(prevContacts =>
+          prevContacts.map(c =>
+            c.id === contact.id
+              ? { ...c, tags: updatedTags }
+              : c
+          )
+        );
+
+        console.log(`Employee tag updated to ${tagName} for contact ${contact.id}`);
+        toast.success(`Contact reassigned to ${tagName}`);
+
+        // Send assignment notification for the new employee
+        await sendAssignmentNotification(tagName, contact);
+        return;
+      }
+    }
   
       console.log(`Adding tag: ${tagName} to contact: ${contact.id}`);
   
@@ -1399,6 +1502,7 @@ const handleConfirmDeleteTag = async () => {
   };
   
   const handleRemoveTag = async (contactId: string, tagName: string) => {
+    console.log('removing tag', tagName);
     if (userRole === "3") {
       toast.error("You don't have permission to perform this action.");
       return;
@@ -1415,11 +1519,60 @@ const handleConfirmDeleteTag = async () => {
       const companyId = userData.companyId;
   
       const contactRef = doc(firestore, `companies/${companyId}/contacts`, contactId);
+      const contactDoc = await getDoc(contactRef);
+      const contactData = contactDoc.data();
       
       // Remove the tag from the contact's tags array
       await updateDoc(contactRef, {
         tags: arrayRemove(tagName)
       });
+  
+    // Check if tag is a trigger tag
+    const templatesRef = collection(firestore, 'companies', companyId, 'followUpTemplates');
+    const templatesSnapshot = await getDocs(templatesRef);
+    
+    // Find all templates where this tag is a trigger
+    const matchingTemplates = templatesSnapshot.docs
+      .filter(doc => {
+        const template = doc.data();
+        return template.triggerTags?.includes(tagName) && template.status === 'active';
+      })
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+    // If we found matching templates, call the follow-up API for each one
+    for (const template of matchingTemplates) {
+      try {
+        const phoneNumber = contactId.replace(/\D/g, '');
+        const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/tag/followup', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            requestType: 'removeTemplate',
+            phone: phoneNumber,
+            first_name: contactData?.contactName || phoneNumber,
+            phoneIndex: userData.phone || 0,
+            templateId: template.id, // Using the actual template document ID
+            idSubstring: companyId
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Failed to remove template messages:', errorText);
+        } else {
+          console.log(`Follow-up template ${template.id} removed successfully`);
+          toast.success('Follow-up sequence stopped');
+        }
+      } catch (error) {
+        console.error('Error removing template messages:', error);
+      }
+    }
+
   
       // Update local state
       setContacts(prevContacts =>
@@ -1444,7 +1597,6 @@ const handleConfirmDeleteTag = async () => {
       toast.error('Failed to remove tag.');
     }
   };
-  
 
   async function updateContactTags(contactId: string, accessToken: string, tags: string[], tagName:string) {
     try {
@@ -1618,6 +1770,51 @@ const chatId = tempphone + "@c.us"
         }
         const userData = docUserSnapshot.data();
         const companyId = userData.companyId;
+  
+        // Check for active templates
+        const templatesRef = collection(firestore, `companies/${companyId}/followUpTemplates`);
+        const templatesSnapshot = await getDocs(templatesRef);
+        
+        // Get all active templates
+        const activeTemplates = templatesSnapshot.docs
+          .filter(doc => doc.data().status === 'active')
+          .map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+  
+        // Remove templates for this contact
+        if (activeTemplates.length > 0) {
+          const phoneNumber = currentContact.phone?.replace(/\D/g, '');
+          
+          for (const template of activeTemplates) {
+            try {
+              const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/tag/followup', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  requestType: 'removeTemplate',
+                  phone: phoneNumber,
+                  first_name: currentContact.contactName || phoneNumber,
+                  phoneIndex: userData.phone || 0,
+                  templateId: template.id,
+                  idSubstring: companyId
+                }),
+              });
+  
+              if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Failed to remove template messages:', errorText);
+              } else {
+                console.log(`Follow-up template ${template.id} removed for contact ${phoneNumber}`);
+              }
+            } catch (error) {
+              console.error('Error removing template messages:', error);
+            }
+          }
+        }
   
         // Delete the contact from Firestore
         const contactRef = doc(firestore, `companies/${companyId}/contacts`, currentContact.id!);
@@ -2694,6 +2891,27 @@ const sendBlastMessage = async () => {
     );
   };
 
+  const handleSelectCurrentPage = () => {
+    const areAllCurrentSelected = currentContacts.every(contact => 
+      selectedContacts.some(sc => sc.id === contact.id)
+    );
+  
+    if (areAllCurrentSelected) {
+      // If all current page contacts are selected, deselect them
+      setSelectedContacts(prevSelected => 
+        prevSelected.filter(contact => 
+          !currentContacts.some(cc => cc.id === contact.id)
+        )
+      );
+    } else {
+      // If not all current page contacts are selected, select them all
+      const currentPageContacts = currentContacts.filter(contact => 
+        !selectedContacts.some(sc => sc.id === contact.id)
+      );
+      setSelectedContacts(prevSelected => [...prevSelected, ...currentPageContacts]);
+    }
+  };
+
   const renderTags = (tags: string[] | undefined, contact: Contact) => {
     if (!tags || tags.length === 0) return null;
     return (
@@ -2702,7 +2920,8 @@ const sendBlastMessage = async () => {
           <span
             key={index}
             className={`px-2 py-1 text-xs font-semibold rounded-full ${
-              employeeNames.includes(tag.toLowerCase())
+              // Make case-insensitive comparison
+              employeeNames.some(name => name.toLowerCase() === tag.toLowerCase())
                 ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
                 : 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
             }`}
@@ -2733,6 +2952,30 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
   };
   
 
+  const filterRecipients = (chatIds: string[], search: string) => {
+    return chatIds.filter(chatId => {
+      const phoneNumber = chatId.split('@')[0];
+      const contact = contacts.find(c => c.phone?.replace(/\D/g, '') === phoneNumber);
+      const contactName = contact?.contactName || phoneNumber;
+      return contactName.toLowerCase().includes(search.toLowerCase()) || 
+             phoneNumber.includes(search);
+    });
+  };
+  // Add this function to filter scheduled messages
+const getFilteredScheduledMessages = () => {
+  if (!searchQuery) return scheduledMessages;
+
+  return scheduledMessages.filter(message => {
+    // Check if message content matches search
+    if (message.message?.toLowerCase().includes(searchQuery.toLowerCase())) {
+      return true;
+    }
+
+    // Check if any recipient matches search
+    const matchingRecipients = filterRecipients(message.chatIds, searchQuery);
+    return matchingRecipients.length > 0;
+  });
+};
   return (
     <div className="h-screen flex flex-col bg-gray-100 dark:bg-gray-900">
       <div className="flex-grow overflow-y-auto">
@@ -2845,6 +3088,43 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
                       </Menu.Items>
                     </Menu>
                     <Menu>
+    {showAddUserButton && (
+      <Menu.Button as={Button} className="flex items-center justify-start p-2 !box bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+        <Lucide icon="Tags" className="w-5 h-5 mr-2" />
+        <span>Remove Tag</span>
+      </Menu.Button>
+    )}
+    <Menu.Items className="w-full bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 rounded-md mt-1 shadow-lg">
+      <div className="p-2">
+        <button 
+          className="flex items-center p-2 font-medium hover:bg-gray-100 dark:hover:bg-gray-700 w-full rounded-md text-red-500"
+          onClick={() => {
+            selectedContacts.forEach(contact => {
+              handleRemoveTagsFromContact(contact, contact.tags || []);
+            });
+          }}
+        >
+          <Lucide icon="XCircle" className="w-4 h-4 mr-2" />
+          Remove All Tags
+        </button>
+      </div>
+      {tagList.map((tag) => (
+        <div key={tag.id} className="flex items-center justify-between w-full hover:bg-gray-100 dark:hover:bg-gray-700 p-1 rounded-md">
+          <button
+            className="flex-grow p-2 text-sm text-left"
+            onClick={() => {
+              selectedContacts.forEach(contact => {
+                handleRemoveTagsFromContact(contact, [tag.name]);
+              });
+            }}
+          >
+            {tag.name}
+          </button>
+        </div>
+      ))}
+    </Menu.Items>
+  </Menu>
+                    <Menu>
                       <Menu.Button as={Button} className="flex items-center justify-start p-2 !box bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
                         <Lucide icon="Filter" className="w-5 h-5 mr-2" />
                         <span>Filter Tags</span>
@@ -2882,7 +3162,7 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
                               Users
                             </Tab>
                           </Tab.List>
-                          <Tab.Panels className="mt-2">
+                          <Tab.Panels className="mt-2 max-h-[300px] overflow-y-auto">
                             <Tab.Panel>
                               {tagList.map((tag) => (
                                 <div key={tag.id} className={`flex items-center justify-between m-2 p-2 text-sm w-full rounded-md ${selectedTagFilters.includes(tag.name) ? 'bg-primary dark:bg-primary text-white' : ''}`}>
@@ -3212,65 +3492,79 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
               </div>
               {/* Scheduled Messages Section */}
               <div className="mt-3 mb-5">
-                <h2 className="z-10 text-xl font-semibold mb-1 text-gray-700 dark:text-gray-300">Scheduled Messages</h2>
-                {scheduledMessages.length > 0 ? (
-                  <div className="z-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
-                    {combineScheduledMessages(scheduledMessages).map((message) => (
-                      <div key={message.id} className="z-10 bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg flex flex-col h-full">
-                        <div className="z-10 p-4 flex-grow">
-                          <div className="z-10 flex justify-between items-center mb-2">
-                            <span className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
-                              {message.status === 'scheduled' ? 'Scheduled' : message.status}
-                            </span>
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              {formatDate(message.scheduledTime.toDate())}
-                            </span>
-                          </div>
-                          <p className="text-gray-800 dark:text-gray-200 mb-2 font-medium text-md line-clamp-2">
-                            {message.message ? message.message : 'No message content'}
-                          </p>  
-                          <div className="flex items-center text-xs text-gray-600 dark:text-gray-400">
-                            <Lucide icon="Users" className="w-4 h-4 mr-1" />
-                            <span>{message.chatIds.length} recipient{message.chatIds.length !== 1 ? 's' : ''}</span>
-                          </div>
-                          {message.mediaUrl && (
-                            <div className="flex items-center text-xs text-gray-600 dark:text-gray-400 mt-1">
-                              <Lucide icon="Image" className="w-4 h-4 mr-1" />
-                              <span>Media attached</span>
-                            </div>
-                          )}
-                          {message.documentUrl && (
-                            <div className="flex items-center text-xs text-gray-600 dark:text-gray-400 mt-1">
-                              <Lucide icon="File" className="w-4 h-4 mr-1" />
-                              <span>{message.fileName || 'Document attached'}</span>
-                            </div>
-                          )}
-                        </div>
-                        <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 flex justify-end mt-auto">
-                          <button
-                            onClick={() => handleEditScheduledMessage(message)}
-                            className="text-sm bg-white dark:bg-gray-600 hover:bg-gray-50 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 font-medium py-1 px-3 rounded-md shadow-sm transition-colors duration-200 mr-2"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleDeleteScheduledMessage(message.id!)}
-                            className="text-sm bg-red-600 hover:bg-red-700 text-white font-medium py-1 px-3 rounded-md shadow-sm transition-colors duration-200"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="z-1 bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 text-center">
-                    <Lucide icon="Calendar" className="w-16 h-16 mx-auto text-gray-400 dark:text-gray-600 mb-4" />
-                    <p className="text-lg font-medium text-gray-700 dark:text-gray-300">No scheduled messages yet</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">When you schedule messages, they will appear here.</p>
-                  </div>
-                )}
+    <h2 className="z-10 text-xl font-semibold mb-1 text-gray-700 dark:text-gray-300">Scheduled Messages</h2>
+    {getFilteredScheduledMessages().length > 0 ? (
+      <div className="z-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
+        {combineScheduledMessages(getFilteredScheduledMessages()).map((message) => (
+          <div key={message.id} className="z-10 bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg flex flex-col h-full">
+            <div className="z-10 p-4 flex-grow">
+              <div className="z-10 flex justify-between items-center mb-2">
+                <span className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
+                  {message.status === 'scheduled' ? 'Scheduled' : message.status}
+                </span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {formatDate(message.scheduledTime.toDate())}
+                </span>
               </div>
+              <p className="text-gray-800 dark:text-gray-200 mb-2 font-medium text-md line-clamp-2">
+                {message.message ? message.message : 'No message content'}
+              </p>  
+              <div className="flex items-center text-xs text-gray-600 dark:text-gray-400">
+                <Lucide icon="Users" className="w-4 h-4 mr-1" />
+                <div className="ml-5 max-h-20 overflow-y-auto">
+                  {message.chatIds.map(chatId => {
+                    const phoneNumber = chatId.split('@')[0];
+                    const contact = contacts.find(c => c.phone?.replace(/\D/g, '') === phoneNumber);
+                    return (
+                      <div key={chatId} className="truncate">
+                        {contact?.contactName || phoneNumber}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              {message.mediaUrl && (
+                <div className="flex items-center text-xs text-gray-600 dark:text-gray-400 mt-1">
+                  <Lucide icon="Image" className="w-4 h-4 mr-1" />
+                  <span>Media attached</span>
+                </div>
+              )}
+              {message.documentUrl && (
+                <div className="flex items-center text-xs text-gray-600 dark:text-gray-400 mt-1">
+                  <Lucide icon="File" className="w-4 h-4 mr-1" />
+                  <span>{message.fileName || 'Document attached'}</span>
+                </div>
+              )}
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 flex justify-end mt-auto">
+              <button
+                onClick={() => handleEditScheduledMessage(message)}
+                className="text-sm bg-white dark:bg-gray-600 hover:bg-gray-50 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 font-medium py-1 px-3 rounded-md shadow-sm transition-colors duration-200 mr-2"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => handleDeleteScheduledMessage(message.id!)}
+                className="text-sm bg-red-600 hover:bg-red-700 text-white font-medium py-1 px-3 rounded-md shadow-sm transition-colors duration-200"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    ) : (
+      <div className="z-1 bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 text-center">
+        <Lucide icon="Calendar" className="w-16 h-16 mx-auto text-gray-400 dark:text-gray-600 mb-4" />
+        <p className="text-lg font-medium text-gray-700 dark:text-gray-300">
+          {searchQuery ? 'No matching scheduled messages' : 'No scheduled messages yet'}
+        </p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+          {searchQuery ? 'Try a different search term' : 'When you schedule messages, they will appear here.'}
+        </p>
+      </div>
+    )}
+  </div>
               {/* Edit Scheduled Message Modal */}
               <Dialog open={editScheduledMessageModal} onClose={() => setEditScheduledMessageModal(false)}>
                 <div className="fixed inset-0 flex items-center justify-center p-4 bg-black bg-opacity-50">
@@ -3309,15 +3603,15 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
                     <div className="mt-4">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Scheduled Time</label>
                       <div className="flex space-x-2">
-                        <DatePicker
+                        <DatePickerComponent
                           selected={currentScheduledMessage?.scheduledTime.toDate()}
-                          onChange={(date: Date) => setCurrentScheduledMessage({...currentScheduledMessage!, scheduledTime: Timestamp.fromDate(date)})}
+                          onChange={(date: Date | null) => date && setCurrentScheduledMessage({...currentScheduledMessage!, scheduledTime: Timestamp.fromDate(date)})}
                           dateFormat="MMMM d, yyyy"
                           className="w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                         />
-                        <DatePicker
+                        <DatePickerComponent
                           selected={currentScheduledMessage?.scheduledTime.toDate()}
-                          onChange={(date: Date) => setCurrentScheduledMessage({...currentScheduledMessage!, scheduledTime: Timestamp.fromDate(date)})}
+                          onChange={(date: Date | null) => date && setCurrentScheduledMessage({...currentScheduledMessage!, scheduledTime: Timestamp.fromDate(date)})}
                           showTimeSelect
                           showTimeSelectOnly
                           timeIntervals={15}
@@ -3381,6 +3675,18 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
                     />
                     <span className="text-xs text-gray-700 dark:text-gray-300 whitespace-nowrap font-medium">
                       Select All
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => handleSelectCurrentPage()}
+                    className="inline-flex items-center p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg cursor-pointer transition-colors duration-200"
+                  >
+                    <Lucide 
+                      icon={currentContacts.every(contact => selectedContacts.some(sc => sc.id === contact.id)) ? "CheckSquare" : "Square"} 
+                      className="w-4 h-4 mr-1 text-gray-600 dark:text-gray-300" 
+                    />
+                    <span className="text-xs text-gray-700 dark:text-gray-300 whitespace-nowrap font-medium">
+                      Select Page
                     </span>
                   </button>
                   {selectedContacts.length > 0 && currentContacts.some(contact => 
@@ -3633,7 +3939,7 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
                                         ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
                                         : 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
                                     }`}>
-                                      {tag}
+                                      {tag.charAt(0).toUpperCase() + tag.slice(1)}
                                       <button
                                         className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-white hover:text-red-500 hidden group-hover:block"
                                         onClick={(e) => {
@@ -4170,15 +4476,15 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
                   <div className="mt-4">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Start Date & Time</label>
                     <div className="flex space-x-2">
-                      <DatePicker
+                      <DatePickerComponent
                         selected={blastStartDate}
-                        onChange={(date: Date) => setBlastStartDate(date)}
+                        onChange={(date: Date | null) => setBlastStartDate(date as Date)}
                         dateFormat="MMMM d, yyyy"
                         className="w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                       />
-                      <DatePicker
+                      <DatePickerComponent
                         selected={blastStartTime}
-                        onChange={(date: Date) => setBlastStartTime(date)}
+                        onChange={(date: Date | null) => setBlastStartTime(date as Date)}
                         showTimeSelect
                         showTimeSelectOnly
                         timeIntervals={15}
