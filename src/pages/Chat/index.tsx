@@ -8266,10 +8266,9 @@ console.log(prompt);
                             const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
                             deleteDoc(contactRef).then(() => {
                               toast.success('Contact deleted successfully');
-                              handleEyeClick();
-                              setSelectedContact(null);
-                              setContacts(contacts.filter(contact => contact.id !== selectedContact.id));
                               setIsTabOpen(false);
+                              setContacts(contacts.filter(contact => contact.id !== selectedContact.id));
+                              navigate('/chat');
                             }).catch((error) => {
                               console.error('Error deleting contact:', error);
                               toast.error('Failed to delete contact');

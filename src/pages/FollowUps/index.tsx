@@ -41,23 +41,25 @@ interface FollowUp {
 
 interface FollowUpMessage {
     id: string;
-    templateId: string;
     message: string;
     dayNumber: number;
     sequence: number;
-    document?: string | null;
-    image?: string | null;
     status: 'active' | 'inactive';
     createdAt: Date;
+    document?: string | null;
+    image?: string | null;
     delayAfter: {
         value: number;
         unit: 'minutes' | 'hours' | 'days';
         isInstantaneous: boolean;
     };
-    specificNumbers?: {
+    specificNumbers: {
         enabled: boolean;
         numbers: string[];
     };
+    useScheduledTime: boolean;
+    scheduledTime: string;
+    templateId?: string;
 }
 
 interface TimeInterval {
@@ -89,6 +91,16 @@ const TIME_INTERVALS: TimeInterval[] = [
     { value: 72, unit: 'hours', label: '3 days' },
     { value: 168, unit: 'hours', label: '1 week' },
 ];
+
+const TIME_OPTIONS = Array.from({ length: 24 }, (_, i) => {
+    const hour = i;
+    const ampm = hour < 12 ? 'AM' : 'PM';
+    const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
+    return {
+        value: `${hour.toString().padStart(2, '0')}:00`,
+        label: `${displayHour}:00 ${ampm}`
+    };
+});
 
 const FollowUpsPage: React.FC = () => {
     const [templates, setTemplates] = useState<FollowUpTemplate[]>([]);
@@ -172,12 +184,11 @@ const FollowUpsPage: React.FC = () => {
         sequence: 1
     });
 
-    const [newMessage, setNewMessage] = useState<{
+    type NewMessageState = {
         message: string;
         dayNumber: number;
         sequence: number;
-        templateId: string;
-        status: 'active';
+        status: 'active' | 'inactive';
         delayAfter: {
             value: number;
             unit: 'minutes' | 'hours' | 'days';
@@ -187,11 +198,16 @@ const FollowUpsPage: React.FC = () => {
             enabled: boolean;
             numbers: string[];
         };
-    }>({
+        useScheduledTime: boolean;
+        scheduledTime: string;
+        templateId?: string;
+    } & Partial<Omit<FollowUpMessage, 'id' | 'createdAt'>>;
+
+    // Update initial state
+    const [newMessage, setNewMessage] = useState<NewMessageState>({
         message: '',
         dayNumber: 1,
         sequence: 1,
-        templateId: '',
         status: 'active',
         delayAfter: {
             value: 5,
@@ -201,7 +217,10 @@ const FollowUpsPage: React.FC = () => {
         specificNumbers: {
             enabled: false,
             numbers: []
-        }
+        },
+        useScheduledTime: false,
+        scheduledTime: '',
+        templateId: undefined  // Add this (optional)
     });
 
     // Firebase setup
@@ -649,7 +668,7 @@ const FollowUpsPage: React.FC = () => {
                 createdAt: serverTimestamp(),
                 document: selectedDocument ? await uploadDocument(selectedDocument) : null,
                 image: selectedImage ? await uploadImage(selectedImage) : null,
-                delayAfter: {
+                delayAfter: newMessage.useScheduledTime ? null : {
                     value: newMessage.delayAfter.value,
                     unit: newMessage.delayAfter.unit,
                     isInstantaneous: newMessage.delayAfter.isInstantaneous
@@ -657,7 +676,9 @@ const FollowUpsPage: React.FC = () => {
                 specificNumbers: {
                     enabled: newMessage.specificNumbers.enabled,
                     numbers: newMessage.specificNumbers.numbers // Make sure this array is included
-                }
+                },
+                useScheduledTime: newMessage.useScheduledTime,
+                scheduledTime: newMessage.useScheduledTime ? newMessage.scheduledTime : null
             };
 
             const messagesRef = collection(firestore, 
@@ -684,7 +705,9 @@ const FollowUpsPage: React.FC = () => {
                 specificNumbers: {
                     enabled: false,
                     numbers: []
-                }
+                },
+                useScheduledTime: false,
+                scheduledTime: ''
             });
             setNewNumber('');
             setSelectedDocument(null);
@@ -1303,56 +1326,95 @@ const FollowUpsPage: React.FC = () => {
                                 </div>
                 
 
-                                 {/* Delay Settings */}
+                                 {/* Timing Settings */}
                                 <div className="space-y-2 mb-4">
-                                    <label className="flex items-center">
+                                    <div className="flex items-center gap-2">
                                         <input
                                             type="checkbox"
-                                            className="mr-2"
-                                            checked={newMessage.delayAfter.isInstantaneous}
+                                            id="useScheduledTime"
+                                            checked={newMessage.useScheduledTime}
                                             onChange={(e) => setNewMessage({
                                                 ...newMessage,
+                                                useScheduledTime: e.target.checked,
                                                 delayAfter: {
                                                     ...newMessage.delayAfter,
-                                                    isInstantaneous: e.target.checked
+                                                    isInstantaneous: false
                                                 }
                                             })}
                                         />
-                                        Send immediately after previous message
-                                    </label>
-                                            
-                                    {!newMessage.delayAfter.isInstantaneous && (
+                                        <label htmlFor="useScheduledTime">Send at specific time</label>
+                                    </div>
+
+                                    {newMessage.useScheduledTime ? (
                                         <div className="flex items-center gap-2">
-                                            <input
-                                                type="number"
-                                                className="w-24 px-4 py-2 border rounded-lg"
-                                                value={newMessage.delayAfter.value}
-                                                onChange={(e) => setNewMessage({
-                                                    ...newMessage,
-                                                    delayAfter: {
-                                                        ...newMessage.delayAfter,
-                                                        value: parseInt(e.target.value) || 0
-                                                    }
-                                                })}
-                                                min="0"
-                                            />
                                             <select
-                                                className="px-4 py-2 border rounded-lg w-32"
-                                                value={newMessage.delayAfter.unit}
+                                                className="px-4 py-2 border rounded-lg bg-white dark:bg-gray-800"
+                                                value={newMessage.scheduledTime || ''}
                                                 onChange={(e) => setNewMessage({
                                                     ...newMessage,
-                                                    delayAfter: {
-                                                        ...newMessage.delayAfter,
-                                                        unit: e.target.value as 'minutes' | 'hours' | 'days'
-                                                    }
+                                                    scheduledTime: e.target.value
                                                 })}
                                             >
-                                                <option value="minutes">Minutes</option>
-                                                <option value="hours">Hours</option>
-                                                <option value="days">Days</option>
+                                                <option value="">Select time</option>
+                                                {TIME_OPTIONS.map((time) => (
+                                                    <option key={time.value} value={time.value}>
+                                                        {time.label}
+                                                    </option>
+                                                ))}
                                             </select>
-                                            <span>after previous message</span>
                                         </div>
+                                    ) : (
+                                        <>
+                                            <label className="flex items-center">
+                                                <input
+                                                    type="checkbox"
+                                                    className="mr-2"
+                                                    checked={newMessage.delayAfter.isInstantaneous}
+                                                    onChange={(e) => setNewMessage({
+                                                        ...newMessage,
+                                                        delayAfter: {
+                                                            ...newMessage.delayAfter,
+                                                            isInstantaneous: e.target.checked
+                                                        }
+                                                    })}
+                                                />
+                                                Send immediately after previous message
+                                            </label>
+                                                    
+                                            {!newMessage.delayAfter.isInstantaneous && (
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="number"
+                                                        className="w-24 px-4 py-2 border rounded-lg"
+                                                        value={newMessage.delayAfter.value}
+                                                        onChange={(e) => setNewMessage({
+                                                            ...newMessage,
+                                                            delayAfter: {
+                                                                ...newMessage.delayAfter,
+                                                                value: parseInt(e.target.value) || 0
+                                                            }
+                                                        })}
+                                                        min="0"
+                                                    />
+                                                    <select
+                                                        className="px-4 py-2 border rounded-lg w-32"
+                                                        value={newMessage.delayAfter.unit}
+                                                        onChange={(e) => setNewMessage({
+                                                            ...newMessage,
+                                                            delayAfter: {
+                                                                ...newMessage.delayAfter,
+                                                                unit: e.target.value as 'minutes' | 'hours' | 'days'
+                                                            }
+                                                        })}
+                                                    >
+                                                        <option value="minutes">Minutes</option>
+                                                        <option value="hours">Hours</option>
+                                                        <option value="days">Days</option>
+                                                    </select>
+                                                    <span>after previous message</span>
+                                                </div>
+                                            )}
+                                        </>
                                     )}
                                 </div>
 
@@ -1452,56 +1514,95 @@ const FollowUpsPage: React.FC = () => {
                                                                         })}
                                                                     />
                                                                     
-                                                                    {/* Delay Settings */}
-                                                                    <div className="space-y-2">
-                                                                        <label className="flex items-center">
+                                                                    {/* Timing Settings */}
+                                                                    <div className="space-y-2 mb-4">
+                                                                        <div className="flex items-center gap-2">
                                                                             <input
                                                                                 type="checkbox"
-                                                                                className="mr-2"
-                                                                                checked={editingMessage?.delayAfter?.isInstantaneous || false}
+                                                                                id="useScheduledTime"
+                                                                                checked={editingMessage?.useScheduledTime}
                                                                                 onChange={(e) => setEditingMessage({
                                                                                     ...editingMessage!,
+                                                                                    useScheduledTime: e.target.checked,
                                                                                     delayAfter: {
                                                                                         ...editingMessage!.delayAfter,
-                                                                                        isInstantaneous: e.target.checked
+                                                                                        isInstantaneous: false
                                                                                     }
                                                                                 })}
                                                                             />
-                                                                            Send immediately after previous message
-                                                                        </label>
-                                                                                
-                                                                        {!editingMessage?.delayAfter?.isInstantaneous && (
+                                                                            <label htmlFor="useScheduledTime">Send at specific time</label>
+                                                                        </div>
+
+                                                                        {editingMessage?.useScheduledTime ? (
                                                                             <div className="flex items-center gap-2">
-                                                                                <input
-                                                                                    type="number"
-                                                                                    className="w-24 px-4 py-2 border rounded-lg"
-                                                                                    value={editingMessage?.delayAfter?.value || 0}
-                                                                                    onChange={(e) => setEditingMessage({
-                                                                                        ...editingMessage!,
-                                                                                        delayAfter: {
-                                                                                            ...editingMessage!.delayAfter,
-                                                                                            value: parseInt(e.target.value) || 0
-                                                                                        }
-                                                                                    })}
-                                                                                    min="0"
-                                                                                />
                                                                                 <select
-                                                                                    className="px-4 py-2 border rounded-lg"
-                                                                                    value={editingMessage?.delayAfter?.unit || 'minutes'}
+                                                                                    className="px-4 py-2 border rounded-lg bg-white dark:bg-gray-800"
+                                                                                    value={editingMessage?.scheduledTime || ''}
                                                                                     onChange={(e) => setEditingMessage({
                                                                                         ...editingMessage!,
-                                                                                        delayAfter: {
-                                                                                            ...editingMessage!.delayAfter,
-                                                                                            unit: e.target.value as 'minutes' | 'hours' | 'days'
-                                                                                        }
+                                                                                        scheduledTime: e.target.value
                                                                                     })}
                                                                                 >
-                                                                                    <option value="minutes">Minutes</option>
-                                                                                    <option value="hours">Hours</option>
-                                                                                    <option value="days">Days</option>
+                                                                                    <option value="">Select time</option>
+                                                                                    {TIME_OPTIONS.map((time) => (
+                                                                                        <option key={time.value} value={time.value}>
+                                                                                            {time.label}
+                                                                                        </option>
+                                                                                    ))}
                                                                                 </select>
-                                                                                <span>after previous message</span>
                                                                             </div>
+                                                                        ) : (
+                                                                            <>
+                                                                                <label className="flex items-center">
+                                                                                    <input
+                                                                                        type="checkbox"
+                                                                                        className="mr-2"
+                                                                                        checked={editingMessage?.delayAfter?.isInstantaneous}
+                                                                                        onChange={(e) => setEditingMessage({
+                                                                                            ...editingMessage!,
+                                                                                            delayAfter: {
+                                                                                                ...editingMessage!.delayAfter,
+                                                                                                isInstantaneous: e.target.checked
+                                                                                            }
+                                                                                        })}
+                                                                                    />
+                                                                                    Send immediately after previous message
+                                                                                </label>
+                                                                                        
+                                                                                {!editingMessage?.delayAfter?.isInstantaneous && (
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <input
+                                                                                            type="number"
+                                                                                            className="w-24 px-4 py-2 border rounded-lg"
+                                                                                            value={editingMessage?.delayAfter?.value || 0}
+                                                                                            onChange={(e) => setEditingMessage({
+                                                                                                ...editingMessage!,
+                                                                                                delayAfter: {
+                                                                                                    ...editingMessage!.delayAfter,
+                                                                                                    value: parseInt(e.target.value) || 0
+                                                                                                }
+                                                                                            })}
+                                                                                            min="0"
+                                                                                        />
+                                                                                        <select
+                                                                                            className="px-4 py-2 border rounded-lg"
+                                                                                            value={editingMessage?.delayAfter?.unit || 'minutes'}
+                                                                                            onChange={(e) => setEditingMessage({
+                                                                                                ...editingMessage!,
+                                                                                                delayAfter: {
+                                                                                                    ...editingMessage!.delayAfter,
+                                                                                                    unit: e.target.value as 'minutes' | 'hours' | 'days'
+                                                                                                }
+                                                                                            })}
+                                                                                        >
+                                                                                            <option value="minutes">Minutes</option>
+                                                                                            <option value="hours">Hours</option>
+                                                                                            <option value="days">Days</option>
+                                                                                        </select>
+                                                                                        <span>after previous message</span>
+                                                                                    </div>
+                                                                                )}
+                                                                            </>
                                                                         )}
                                                                     </div>
 

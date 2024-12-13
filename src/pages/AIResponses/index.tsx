@@ -91,7 +91,8 @@ function AIResponses() {
                 const data = doc.data();
                 const baseResponse = {
                     id: doc.id,
-                    keywords: data.keyword ? [data.keyword] : (data.keywords || []),
+                    keywords: Array.isArray(data.keywords) ? data.keywords : 
+                        (data.keyword ? [data.keyword] : []),
                     description: data.description || '',
                     createdAt: data.createdAt?.toDate() || new Date(),
                     status: data.status || 'active',
@@ -942,7 +943,9 @@ function AIResponses() {
                                                     <div className="flex justify-between items-center mb-4">
                                                         <div>
                                                             <div className="font-medium text-base">
-                                                                Keywords: {response.keywords?.join(', ') || 'No keywords'}
+                                                                Keywords: {Array.isArray(response.keywords) ? 
+                                                                    response.keywords.join(', ') : 
+                                                                    response.keywords || 'No keywords'}
                                                             </div>
                                                             <div className="text-slate-500">
                                                                 Status: {response.status}
