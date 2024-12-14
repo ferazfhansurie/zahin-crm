@@ -252,7 +252,11 @@ function Main() {
   const [selectedPhoneIndex, setSelectedPhoneIndex] = useState<number | null>(null);
   const [showRecipients, setShowRecipients] = useState<string | null>(null);
   const [recipientSearch, setRecipientSearch] = useState('');
-
+  const [minDelay, setMinDelay] = useState(1);
+  const [maxDelay, setMaxDelay] = useState(2);
+  const [activateSleep, setActivateSleep] = useState(false);
+  const [sleepAfterMessages, setSleepAfterMessages] = useState(20);
+  const [sleepDuration, setSleepDuration] = useState(5);
  
 
   useEffect(() => {
@@ -2177,6 +2181,11 @@ const sendBlastMessage = async () => {
       status: "scheduled",
       v2: isV2,
       whapiToken: isV2 ? null : whapiToken,
+      minDelay,
+      maxDelay,
+      activateSleep,
+      sleepAfterMessages: activateSleep ? sleepAfterMessages : null,
+      sleepDuration: activateSleep ? sleepDuration : null,
     };
 
     console.log('Sending scheduledMessageData:', JSON.stringify(scheduledMessageData, null, 2));
@@ -4498,6 +4507,66 @@ const getFilteredScheduledMessages = () => {
                         <option value="days">Days</option>
                       </select>
                     </div>
+                    <div className="mt-4">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Delay between messages</label>
+        <div className="flex items-center space-x-2 mt-1">
+          <div className="flex items-center">
+            <span className="text-sm text-gray-600 dark:text-gray-400 mr-2">Wait between:</span>
+            <input
+              type="number"
+              value={minDelay}
+              onChange={(e) => setMinDelay(parseInt(e.target.value))}
+              min={1}
+              className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
+          </div>
+          <div className="flex items-center">
+            <span className="text-sm text-gray-600 dark:text-gray-400 mx-2">and</span>
+            <input
+              type="number"
+              value={maxDelay}
+              onChange={(e) => setMaxDelay(parseInt(e.target.value))}
+              min={1}
+              className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
+            <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">Seconds</span>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <label className="flex items-center">
+            <input
+              type="checkbox"
+              checked={activateSleep}
+              onChange={(e) => setActivateSleep(e.target.checked)}
+              className="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+            />
+            <span className="ml-2 text-sm text-gray-600 dark:text-gray-400">Activate Sleep between sending</span>
+          </label>
+          {activateSleep && (
+            <div className="flex items-center space-x-2 mt-2 ml-6">
+              <span className="text-sm text-gray-600 dark:text-gray-400">After:</span>
+              <input
+                type="number"
+                value={sleepAfterMessages}
+                onChange={(e) => setSleepAfterMessages(parseInt(e.target.value))}
+                min={1}
+                className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+              <span className="text-sm text-gray-600 dark:text-gray-400">Messages</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">for:</span>
+              <input
+                type="number"
+                value={sleepDuration}
+                onChange={(e) => setSleepDuration(parseInt(e.target.value))}
+                min={1}
+                className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+              <span className="text-sm text-gray-600 dark:text-gray-400">Seconds</span>
+            </div>
+          )}
+        </div>
+      </div>
                     <div className="mt-2">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="phone">Phone</label>
                       <select

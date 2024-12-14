@@ -377,6 +377,11 @@ const paginatedEmployees = filteredEmployees
                   Follow Ups
                 </Button>
             </Link>
+            <Link to="scheduled-message">
+            <Button variant="primary" className="mr-2 shadow-md">
+                  Scheduled Message
+                </Button>
+            </Link>
             {companyId === "0123" && (
               <Link to="storage-pricing">
                 <Button variant="primary" className="mr-2 shadow-md">
