@@ -94,7 +94,7 @@ const ScheduledMessagePage: React.FC = () => {
             const userData = userSnapshot.data();
             const companyId = userData.companyId;
 
-            const messagesRef = collection(firestore, `companies/${companyId}/scheduledMessages`);
+            const messagesRef = collection(firestore, `companies/${companyId}/scheduledNurture`);
             const messagesQuery = query(messagesRef, orderBy('createdAt', 'desc'));
             const messagesSnapshot = await getDocs(messagesQuery);
 
@@ -173,7 +173,7 @@ const ScheduledMessagePage: React.FC = () => {
                 images: selectedImages.length ? await uploadFiles(selectedImages, 'images') : [],
             };
 
-            const messageRef = collection(firestore, `companies/${companyId}/scheduledMessages`);
+            const messageRef = collection(firestore, `companies/${companyId}/scheduledNurture`);
             await addDoc(messageRef, newMessageData);
 
             setNewMessage({
@@ -204,7 +204,7 @@ const ScheduledMessagePage: React.FC = () => {
             if (!userSnapshot.exists()) return;
             const companyId = userSnapshot.data().companyId;
 
-            const messageRef = doc(firestore, `companies/${companyId}/scheduledMessages`, id);
+            const messageRef = doc(firestore, `companies/${companyId}/scheduledNurture`, id);
 
             if (selectedDocuments.length > 0) {
                 updatedData.documents = await uploadFiles(selectedDocuments, 'documents');
@@ -238,7 +238,7 @@ const ScheduledMessagePage: React.FC = () => {
             if (!userSnapshot.exists()) return;
             const companyId = userSnapshot.data().companyId;
 
-            const messageRef = doc(firestore, `companies/${companyId}/scheduledMessages`, id);
+            const messageRef = doc(firestore, `companies/${companyId}/scheduledNurture`, id);
             await deleteDoc(messageRef);
             fetchMessages();
             toast.success('Message deleted successfully');
