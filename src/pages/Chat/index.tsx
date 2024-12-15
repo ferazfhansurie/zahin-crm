@@ -5451,28 +5451,30 @@ const toggleBot = async () => {
 
     const companyData = companySnapshot.data();
     
-    // Initialize or get existing stopbots object
-    const currentStopbots = companyData.stopbots || {};
-    
-    if (currentStopbots[currentPhoneIndex]) {
-      // If bot is currently stopped (true), remove the entry to enable it
-      const { [currentPhoneIndex]: _, ...newStopbots } = currentStopbots;
-      await updateDoc(companyRef, {
-        stopbots: newStopbots
-      });
-      setCompanyStopBot(false);
-      toast.success(`Bot for ${phoneNames[currentPhoneIndex]} enabled successfully`);
+    // Check if phoneCount exists and is not null
+    if (companyData.phoneCount) {
+      // Handle multiple phones case with stopbots
+      const currentStopbots = companyData.stopbots || {};
+      
+      if (companyData.phoneCount) {
+        // If phoneCount exists, use stopbots map
+        const newStopbots = {
+          ...currentStopbots,
+          [currentPhoneIndex]: !currentStopbots[currentPhoneIndex]
+        };
+        await updateDoc(companyRef, {
+          stopbots: newStopbots
+        });
+        setCompanyStopBot(!currentStopbots[currentPhoneIndex]);
+        toast.success(`Bot for ${phoneNames[currentPhoneIndex]} ${currentStopbots[currentPhoneIndex] ? 'enabled' : 'disabled'} successfully`);
+      }
     } else {
-      // If bot is currently running (no entry or false), add entry with true to disable it
-      const newStopbots = {
-        ...currentStopbots,
-        [currentPhoneIndex]: true
-      };
+      // Handle single phone case with stopbot
       await updateDoc(companyRef, {
-        stopbots: newStopbots
+        stopbot: !companyData.stopbot
       });
-      setCompanyStopBot(true);
-      toast.success(`Bot for ${phoneNames[currentPhoneIndex]} disabled successfully`);
+      setCompanyStopBot(!companyData.stopbot);
+      toast.success(`Bot ${companyData.stopbot ? 'enabled' : 'disabled'} successfully`);
     }
 
   } catch (error) {
