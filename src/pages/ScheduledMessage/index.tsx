@@ -10,8 +10,7 @@ import { useNavigate } from "react-router-dom";
 interface ScheduledMessage {
     id: string;
     messages: string[];
-    startTime: string;
-    endTime: string;
+    times: string[];
     frequency: number;
     status: 'active' | 'inactive';
     createdAt: Date;
@@ -53,12 +52,12 @@ const ScheduledMessagePage: React.FC = () => {
     const [selectedImages, setSelectedImages] = useState<File[]>([]);
     const [isEditing, setIsEditing] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const [editingMessage, setEditingMessage] = useState<ScheduledMessage | null>(null);
 
     const [newMessage, setNewMessage] = useState({
         messages: [''],
-        startTime: '09:00',
-        endTime: '21:00',
-        frequency: 3,
+        times: ['09:00'],
+        frequency: 1,
         status: 'active' as const,
         stopKeyword: 'STOP',
         distributionMethod: 'evenly' as 'evenly' | 'random'
@@ -179,9 +178,8 @@ const ScheduledMessagePage: React.FC = () => {
 
             setNewMessage({
                 messages: [''],
-                startTime: '09:00',
-                endTime: '21:00',
-                frequency: 3,
+                times: ['09:00'],
+                frequency: 1,
                 status: 'active',
                 stopKeyword: 'STOP',
                 distributionMethod: 'evenly'
@@ -217,6 +215,7 @@ const ScheduledMessagePage: React.FC = () => {
 
             await updateDoc(messageRef, updatedData);
             setIsEditing(null);
+            setEditingMessage(null);
             setSelectedDocuments([]);
             setSelectedImages([]);
             fetchMessages();
@@ -296,33 +295,28 @@ const ScheduledMessagePage: React.FC = () => {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                             <div>
-                                <label className="block mb-2">Start Time</label>
-                                <select
-                                    className="w-full px-4 py-2 border rounded-lg"
-                                    value={newMessage.startTime}
-                                    onChange={(e) => setNewMessage({ ...newMessage, startTime: e.target.value })}
-                                >
-                                    {TIME_OPTIONS.map(option => (
-                                        <option key={option.value} value={option.value}>
-                                            {option.label}
-                                        </option>
+                                <label className="block mb-2">Send Times</label>
+                                <div className="space-y-2">
+                                    {Array.from({ length: newMessage.frequency }).map((_, index) => (
+                                        <div key={index} className="flex gap-2">
+                                            <select
+                                                className="w-full px-4 py-2 border rounded-lg"
+                                                value={newMessage.times[index] || ''}
+                                                onChange={(e) => {
+                                                    const newTimes = [...newMessage.times];
+                                                    newTimes[index] = e.target.value;
+                                                    setNewMessage({ ...newMessage, times: newTimes });
+                                                }}
+                                            >
+                                                {TIME_OPTIONS.map(option => (
+                                                    <option key={option.value} value={option.value}>
+                                                        {option.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
                                     ))}
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block mb-2">End Time</label>
-                                <select
-                                    className="w-full px-4 py-2 border rounded-lg"
-                                    value={newMessage.endTime}
-                                    onChange={(e) => setNewMessage({ ...newMessage, endTime: e.target.value })}
-                                >
-                                    {TIME_OPTIONS.map(option => (
-                                        <option key={option.value} value={option.value}>
-                                            {option.label}
-                                        </option>
-                                    ))}
-                                </select>
+                                </div>
                             </div>
 
                             <div>
@@ -330,25 +324,31 @@ const ScheduledMessagePage: React.FC = () => {
                                 <select
                                     className="w-full px-4 py-2 border rounded-lg"
                                     value={newMessage.frequency}
-                                    onChange={(e) => setNewMessage({ ...newMessage, frequency: parseInt(e.target.value) })}
+                                    onChange={(e) => {
+                                        const newFrequency = parseInt(e.target.value);
+                                        let newTimes = [...newMessage.times];
+                                        // Adjust times array based on new frequency
+                                        if (newFrequency > newTimes.length) {
+                                            // Add more times if frequency increased
+                                            while (newTimes.length < newFrequency) {
+                                                newTimes.push('09:00');
+                                            }
+                                        } else if (newFrequency < newTimes.length) {
+                                            // Remove times if frequency decreased
+                                            newTimes = newTimes.slice(0, newFrequency);
+                                        }
+                                        setNewMessage({
+                                            ...newMessage,
+                                            frequency: newFrequency,
+                                            times: newTimes
+                                        });
+                                    }}
                                 >
                                     {FREQUENCY_OPTIONS.map(option => (
                                         <option key={option.value} value={option.value}>
                                             {option.label}
                                         </option>
                                     ))}
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block mb-2">Distribution Method</label>
-                                <select
-                                    className="w-full px-4 py-2 border rounded-lg"
-                                    value={newMessage.distributionMethod}
-                                    onChange={(e) => setNewMessage({ ...newMessage, distributionMethod: e.target.value as 'evenly' | 'random' })}
-                                >
-                                    <option value="evenly">Evenly Spaced</option>
-                                    <option value="random">Random Times</option>
                                 </select>
                             </div>
                         </div>
@@ -423,6 +423,163 @@ const ScheduledMessagePage: React.FC = () => {
                         </Button>
                     </div>
 
+                    {/* Edit form */}
+                    {isEditing && editingMessage && (
+                        <div className="mb-5 p-4 border rounded-lg">
+                            {/* Messages section */}
+                            <div className="mb-4">
+                                <div className="flex justify-between items-center mb-2">
+                                    <label className="block font-medium">Messages</label>
+                                    <Button
+                                        onClick={() => {
+                                            setEditingMessage({
+                                                ...editingMessage,
+                                                messages: [...editingMessage.messages, '']
+                                            });
+                                        }}
+                                        variant="secondary"
+                                        className="text-sm"
+                                    >
+                                        + Add Another Message
+                                    </Button>
+                                </div>
+                                {editingMessage.messages.map((message, index) => (
+                                    <div key={index} className="flex gap-2 mb-2">
+                                        <textarea
+                                            className="flex-grow px-4 py-2 border rounded-lg"
+                                            placeholder={`Enter message ${index + 1}`}
+                                            rows={3}
+                                            value={message}
+                                            onChange={(e) => {
+                                                const newMessages = [...editingMessage.messages];
+                                                newMessages[index] = e.target.value;
+                                                setEditingMessage({
+                                                    ...editingMessage,
+                                                    messages: newMessages
+                                                });
+                                            }}
+                                        />
+                                        {editingMessage.messages.length > 1 && (
+                                            <button
+                                                onClick={() => {
+                                                    const newMessages = editingMessage.messages.filter((_, i) => i !== index);
+                                                    setEditingMessage({
+                                                        ...editingMessage,
+                                                        messages: newMessages
+                                                    });
+                                                }}
+                                                className="px-2 text-red-500 hover:text-red-700"
+                                            >
+                                                ×
+                                            </button>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Times selection */}
+                            <div>
+                                <label className="block mb-2">Send Times</label>
+                                <div className="space-y-2">
+                                    {Array.from({ length: editingMessage.frequency }).map((_, index) => (
+                                        <div key={index} className="flex gap-2">
+                                            <select
+                                                className="w-full px-4 py-2 border rounded-lg"
+                                                value={editingMessage.times[index] || '09:00'}
+                                                onChange={(e) => {
+                                                    const newTimes = [...editingMessage.times];
+                                                    newTimes[index] = e.target.value;
+                                                    setEditingMessage({
+                                                        ...editingMessage,
+                                                        times: newTimes
+                                                    });
+                                                }}
+                                            >
+                                                {TIME_OPTIONS.map(option => (
+                                                    <option key={option.value} value={option.value}>
+                                                        {option.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Frequency selection */}
+                            <div className="mt-4">
+                                <label className="block mb-2">Frequency</label>
+                                <select
+                                    className="w-full px-4 py-2 border rounded-lg"
+                                    value={editingMessage.frequency}
+                                    onChange={(e) => {
+                                        const newFrequency = parseInt(e.target.value);
+                                        let newTimes = [...editingMessage.times];
+                                        if (newFrequency > newTimes.length) {
+                                            while (newTimes.length < newFrequency) {
+                                                newTimes.push('09:00');
+                                            }
+                                        } else if (newFrequency < newTimes.length) {
+                                            newTimes = newTimes.slice(0, newFrequency);
+                                        }
+                                        setEditingMessage({
+                                            ...editingMessage,
+                                            frequency: newFrequency,
+                                            times: newTimes
+                                        });
+                                    }}
+                                >
+                                    {FREQUENCY_OPTIONS.map(option => (
+                                        <option key={option.value} value={option.value}>
+                                            {option.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Stop Keyword */}
+                            <div className="mt-4">
+                                <label className="block mb-2">Stop Keyword</label>
+                                <input
+                                    className="w-full px-4 py-2 border rounded-lg"
+                                    placeholder="Enter stop keyword (e.g., STOP)"
+                                    value={editingMessage.stopKeyword}
+                                    onChange={(e) => setEditingMessage({
+                                        ...editingMessage,
+                                        stopKeyword: e.target.value
+                                    })}
+                                />
+                            </div>
+
+                            {/* Save and Cancel buttons */}
+                            <div className="mt-4 flex gap-2">
+                                <Button
+                                    onClick={() => {
+                                        updateMessage(editingMessage.id, {
+                                            messages: editingMessage.messages,
+                                            times: editingMessage.times,
+                                            frequency: editingMessage.frequency,
+                                            stopKeyword: editingMessage.stopKeyword,
+                                        });
+                                    }}
+                                >
+                                    Save Changes
+                                </Button>
+                                <Button
+                                    variant="secondary"
+                                    onClick={() => {
+                                        setIsEditing(null);
+                                        setEditingMessage(null);
+                                        setSelectedDocuments([]);
+                                        setSelectedImages([]);
+                                    }}
+                                >
+                                    Cancel
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Search */}
                     <div className="mb-4">
                         <input
@@ -446,10 +603,9 @@ const ScheduledMessagePage: React.FC = () => {
                                             </div>
                                         ))}
                                         <div className="text-sm text-gray-600 mt-2">
-                                            <p>Time Range: {schedule.startTime} - {schedule.endTime}</p>
+                                            <p>Send Times: {schedule.times.join(', ')}</p>
                                             <p>Frequency: {FREQUENCY_OPTIONS.find(opt => opt.value === schedule.frequency)?.label}</p>
                                             <p>Distribution: {schedule.distributionMethod === 'evenly' ? 'Evenly Spaced' : 'Random Times'}</p>
-                                            <p>Stop Keyword: {schedule.stopKeyword}</p>
                                             {schedule.documents && schedule.documents.map((doc, index) => (
                                                 <p key={`doc-${index}`}>
                                                     Document {index + 1}: <a href={doc} target="_blank" rel="noopener noreferrer" className="text-blue-500">View</a>
@@ -464,7 +620,10 @@ const ScheduledMessagePage: React.FC = () => {
                                     </div>
                                     <div className="flex gap-2">
                                         <Button
-                                            onClick={() => setIsEditing(schedule.id)}
+                                            onClick={() => {
+                                                setIsEditing(schedule.id);
+                                                setEditingMessage(schedule);
+                                            }}
                                             variant="secondary"
                                         >
                                             Edit
