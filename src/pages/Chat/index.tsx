@@ -404,6 +404,15 @@ const auth = getAuth(app);
 function Main() {
    // Initial state setup with localStorage
   const { contacts: contextContacts, isLoading: contextLoading } = useContacts();
+
+  if (contextLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
+
   const [contacts, setContacts] = useState<Contact[]>(() => {
     const storedContacts = localStorage.getItem('contacts');
     if (storedContacts) {
@@ -570,6 +579,7 @@ function Main() {
   const [selectedVideo, setSelectedVideo] = useState<File | null>(null);
   const [videoModalOpen, setVideoModalOpen] = useState(false);
   const [videoCaption, setVideoCaption] = useState('');
+  const [tagsCollapsed, setTagsCollapsed] = useState<boolean>(false);
   const [trialExpired, setTrialExpired] = useState(false);
   useEffect(() => {
     const checkTrialStatus = async () => {
@@ -4049,9 +4059,6 @@ function formatDate(timestamp: string | number | Date) {
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   }
 }
-  const handleEyeClick = () => {
-    setIsTabOpen(!isTabOpen);
-  };
 
   
 const handlePageChange = ({ selected }: { selected: number }) => {
@@ -4353,7 +4360,7 @@ const sortContacts = (contacts: Contact[]) => {
     );
   };
   
-  // Modify the handleSearchChange2 function
+  // Modify the handleSearchChange function
   const handleSearchChange2 = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery2(e.target.value);
   };
@@ -6695,39 +6702,36 @@ console.log(prompt);
         ))}
       </Menu.Items>
     </Menu>
-    <Menu as="div" className="relative inline-block text-left z-50">
-    <Menu.Button className="p-2 !box m-0 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200">
-      <span className="flex items-center justify-center w-5 h-5">
-        <Lucide 
-          icon={isTagsExpanded ? "ChevronUp" : "ChevronDown"} 
-          className="w-5 h-5 text-gray-800 dark:text-gray-200" 
-        />
-      </span>
-    </Menu.Button>
+</div>
+</div>
+  <div className="border-b border-gray-300 dark:border-gray-700 mt-4"></div>
 
-    <Menu.Items className="absolute right-12 mt-2 w-52 bg-white dark:bg-gray-800 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none max-h-96 overflow-y-auto">
-      <div className="py-1">
-        {['Mine', 'All', 'Unassigned', 'Group', 'Unread', 'Snooze', 'Stop Bot', 'Active Bot', 'Resolved',
-          ...(userData?.phone !== undefined && userData.phone !== -1 ? 
-            [phoneNames[userData.phone] || `Phone ${userData.phone + 1}`] : 
-            Object.values(phoneNames)
-          ),
-          ...visibleTags.filter(tag => 
-            !['All', 'Unread', 'Mine', 'Unassigned', 'Snooze', 'Group', 'stop bot', 'Active Bot'].includes(tag.name) && 
-            !visiblePhoneTags.includes(tag.name)
-          )
-        ].map((tag) => {
-          const tagName = typeof tag === 'string' ? tag : tag.name || String(tag);
-          const tagLower = tagName.toLowerCase();
+</div>
+<div className="flex bg-gray-100 dark:bg-gray-900">
+  {/* Collapsible Tags Sidebar */}
+  <div className={`max-h-full border-r border-gray-200 dark:border-gray-700 overflow-y-auto ${tagsCollapsed ? 'w-10' : 'w-40'} transition-width duration-300`}>
+    <h4
+      className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2 cursor-pointer"
+      onClick={() => setTagsCollapsed(!tagsCollapsed)}
+    >
+      Tags
+    </h4>
+    {!tagsCollapsed && (
+      <div className="flex flex-col gap-2">
+        {['All', 'Unread', 'Mine', 'Unassigned', 'Group', 'Snooze', 'Stop Bot', 'Active Bot', 'Resolved'].map((tag) => {
+          const tagLower = tag.toLowerCase();
           let newfilter = contacts;
-          if(userData?.phone !== undefined && userData.phone !== -1){
+          if (userData?.phone !== undefined && userData.phone !== -1) {
             const userPhoneIndex = parseInt(userData.phone, 10);
-            newfilter = contacts.filter(contact => contact.phoneIndex === userPhoneIndex)
+            newfilter = contacts.filter(contact => 
+              contact.phoneIndex !== undefined && 
+              contact.phoneIndex !== null && 
+              contact.phoneIndex === userPhoneIndex
+            );
           }
           const unreadCount = newfilter.filter(contact => {
             const contactTags = contact.tags?.map(t => t.toLowerCase()) || [];
             const isGroup = contact.chat_id?.endsWith('@g.us');
-            const phoneIndex = Object.entries(phoneNames).findIndex(([_, name]) => name.toLowerCase() === tagLower);
             
             return (
               (tagLower === 'all' ? !isGroup :
@@ -6739,652 +6743,633 @@ console.log(prompt);
               tagLower === 'group' ? isGroup :
               tagLower === 'stop bot' ? contactTags.includes('stop bot') :
               tagLower === 'active bot' ? !contactTags.includes('stop bot') :
-              phoneIndex !== -1 ? contact.phoneIndex === phoneIndex :
               contactTags.includes(tagLower)) &&
               (tagLower !== 'all' && tagLower !== 'unassigned' ? contact.unreadCount && contact.unreadCount > 0 : true)
             );
           }).length;
 
           return (
-            <Menu.Item key={typeof tag === 'string' ? tag : tag.id}>
-              {({ active }) => (
-                <button
-                  onClick={() => filterTagContact(tagName)}
-                  className={`flex items-center justify-between w-full px-4 py-2 text-sm ${
-                    active || (tagLower === activeTags[0])
-                      ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
-                      : 'text-gray-700 dark:text-gray-200'
-                  }`}
-                >
-                  <span>{tagName}</span>
-                  {userData?.role === '1' && unreadCount > 0 && (
-                    <span className={`ml-2 px-1.5 py-0.5 rounded-full text-xs ${
-                      tagName.toLowerCase() === 'stop bot' ? 'bg-red-700' :
-                      tagName.toLowerCase() === 'active bot' ? 'bg-green-700' : 'bg-primary'
-                    } text-white`}>
-                      {unreadCount}
-                    </span>
-                  )}
-                </button>
+            <button
+              key={tag}
+              onClick={() => filterTagContact(tag)}
+              className={`flex items-center justify-between px-3 py-2 rounded-lg text-sm ${
+                activeTags.includes(tag)
+                  ? 'bg-primary text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'
+              } transition-colors duration-200`}
+            >
+              <span className="truncate">{tag}</span>
+              {userData?.role === '1' && unreadCount > 0 && (
+                <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+                  tagLower === 'stop bot' ? 'bg-red-600 text-white' :
+                  tagLower === 'active bot' ? 'bg-green-600 text-white' :
+                  activeTags.includes(tag) ? 'bg-white text-primary' : 'bg-primary text-white'
+                }`}>
+                  {unreadCount}
+                </span>
               )}
-            </Menu.Item>
+            </button>
           );
         })}
       </div>
-    </Menu.Items>
-  </Menu>
-</div>
-</div>
-  <div className="border-b border-gray-300 dark:border-gray-700 mt-4"></div>
+    )}
+  </div>
 
-</div>
-  <div className="bg-gray-100 dark:bg-gray-900 flex-1 overflow-y-scroll h-full" ref={contactListRef}>
-  {paginatedContacts.length === 0 ? ( // Check if paginatedContacts is empty
-    <div className="flex items-center justify-center h-full">
-      {paginatedContacts.length === 0 && (
+  {/* Conversations List */}
+  <div className="flex-1 h-[calc(100vh-13rem)] overflow-y-auto" ref={contactListRef}>
+    {paginatedContacts.length === 0 ? (
+      <div className="flex items-center justify-center max-h-screen">
         <div className="flex flex-col items-center">
-          <div>
-            <Lucide icon="MessageCircle" className="h-10 w-10 text-gray-500 dark:text-gray-400 mb-2" />
-          </div>
+          <Lucide icon="MessageCircle" className="h-10 w-10 text-gray-500 dark:text-gray-400 mb-2" />
           <div className="text-gray-500 text-2xl dark:text-gray-400 mt-2">No contacts found</div>
         </div>
-      )}
-    </div>
-  ) : ((paginatedContacts).map((contact, index) => (
-    <React.Fragment key={`${contact.id}-${index}` || `${contact.phone}-${index}`}>
-    <div
-      className={`m-2 pr-3 pb-2 pt-2 rounded-lg cursor-pointer flex items-center space-x-3 group ${
-        contact.chat_id !== undefined
-          ? selectedChatId === contact.chat_id
+      </div>
+    ) : (
+    (paginatedContacts).map((contact, index) => (
+      <React.Fragment key={`${contact.id}-${index}` || `${contact.phone}-${index}`}>
+      <div
+        className={`m-2 pr-3 pb-2 pt-2 rounded-lg cursor-pointer flex items-center space-x-3 group ${
+          contact.chat_id !== undefined
+            ? selectedChatId === contact.chat_id
+              ? 'bg-slate-300 text-white dark:bg-gray-800 dark:text-gray-200'
+              : 'hover:bg-gray-300 dark:hover:bg-gray-700'
+            : selectedChatId === contact.phone
             ? 'bg-slate-300 text-white dark:bg-gray-800 dark:text-gray-200'
             : 'hover:bg-gray-300 dark:hover:bg-gray-700'
-          : selectedChatId === contact.phone
-          ? 'bg-slate-300 text-white dark:bg-gray-800 dark:text-gray-200'
-          : 'hover:bg-gray-300 dark:hover:bg-gray-700'
-      }`}
-      onClick={() => selectChat(contact.chat_id!, contact.id!)}
-      onContextMenu={(e) => handleContextMenu(e, contact)}
-    >
-    <div
-      key={contact.id}
-      className="hidden cursor-pointer"
-      onClick={() => selectChat(contact.chat_id!, contact.id!)}
-    >
-    </div>
-    <div className="relative w-14 h-14">
-    <div className="flex items-center space-x-3">
-      <div className="w-14 h-14 bg-gray-400 dark:bg-gray-600 rounded-full flex items-center justify-center text-white text-xl overflow-hidden">
-        {contact && (
-          contact.chat_id && contact.chat_id.includes('@g.us') ? (
-            contact.profilePicUrl ? (
+        }`}
+        onClick={() => selectChat(contact.chat_id!, contact.id!)}
+        onContextMenu={(e) => handleContextMenu(e, contact)}
+      >
+      <div
+        key={contact.id}
+        className="hidden cursor-pointer"
+        onClick={() => selectChat(contact.chat_id!, contact.id!)}
+      >
+      </div>
+      <div className="relative w-14 h-14">
+      <div className="flex items-center space-x-3">
+        <div className="w-14 h-14 bg-gray-400 dark:bg-gray-600 rounded-full flex items-center justify-center text-white text-xl overflow-hidden">
+          {contact && (
+            contact.chat_id && contact.chat_id.includes('@g.us') ? (
+              contact.profilePicUrl ? (
+                <img 
+                  src={contact.profilePicUrl} 
+                  alt={contact.contactName || "Group"} 
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <Lucide icon="Users" className="w-8 h-8 text-white dark:text-gray-200" />
+              )
+            ) : contact.profilePicUrl ? (
               <img 
                 src={contact.profilePicUrl} 
-                alt={contact.contactName || "Group"} 
+                alt={contact.contactName || "Profile"} 
                 className="w-full h-full object-cover"
               />
             ) : (
-              <Lucide icon="Users" className="w-8 h-8 text-white dark:text-gray-200" />
+              <div className="w-full h-full flex items-center justify-center bg-gray-400 dark:bg-gray-600 text-white">
+                {<Lucide icon="User" className="w-10 h-10" />}
+              </div>
             )
-          ) : contact.profilePicUrl ? (
-            <img 
-              src={contact.profilePicUrl} 
-              alt={contact.contactName || "Profile"} 
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center bg-gray-400 dark:bg-gray-600 text-white">
-              {<Lucide icon="User" className="w-10 h-10" />}
-            </div>
-          )
-        )}
-      </div>
-      {(contact.unreadCount ?? 0) > 0 && (
-        <span className="absolute -top-1 -right-1 bg-primary text-white dark:bg-blue-600 dark:text-gray-200 text-xs rounded-full px-2 py-1 min-w-[20px] h-[20px] flex items-center justify-center">
-          {contact.unreadCount}
-        </span>
-      )}
-    </div>
-  </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex justify-between items-center">
-          <div className="flex flex-col">
-            <span className="font-semibold capitalize truncate w-25 text-gray-800 dark:text-gray-200">
-              {userRole === '1' 
-                ? ((contact.contactName ?? contact.firstName ?? contact.phone ?? "").slice(0, 20))
-                : (contact.leadNumber ?? "").slice(0, 20)}
-              {userRole === '1' 
-                ? ((contact.contactName ?? contact.firstName ?? contact.phone ?? "").length > 20 ? '...' : '')
-                : (contact.leadNumber ?? "").length > 20 ? '...' : ''}
-            </span>
-            {!contact.chat_id?.includes('@g.us') && (userData?.role === '1' || userData?.role === '2') && (
-              <span className="text-xs text-gray-600 dark:text-gray-400 truncate" style={{ 
-                visibility: (contact.contactName === contact.phone || contact.firstName === contact.phone) ? 'hidden' : 'visible',
-                display: (contact.contactName === contact.phone || contact.firstName === contact.phone) ? 'flex' : 'block',
-                alignItems: 'center'
-              }}>
-                {contact.phone}
-              </span>
-            )}
-          </div>
-          <span className="text-xs flex items-center space-x-2 text-gray-600 dark:text-gray-400">
-            <div className="flex flex-grow items-center">
-              {(() => {
-                const employeeTags = contact.tags?.filter(tag =>
-                  employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase())
-                ) || [];
-              
-                const otherTags = contact.tags?.filter(tag =>
-                  !employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase())
-                ) || [];
-              
-                // Create a unique set of all tags
-                const uniqueTags = Array.from(new Set([...otherTags]));
-              
-                return (
-                  <>
-                  <button
-                    className={`text-md ${
-                      contact.pinned ? 'text-blue-500 dark:text-blue-400 font-bold' : 'text-gray-500 group-hover:text-blue-500 dark:text-gray-400 dark:group-hover:text-blue-400 group-hover:font-bold dark:group-hover:font-bold mr-1'
-                    }`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      togglePinConversation(contact.chat_id!);
-                    }}
-                  >
-                  {contact.pinned ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 48 48" className="text-gray-800 dark:text-blue-400 fill-current mr-1">
-                      <mask id="ipSPin0">
-                        <path fill="#fff" stroke="#fff" strokeLinejoin="round" strokeWidth="4" d="M10.696 17.504c2.639-2.638 5.774-2.565 9.182-.696L32.62 9.745l-.721-4.958L43.213 16.1l-4.947-.71l-7.074 12.73c1.783 3.638 1.942 6.544-.697 9.182l-7.778-7.778L6.443 41.556l11.995-16.31l-7.742-7.742Z"/>
-                      </mask>
-                      <path fill="currentColor" d="M0 0h48v48H0z" mask="url(#ipSPin0)"/>
-                    </svg>
-                  ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 48 48" className="group-hover:block hidden">
-                      <path fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="4" d="M10.696 17.504c2.639-2.638 5.774-2.565 9.182-.696L32.62 9.745l-.721-4.958L43.213 16.1l-4.947-.71l-7.074 12.73c1.783 3.638 1.942 6.544-.697 9.182l-7.778-7.778L6.443 41.556l11.995-16.31l-7.742-7.742Z"/>
-                    </svg>
-                  )}
-                  </button>
-                    {uniqueTags.filter(tag => tag.toLowerCase() !== 'stop bot').length > 0 && (
-                      <Tippy
-                        content={uniqueTags.filter(tag => tag.toLowerCase() !== 'stop bot').map(tag => tag.charAt(0).toUpperCase() + tag.slice(1)).join(', ')}
-                        options={{ 
-                          interactive: true,
-                          appendTo: () => document.body
-                        }}
-                      >
-                        <span className="bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200 text-xs font-semibold mr-1 px-2.5 py-0.5 rounded-full cursor-pointer">
-                          <Lucide icon="Tag" className="w-4 h-4 inline-block" />
-                          <span className="ml-1">{uniqueTags.filter(tag => tag.toLowerCase() !== 'stop bot').length}</span>
-                        </span>
-                      </Tippy>
-                    )}
-                    {employeeTags.length > 0 && (
-                      <Tippy
-                          content={employeeTags.map(tag => {
-                            const employee = employeeList.find(e => e.name.toLowerCase() === tag.toLowerCase());
-                            return employee ? employee.name : tag;
-                          }).join(', ')}
-                        options={{ 
-                          interactive: true,  
-                          appendTo: () => document.body
-                        }}
-                      >
-                        <span className="bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200 text-xs font-semibold mr-1 px-2.5 py-0.5 rounded-full cursor-pointer">
-                          <Lucide icon="Users" className="w-4 h-4 inline-block" />
-                          <span className="ml-1 text-xxs capitalize">
-                            {employeeTags.length === 1 
-                              ? (employeeList.find(e => e.name.toLowerCase() === employeeTags[0].toLowerCase())?.employeeId || 
-                                 (employeeTags[0].length > 8 ? employeeTags[0].slice(0, 6) : employeeTags[0]))
-                              : employeeTags.length}
-                          </span>
-                        </span>
-                      </Tippy>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-
-            <div className="flex items-center align-top space-x-1">
-              <span className={`${
-                contact.unreadCount && contact.unreadCount > 0 
-                  ? 'text-blue-500 font-medium' 
-                  : ''
-              }`}>
-                {contact.last_message?.createdAt || contact.last_message?.timestamp
-                  ? formatDate(contact.last_message.createdAt || (contact.last_message.timestamp && contact.last_message.timestamp * 1000))
-                  : 'No Messages'}
-              </span>
-            </div>
-          </span>
-    </div>
-        <div className="flex justify-between items-center">
-          <span className="text-sm truncate text-gray-600 dark:text-gray-400" style={{ width: '200px' }}>
-            {contact.last_message ? (
-              <>
-                {contact.last_message.from_me && (
-                  <svg xmlns="http://www.w3.org/2000/svg" className="inline-block items-center justify-start w-5 h-5 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                )}
-                {contact.last_message.type === "text" ? (
-                  contact.last_message.text?.body
-                ) : contact.last_message.type === "image" ? (
-                  "Photo"
-                ) : contact.last_message.type === "document" ? (
-                  "Document"
-                ) : contact.last_message.type === "audio" ? (
-                  "Audio"
-                ) : contact.last_message.type === "video" ? (
-                  "Video"
-                ) : (
-                  contact.last_message.from_me ? "You: Message" : "Bot: Message"
-                )}
-              </>
-            ) : (
-              "No Messages"
-            )}
-          </span>
-          {isAssistantAvailable && (
-            <div onClick={(e) => toggleStopBotLabel(contact, index, e)}
-              className="cursor-pointer relative z-10">
-                <label className="inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="sr-only peer"
-                    checked={contact.tags?.includes("stop bot")}
-                    readOnly
-                  />
-                <div className={`mt-1 ml-0 relative w-11 h-6 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer ${
-                  contact.tags?.includes("stop bot") 
-                    ? 'bg-red-500 dark:bg-red-700' 
-                    : 'bg-green-500 dark:bg-green-700'
-                } peer-checked:after:-translate-x-full rtl:peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:end-[2px] after:bg-white after:border-gray-200 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-400`}>
-                </div>
-              </label>
-            </div>
           )}
         </div>
-                  </div>
-                </div>
-                {index < filteredContacts.length - 1 && <hr className="my-2 border-gray-300 dark:border-gray-700" />}
-              </React.Fragment>
-            ))
-            )}
-            </div>
-              <ReactPaginate
-                breakLabel="..."
-                nextLabel="Next"
-                onPageChange={handlePageChange}
-                pageRangeDisplayed={2}
-                pageCount={Math.ceil(filteredContacts.length / contactsPerPage)}
-                previousLabel="Previous"
-                renderOnZeroPageCount={null}
-                containerClassName="flex justify-center items-center mt-4 mb-4"
-                pageClassName="mx-1"
-                pageLinkClassName="px-2 py-1 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 text-sm"
-                previousClassName="mx-1"
-                nextClassName="mx-1"
-                previousLinkClassName="px-2 py-1 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 text-sm"
-                nextLinkClassName="px-2 py-1 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 text-sm"
-                disabledClassName="opacity-50 cursor-not-allowed"
-                activeClassName="font-bold"
-                activeLinkClassName="bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-600 dark:text-white dark:hover:bg-blue-700"
-                forcePage={currentPage}
-              />
-        </div>
-      <div className="flex flex-col w-full sm:w-3/4 bg-slate-300 dark:bg-gray-900 relative flext-1 overflow-hidden">
-  {selectedChatId ? (
-    <>
-      <div className="flex items-center justify-between p-3 border-b border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-900">
-        <div className="flex items-center">
-        <button onClick={handleBack} className="back-button p-2 text-lg">
-            <Lucide icon="ChevronLeft" className="w-6 h-6" />
-          </button>
-          <div className="w-10 h-10 overflow-hidden rounded-full shadow-lg bg-gray-700 flex items-center justify-center text-white mr-3 ml-2">
-            {selectedContact?.profilePicUrl ? (
-              <img 
-                src={selectedContact.profilePicUrl} 
-                alt={selectedContact.contactName || "Profile"} 
-                className="w-10 h-10 rounded-full object-cover"
-              />
-            ) : (
-              <span className="text-2xl font-bold">
-                {selectedContact?.contactName ? selectedContact.contactName.charAt(0).toUpperCase() : "?"}
-              </span>
-            )}
-          </div>
-          <div>
-            {userRole === '1' ? (
-              <>
-                <div className="font-semibold text-gray-800 dark:text-gray-200 capitalize">{selectedContact.contactName || selectedContact.firstName || selectedContact.phone}</div>
-                <div className="text-sm text-gray-600 dark:text-gray-400">{selectedContact.phone}</div>
-              </>
-            ) : (
-              <div className="font-semibold text-gray-800 dark:text-gray-200 capitalize">{selectedContact.leadNumber}</div>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center space-x-3">
-        <div className="hidden sm:flex space-x-3">
-        <button 
-          className="p-2 m-0 !box" 
-          onClick={() => {
-            if (userRole !== "3") {
-              setBlastMessageModal(true);
-            } else {
-              toast.error("You don't have permission to send blast messages.");
-            }
-          }}
-          disabled={userRole === "3"}
-        >
-          <span className="flex items-center justify-center w-5 h-5">
-            <Lucide icon="Send" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
+        {(contact.unreadCount ?? 0) > 0 && (
+          <span className="absolute -top-1 -right-1 bg-primary text-white dark:bg-blue-600 dark:text-gray-200 text-xs rounded-full px-2 py-1 min-w-[20px] h-[20px] flex items-center justify-center">
+            {contact.unreadCount}
           </span>
-        </button>
-            {/* <button className="p-2 m-0 !box" onClick={handleReminderClick}>
-              <span className="flex items-center justify-center w-5 h-5">
-                <Lucide icon="BellRing" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
+        )}
+      </div>
+    </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex justify-between items-center">
+            <div className="flex flex-col">
+              <span className="font-semibold capitalize truncate w-25 text-gray-800 dark:text-gray-200">
+                {userRole === '1' 
+                  ? ((contact.contactName ?? contact.firstName ?? contact.phone ?? "").slice(0, 20))
+                  : (contact.leadNumber ?? "").slice(0, 20)}
+                {userRole === '1' 
+                  ? ((contact.contactName ?? contact.firstName ?? contact.phone ?? "").length > 20 ? '...' : '')
+                  : (contact.leadNumber ?? "").length > 20 ? '...' : ''}
               </span>
-            </button> */}
-            <div className="flex space-x-2">
-              {selectedContact?.tags?.includes('snooze') ? (
-                <button 
-                  className="p-2 !box m-0"
-                  onClick={() => handleUnsnooze(selectedContact)}
-                >
-                  <span className="flex items-center justify-center w-5 h-5">
-                    <Lucide 
-                      icon="AlarmClockOff" 
-                      className="w-5 h-5 text-gray-800 dark:text-gray-200" 
-                    />
-                  </span>
-                </button>
-              ) : (
-                <button 
-                  className="p-2 !box m-0"
-                  onClick={() => handleSnooze(selectedContact)}
-                >
-                  <span className="flex items-center justify-center w-5 h-5">
-                    <Lucide 
-                      icon="AlarmClock" 
-                      className="w-5 h-5 text-gray-800 dark:text-gray-200" 
-                    />
-                  </span>
-                </button>
-              )}
-            </div>
-            <div className="flex space-x-2">
-              {selectedContact?.tags?.includes('resolved') ? (
-                <button 
-                  className="p-2 !box m-0"
-                  onClick={() => handleUnresolve(selectedContact)}
-                >
-                  <span className="flex items-center justify-center w-5 h-5">
-                    <Lucide 
-                      icon="CheckCircle" 
-                      className="w-5 h-5 text-gray-800 dark:text-gray-200" 
-                    />
-                  </span>
-                </button>
-              ) : (
-                <button 
-                  className="p-2 !box m-0"
-                  onClick={() => handleResolve(selectedContact)}
-                >
-                  <span className="flex items-center justify-center w-5 h-5">
-                    <Lucide 
-                      icon="CheckCircle" 
-                      className="w-5 h-5 text-gray-800 dark:text-gray-200" 
-                    />
-                  </span>
-                </button>
-              )}
-            </div>
-            <Menu as="div" className="relative inline-block text-left">
-              <Menu.Button as={Button} className="p-2 !box m-0">
-                <span className="flex items-center justify-center w-5 h-5">
-                  <Lucide icon="Users" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
+              {!contact.chat_id?.includes('@g.us') && (userData?.role === '1' || userData?.role === '2') && (
+                <span className="text-xs text-gray-600 dark:text-gray-400 truncate" style={{ 
+                  visibility: (contact.contactName === contact.phone || contact.firstName === contact.phone) ? 'hidden' : 'visible',
+                  display: (contact.contactName === contact.phone || contact.firstName === contact.phone) ? 'flex' : 'block',
+                  alignItems: 'center'
+                }}>
+                  {contact.phone}
                 </span>
-              </Menu.Button>
-              <Menu.Items className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10 max-h-60 overflow-y-auto">
-                <div className="mb-2">
-                  <input
-                    type="text"
-                    placeholder="Search employees..."
-                    value={employeeSearch}
-                    onChange={(e) => setEmployeeSearch(e.target.value)}
-                    className="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-                  />
-                </div>
-                {employeeList
-                  .filter(employee => {
-                    if (userRole === '4') {
-                      if (userData?.group) {
-                        return employee.role === '2' && 
-                              employee.group === userData.group && 
-                              employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
-                      } else {
-                        return employee.role === '2' && 
+              )}
+            </div>
+            <span className="text-xs flex items-center space-x-2 text-gray-600 dark:text-gray-400">
+              <div className="flex flex-grow items-center">
+                {(() => {
+                  const employeeTags = contact.tags?.filter(tag =>
+                    employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase())
+                  ) || [];
+                
+                  const otherTags = contact.tags?.filter(tag =>
+                    !employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase())
+                  ) || [];
+                
+                  // Create a unique set of all tags
+                  const uniqueTags = Array.from(new Set([...otherTags]));
+                
+                  return (
+                    <>
+                    <button
+                      className={`text-md ${
+                        contact.pinned ? 'text-blue-500 dark:text-blue-400 font-bold' : 'text-gray-500 group-hover:text-blue-500 dark:text-gray-400 dark:group-hover:text-blue-400 group-hover:font-bold dark:group-hover:font-bold mr-1'
+                      }`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        togglePinConversation(contact.chat_id!);
+                      }}
+                    >
+                    {contact.pinned ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 48 48" className="text-gray-800 dark:text-blue-400 fill-current mr-1">
+                        <mask id="ipSPin0">
+                          <path fill="#fff" stroke="#fff" strokeLinejoin="round" strokeWidth="4" d="M10.696 17.504c2.639-2.638 5.774-2.565 9.182-.696L32.62 9.745l-.721-4.958L43.213 16.1l-4.947-.71l-7.074 12.73c1.783 3.638 1.942 6.544-.697 9.182l-7.778-7.778L6.443 41.556l11.995-16.31l-7.742-7.742Z"/>
+                        </mask>
+                        <path fill="currentColor" d="M0 0h48v48H0z" mask="url(#ipSPin0)"/>
+                      </svg>
+                    ) : (
+                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 48 48" className="group-hover:block hidden">
+                        <path fill="none" stroke="currentColor" strokeLinejoin="round" strokeWidth="4" d="M10.696 17.504c2.639-2.638 5.774-2.565 9.182-.696L32.62 9.745l-.721-4.958L43.213 16.1l-4.947-.71l-7.074 12.73c1.783 3.638 1.942 6.544-.697 9.182l-7.778-7.778L6.443 41.556l11.995-16.31l-7.742-7.742Z"/>
+                      </svg>
+                    )}
+                    </button>
+                      {uniqueTags.filter(tag => tag.toLowerCase() !== 'stop bot').length > 0 && (
+                        <Tippy
+                          content={uniqueTags.filter(tag => tag.toLowerCase() !== 'stop bot').map(tag => tag.charAt(0).toUpperCase() + tag.slice(1)).join(', ')}
+                          options={{ 
+                            interactive: true,
+                            appendTo: () => document.body
+                          }}
+                        >
+                          <span className="bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200 text-xs font-semibold mr-1 px-2.5 py-0.5 rounded-full cursor-pointer">
+                            <Lucide icon="Tag" className="w-4 h-4 inline-block" />
+                            <span className="ml-1">{uniqueTags.filter(tag => tag.toLowerCase() !== 'stop bot').length}</span>
+                          </span>
+                        </Tippy>
+                      )}
+                      {employeeTags.length > 0 && (
+                        <Tippy
+                            content={employeeTags.map(tag => {
+                              const employee = employeeList.find(e => e.name.toLowerCase() === tag.toLowerCase());
+                              return employee ? employee.name : tag;
+                            }).join(', ')}
+                          options={{ 
+                            interactive: true,  
+                            appendTo: () => document.body
+                          }}
+                        >
+                          <span className="bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200 text-xs font-semibold mr-1 px-2.5 py-0.5 rounded-full cursor-pointer">
+                            <Lucide icon="Users" className="w-4 h-4 inline-block" />
+                            <span className="ml-1 text-xxs capitalize">
+                              {employeeTags.length === 1 
+                                ? (employeeList.find(e => e.name.toLowerCase() === employeeTags[0].toLowerCase())?.employeeId || 
+                                   (employeeTags[0].length > 8 ? employeeTags[0].slice(0, 6) : employeeTags[0]))
+                                : employeeTags.length}
+                            </span>
+                          </span>
+                        </Tippy>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+
+              <div className="flex items-center align-top space-x-1">
+                <span className={`${
+                  contact.unreadCount && contact.unreadCount > 0 
+                    ? 'text-blue-500 font-medium' 
+                    : ''
+                }`}>
+                  {contact.last_message?.createdAt || contact.last_message?.timestamp
+                    ? formatDate(contact.last_message.createdAt || (contact.last_message.timestamp && contact.last_message.timestamp * 1000))
+                    : 'No Messages'}
+                </span>
+              </div>
+            </span>
+      </div>
+          <div className="flex justify-between items-center">
+            <span className="text-sm truncate text-gray-600 dark:text-gray-400" style={{ width: '200px' }}>
+              {contact.last_message ? (
+                <>
+                  {contact.last_message.from_me && (
+                    <svg xmlns="http://www.w3.org/2000/svg" className="inline-block items-center justify-start w-5 h-5 text-blue-500" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                  )}
+                  {contact.last_message.type === "text" ? (
+                    contact.last_message.text?.body
+                  ) : contact.last_message.type === "image" ? (
+                    "Photo"
+                  ) : contact.last_message.type === "document" ? (
+                    "Document"
+                  ) : contact.last_message.type === "audio" ? (
+                    "Audio"
+                  ) : contact.last_message.type === "video" ? (
+                    "Video"
+                  ) : (
+                    contact.last_message.from_me ? "You: Message" : "Bot: Message"
+                  )}
+                </>
+              ) : (
+                "No Messages"
+              )}
+            </span>
+            {isAssistantAvailable && (
+              <div onClick={(e) => toggleStopBotLabel(contact, index, e)}
+                className="cursor-pointer relative z-10">
+                  <label className="inline-flex items-center cursor-pointer">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={contact.tags?.includes("stop bot")}
+                      readOnly
+                    />
+                  <div className={`mt-1 ml-0 relative w-11 h-6 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer ${
+                    contact.tags?.includes("stop bot") 
+                      ? 'bg-red-500 dark:bg-red-700' 
+                      : 'bg-green-500 dark:bg-green-700'
+                  } peer-checked:after:-translate-x-full rtl:peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:end-[2px] after:bg-white after:border-gray-200 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-400`}>
+                  </div>
+                </label>
+              </div>
+            )}
+          </div>
+                    </div>
+                  </div>
+                  {index < filteredContacts.length - 1 && <hr className="my-2 border-gray-300 dark:border-gray-700" />}
+                </React.Fragment>
+              ))
+              )}
+              </div>
+              </div>
+                <ReactPaginate
+                  breakLabel="..."
+                  nextLabel="Next"
+                  onPageChange={handlePageChange}
+                  pageRangeDisplayed={2}
+                  pageCount={Math.ceil(filteredContacts.length / contactsPerPage)}
+                  previousLabel="Previous"
+                  renderOnZeroPageCount={null}
+                  containerClassName="flex justify-center items-center mt-4 mb-4"
+                  pageClassName="mx-1"
+                  pageLinkClassName="px-2 py-1 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 text-sm"
+                  previousClassName="mx-1"
+                  nextClassName="mx-1"
+                  previousLinkClassName="px-2 py-1 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 text-sm"
+                  nextLinkClassName="px-2 py-1 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 text-sm"
+                  disabledClassName="opacity-50 cursor-not-allowed"
+                  activeClassName="font-bold"
+                  activeLinkClassName="bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-600 dark:text-white dark:hover:bg-blue-700"
+                  forcePage={currentPage}
+                />
+          </div>
+        <div className="flex flex-col w-full sm:w-3/4 bg-slate-300 dark:bg-gray-900 relative flext-1 overflow-hidden">
+    {selectedChatId ? (
+      <>
+        <div className="flex items-center justify-between p-3 border-b border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-900">
+          <div className="flex items-center">
+          <button onClick={handleBack} className="back-button p-2 text-lg">
+              <Lucide icon="ChevronLeft" className="w-6 h-6" />
+            </button>
+            <div className="w-10 h-10 overflow-hidden rounded-full shadow-lg bg-gray-700 flex items-center justify-center text-white mr-3 ml-2">
+              {selectedContact?.profilePicUrl ? (
+                <img 
+                  src={selectedContact.profilePicUrl} 
+                  alt={selectedContact.contactName || "Profile"} 
+                  className="w-10 h-10 rounded-full object-cover"
+                />
+              ) : (
+                <span className="text-2xl font-bold">
+                  {selectedContact?.contactName ? selectedContact.contactName.charAt(0).toUpperCase() : "?"}
+                </span>
+              )}
+            </div>
+            <div>
+              {userRole === '1' ? (
+                <>
+                  <div className="font-semibold text-gray-800 dark:text-gray-200 capitalize">{selectedContact.contactName || selectedContact.firstName || selectedContact.phone}</div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">{selectedContact.phone}</div>
+                </>
+              ) : (
+                <div className="font-semibold text-gray-800 dark:text-gray-200 capitalize">{selectedContact.leadNumber}</div>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center space-x-3">
+          <div className="hidden sm:flex space-x-3">
+          <button 
+            className="p-2 m-0 !box" 
+            onClick={() => {
+              if (userRole !== "3") {
+                setBlastMessageModal(true);
+              } else {
+                toast.error("You don't have permission to send blast messages.");
+              }
+            }}
+            disabled={userRole === "3"}
+          >
+            <span className="flex items-center justify-center w-5 h-5">
+              <Lucide icon="Send" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
+            </span>
+          </button>
+              {/* <button className="p-2 m-0 !box" onClick={handleReminderClick}>
+                <span className="flex items-center justify-center w-5 h-5">
+                  <Lucide icon="BellRing" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
+                </span>
+              </button> */}
+              <div className="flex space-x-2">
+                {selectedContact?.tags?.includes('snooze') ? (
+                  <button 
+                    className="p-2 !box m-0"
+                    onClick={() => handleUnsnooze(selectedContact)}
+                  >
+                    <span className="flex items-center justify-center w-5 h-5">
+                      <Lucide 
+                        icon="AlarmClockOff" 
+                        className="w-5 h-5 text-gray-800 dark:text-gray-200" 
+                      />
+                    </span>
+                  </button>
+                ) : (
+                  <button 
+                    className="p-2 !box m-0"
+                    onClick={() => handleSnooze(selectedContact)}
+                  >
+                    <span className="flex items-center justify-center w-5 h-5">
+                      <Lucide 
+                        icon="AlarmClock" 
+                        className="w-5 h-5 text-gray-800 dark:text-gray-200" 
+                      />
+                    </span>
+                  </button>
+                )}
+              </div>
+              <div className="flex space-x-2">
+                {selectedContact?.tags?.includes('resolved') ? (
+                  <button 
+                    className="p-2 !box m-0"
+                    onClick={() => handleUnresolve(selectedContact)}
+                  >
+                    <span className="flex items-center justify-center w-5 h-5">
+                      <Lucide 
+                        icon="CheckCircle" 
+                        className="w-5 h-5 text-gray-800 dark:text-gray-200" 
+                      />
+                    </span>
+                  </button>
+                ) : (
+                  <button 
+                    className="p-2 !box m-0"
+                    onClick={() => handleResolve(selectedContact)}
+                  >
+                    <span className="flex items-center justify-center w-5 h-5">
+                      <Lucide 
+                        icon="CheckCircle" 
+                        className="w-5 h-5 text-gray-800 dark:text-gray-200" 
+                      />
+                    </span>
+                  </button>
+                )}
+              </div>
+              <Menu as="div" className="relative inline-block text-left">
+                <Menu.Button as={Button} className="p-2 !box m-0">
+                  <span className="flex items-center justify-center w-5 h-5">
+                    <Lucide icon="Users" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
+                  </span>
+                </Menu.Button>
+                <Menu.Items className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10 max-h-60 overflow-y-auto">
+                  <div className="mb-2">
+                    <input
+                      type="text"
+                      placeholder="Search employees..."
+                      value={employeeSearch}
+                      onChange={(e) => setEmployeeSearch(e.target.value)}
+                      className="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                    />
+                  </div>
+                  {employeeList
+                    .filter(employee => {
+                      if (userRole === '4') {
+                        if (userData?.group) {
+                          return employee.role === '2' && 
+                                employee.group === userData.group && 
+                                employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                        } else {
+                          return employee.role === '2' && 
+                                employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                        }
+                      } else if (userRole === '1' || userRole === '5') {
+                        return employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                      } else if (userRole === '2' || userRole === '3') {
+                        return employee.role === userRole && 
                               employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
                       }
-                    } else if (userRole === '1' || userRole === '5') {
-                      return employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
-                    } else if (userRole === '2' || userRole === '3') {
-                      return employee.role === userRole && 
-                            employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
-                    }
-                    return false;
-                  })
-                  .map((employee) => {
-                    return (
-                      <Menu.Item key={employee.id}>
-                        <button
-                          className="flex items-center justify-between w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
-                          onClick={() => handleAddTagToSelectedContacts(employee.name, selectedContact)}
-                        >
-                          <span className="text-gray-800 dark:text-gray-200 truncate flex-grow mr-2" style={{ maxWidth: '70%' }}>
-                            {employee.name}
-                          </span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-                            Leads Quota: {employee.quotaLeads}
-                          </span>
-                        </button>
-                      </Menu.Item>
-                    );
-                  })}
-              </Menu.Items>
-            </Menu>
-            <Menu as="div" className="relative inline-block text-left">
+                      return false;
+                    })
+                    .map((employee) => {
+                      return (
+                        <Menu.Item key={employee.id}>
+                          <button
+                            className="flex items-center justify-between w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                            onClick={() => handleAddTagToSelectedContacts(employee.name, selectedContact)}
+                          >
+                            <span className="text-gray-800 dark:text-gray-200 truncate flex-grow mr-2" style={{ maxWidth: '70%' }}>
+                              {employee.name}
+                            </span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                              Leads Quota: {employee.quotaLeads}
+                            </span>
+                          </button>
+                        </Menu.Item>
+                      );
+                    })}
+                </Menu.Items>
+              </Menu>
+              <Menu as="div" className="relative inline-block text-left">
+                <Menu.Button as={Button} className="p-2 !box m-0">
+                  <span className="flex items-center justify-center w-5 h-5">
+                    <Lucide icon="Tag" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
+                  </span>
+                </Menu.Button>
+                <Menu.Items className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10 max-h-60 overflow-y-auto">
+                  {tagList.map((tag) => (
+                    <Menu.Item key={tag.id}>
+                      <button
+                        className={`flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md ${
+                          activeTags.includes(tag.name) ? 'bg-gray-200 dark:bg-gray-700' : ''
+                        }`}
+                        onClick={() => handleAddTagToSelectedContacts(tag.name, selectedContact)}
+                      >
+                        <Lucide icon="User" className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
+                        <span className="text-gray-800 dark:text-gray-200">{tag.name}</span>
+                      </button>
+                    </Menu.Item>
+                  ))}
+                </Menu.Items>
+              </Menu>
+              <button className="p-2 m-0 !box" onClick={handleMessageSearchClick}>
+                <span className="flex items-center justify-center w-5 h-5">
+                  <Lucide icon={isMessageSearchOpen ? "X" : "Search"} className="w-5 h-5 text-gray-800 dark:text-gray-200" />
+                </span>
+              </button>
+            </div>
+            <Menu as="div" className="sm:hidden relative inline-block text-left">
               <Menu.Button as={Button} className="p-2 !box m-0">
                 <span className="flex items-center justify-center w-5 h-5">
-                  <Lucide icon="Tag" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
+                  <Lucide icon="MoreVertical" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
                 </span>
               </Menu.Button>
-              <Menu.Items className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10 max-h-60 overflow-y-auto">
-                {tagList.map((tag) => (
-                  <Menu.Item key={tag.id}>
-                    <button
-                      className={`flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md ${
-                        activeTags.includes(tag.name) ? 'bg-gray-200 dark:bg-gray-700' : ''
-                      }`}
-                      onClick={() => handleAddTagToSelectedContacts(tag.name, selectedContact)}
-                    >
-                      <Lucide icon="User" className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
-                      <span className="text-gray-800 dark:text-gray-200">{tag.name}</span>
-                    </button>
-                  </Menu.Item>
-                ))}
+              <Menu.Items className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10">
+                <Menu.Item>
+                  <button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md" onClick={() => selectedContact?.tags?.includes('snooze') ? handleUnsnooze(selectedContact) : handleSnooze(selectedContact)}>
+                    <Lucide icon={selectedContact?.tags?.includes('snooze') ? "AlarmClockOff" : "AlarmClock"} className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
+                    <span className="text-gray-800 dark:text-gray-200">{selectedContact?.tags?.includes('snooze') ? "Unsnooze" : "Snooze"}</span>
+                  </button>
+                </Menu.Item>
+                <Menu.Item>
+                  <button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md" onClick={() => selectedContact?.tags?.includes('resolved') ? handleUnresolve(selectedContact) : handleResolve(selectedContact)}>
+                    <Lucide icon="CheckCircle" className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
+                    <span className="text-gray-800 dark:text-gray-200">{selectedContact?.tags?.includes('resolved') ? "Unresolve" : "Resolve"}</span>
+                  </button>
+                </Menu.Item>
+                <Menu.Item>
+                  <Menu as="div" className="relative inline-block text-left w-full">
+                    <Menu.Button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
+                      <Lucide icon="Users" className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
+                      <span className="text-gray-800 dark:text-gray-200">Assign Employee</span>
+                    </Menu.Button>
+                    <Menu.Items className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10 overflow-y-auto max-h-96">
+                      <div className="mb-2">
+                        <input
+                          type="text"
+                          placeholder="Search employees..."
+                          value={employeeSearch}
+                          onChange={(e) => setEmployeeSearch(e.target.value)}
+                          className="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                        />
+                      </div>
+                      {employeeList
+                        .filter(employee => {
+                          if (userRole === '4' || userRole === '2') {
+                            const shouldInclude = employee.role === '2' && employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                            return shouldInclude;
+                          }
+                          const shouldInclude = employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                          return shouldInclude;
+                        })
+                        .map((employee) => {
+                          return (
+                            <Menu.Item key={employee.id}>
+                              <button
+                                className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                                onClick={() => handleAddTagToSelectedContacts(employee.name, selectedContact)}
+                              >
+                                <span className="text-gray-800 dark:text-gray-200">{employee.name}</span>
+                              </button>
+                            </Menu.Item>
+                          );
+                        })}
+                    </Menu.Items>
+                  </Menu>
+                </Menu.Item>
+                <Menu.Item>
+                  <Menu as="div" className="relative inline-block text-left w-full">
+                    <Menu.Button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
+                      <Lucide icon="Tag" className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
+                      <span className="text-gray-800 dark:text-gray-200">Add Tag</span>
+                    </Menu.Button>
+                    <Menu.Items className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10 max-h-60 overflow-y-auto">
+                      {tagList.map((tag) => (
+                        <Menu.Item key={tag.id}>
+                          <button
+                            className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                            onClick={() => handleAddTagToSelectedContacts(tag.name, selectedContact)}
+                          >
+                            <span className="text-gray-800 dark:text-gray-200">{tag.name}</span>
+                          </button>
+                        </Menu.Item>
+                      ))}
+                    </Menu.Items>
+                  </Menu>
+                </Menu.Item>
+                <Menu.Item>
+                  <button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md" onClick={handleMessageSearchClick}>
+                    <Lucide icon={isMessageSearchOpen ? "X" : "Search"} className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
+                    <span className="text-gray-800 dark:text-gray-200">{isMessageSearchOpen ? "Close" : "Open"} Search</span>
+                  </button>
+                </Menu.Item>
               </Menu.Items>
             </Menu>
-            <button className="p-2 m-0 !box" onClick={handleEyeClick}>
-              <span className="flex items-center justify-center w-5 h-5">
-                <Lucide icon={isTabOpen ? "X" : "Eye"} className="w-5 h-5 text-gray-800 dark:text-gray-200" />
-              </span>
-            </button>
-            <button className="p-2 m-0 !box" onClick={handleMessageSearchClick}>
-              <span className="flex items-center justify-center w-5 h-5">
-                <Lucide icon={isMessageSearchOpen ? "X" : "Search"} className="w-5 h-5 text-gray-800 dark:text-gray-200" />
-              </span>
-            </button>
           </div>
-          <Menu as="div" className="sm:hidden relative inline-block text-left">
-            <Menu.Button as={Button} className="p-2 !box m-0">
-              <span className="flex items-center justify-center w-5 h-5">
-                <Lucide icon="MoreVertical" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
-              </span>
-            </Menu.Button>
-            <Menu.Items className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10">
-              <Menu.Item>
-                <button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md" onClick={() => selectedContact?.tags?.includes('snooze') ? handleUnsnooze(selectedContact) : handleSnooze(selectedContact)}>
-                  <Lucide icon={selectedContact?.tags?.includes('snooze') ? "AlarmClockOff" : "AlarmClock"} className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
-                  <span className="text-gray-800 dark:text-gray-200">{selectedContact?.tags?.includes('snooze') ? "Unsnooze" : "Snooze"}</span>
-                </button>
-              </Menu.Item>
-              <Menu.Item>
-                <button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md" onClick={() => selectedContact?.tags?.includes('resolved') ? handleUnresolve(selectedContact) : handleResolve(selectedContact)}>
-                  <Lucide icon="CheckCircle" className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
-                  <span className="text-gray-800 dark:text-gray-200">{selectedContact?.tags?.includes('resolved') ? "Unresolve" : "Resolve"}</span>
-                </button>
-              </Menu.Item>
-              <Menu.Item>
-                <Menu as="div" className="relative inline-block text-left w-full">
-                  <Menu.Button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
-                    <Lucide icon="Users" className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
-                    <span className="text-gray-800 dark:text-gray-200">Assign Employee</span>
-                  </Menu.Button>
-                  <Menu.Items className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10 overflow-y-auto max-h-96">
-                    <div className="mb-2">
-                      <input
-                        type="text"
-                        placeholder="Search employees..."
-                        value={employeeSearch}
-                        onChange={(e) => setEmployeeSearch(e.target.value)}
-                        className="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-                      />
-                    </div>
-                    {employeeList
-                      .filter(employee => {
-                        if (userRole === '4' || userRole === '2') {
-                          const shouldInclude = employee.role === '2' && employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
-                          return shouldInclude;
-                        }
-                        const shouldInclude = employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
-                        return shouldInclude;
-                      })
-                      .map((employee) => {
-                        return (
-                          <Menu.Item key={employee.id}>
-                            <button
-                              className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
-                              onClick={() => handleAddTagToSelectedContacts(employee.name, selectedContact)}
-                            >
-                              <span className="text-gray-800 dark:text-gray-200">{employee.name}</span>
-                            </button>
-                          </Menu.Item>
-                        );
-                      })}
-                  </Menu.Items>
-                </Menu>
-              </Menu.Item>
-              <Menu.Item>
-                <Menu as="div" className="relative inline-block text-left w-full">
-                  <Menu.Button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
-                    <Lucide icon="Tag" className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
-                    <span className="text-gray-800 dark:text-gray-200">Add Tag</span>
-                  </Menu.Button>
-                  <Menu.Items className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10 max-h-60 overflow-y-auto">
-                    {tagList.map((tag) => (
-                      <Menu.Item key={tag.id}>
-                        <button
-                          className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
-                          onClick={() => handleAddTagToSelectedContacts(tag.name, selectedContact)}
-                        >
-                          <span className="text-gray-800 dark:text-gray-200">{tag.name}</span>
-                        </button>
-                      </Menu.Item>
-                    ))}
-                  </Menu.Items>
-                </Menu>
-              </Menu.Item>
-              <Menu.Item>
-                <button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md" onClick={handleEyeClick}>
-                  <Lucide icon={isTabOpen ? "X" : "Eye"} className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
-                  <span className="text-gray-800 dark:text-gray-200">{isTabOpen ? "Close" : "View"} Details</span>
-                </button>
-              </Menu.Item>
-              <Menu.Item>
-                <button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md" onClick={handleMessageSearchClick}>
-                  <Lucide icon={isMessageSearchOpen ? "X" : "Search"} className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
-                  <span className="text-gray-800 dark:text-gray-200">{isMessageSearchOpen ? "Close" : "Open"} Search</span>
-                </button>
-              </Menu.Item>
-            </Menu.Items>
-          </Menu>
         </div>
-      </div>
-      <div className="flex-1 overflow-y-auto p-2" 
-        style={{
-          paddingBottom: "100px",
-          backgroundColor: 'white',
-          backgroundSize: 'cover',
-          backgroundRepeat: 'no-repeat',
-          borderBottomLeftRadius: '10px',
-          borderBottomRightRadius: '10px',
-        }}
-        ref={messageListRef}>
-        {isLoading2 && (
-          <div className="fixed top-0 left-0 right-0 bottom-0 flex justify-center items-center bg-opacity-50">
-            <div className="items-center absolute top-1/2 left-2/2 transform -translate-x-1/3 -translate-y-1/2 bg-white dark:bg-gray-800 p-4 rounded-md shadow-lg">
-              <div role="status">
-                <div className="flex flex-col items-center justify-end col-span-6 sm:col-span-3 xl:col-span-2">
-                  <LoadingIcon icon="three-dots" className="w-20 h-20 p-4 text-gray-800 dark:text-gray-200" />
-                  <div className="mt-2 text-xs text-center text-gray-800 dark:text-gray-200">Fetching Conversation...</div>
+        <div className="flex-1 overflow-y-auto p-2" 
+          style={{
+            paddingBottom: "100px",
+            backgroundColor: 'white',
+            backgroundSize: 'cover',
+            backgroundRepeat: 'no-repeat',
+            borderBottomLeftRadius: '10px',
+            borderBottomRightRadius: '10px',
+          }}
+          ref={messageListRef}>
+          {isLoading2 && (
+            <div className="fixed top-0 left-0 right-0 bottom-0 flex justify-center items-center bg-opacity-50">
+              <div className="items-center absolute top-1/2 left-2/2 transform -translate-x-1/3 -translate-y-1/2 bg-white dark:bg-gray-800 p-4 rounded-md shadow-lg">
+                <div role="status">
+                  <div className="flex flex-col items-center justify-end col-span-6 sm:col-span-3 xl:col-span-2">
+                    <LoadingIcon icon="three-dots" className="w-20 h-20 p-4 text-gray-800 dark:text-gray-200" />
+                    <div className="mt-2 text-xs text-center text-gray-800 dark:text-gray-200">Fetching Conversation...</div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-        )}
-        {selectedChatId && (
-          <>
-            {messages
-              .filter((message) => message.type !== 'action'&& 
-              message.type !== 'e2e_notification' && 
-              message.type !== 'notification_template'&&
-              (userData?.company !== "0123" || 
-                (userData?.phone === undefined || 
-                phoneCount === undefined || 
-                phoneCount === 0 ||
-                message.phoneIndex === undefined || 
-                message.phoneIndex === null || 
-                message.phoneIndex === userData?.phone)))
-              .slice()
-              .reverse()
-              .map((message, index, array) => {
-                const previousMessage = messages[index - 1];
-                const showDateHeader =
-                  index === 0 ||
-                  !isSameDay(
-                    new Date(array[index - 1]?.createdAt ?? array[index - 1]?.dateAdded ?? 0),
-                    new Date(message.createdAt ?? message.dateAdded ?? 0)
-                  );
-                  const isMyMessage = message.from_me;
-                  const prevMessage = messages[index - 1];
-                  const nextMessage = messages[index + 1];
-                  
-                  const isFirstInSequence = !prevMessage || prevMessage.from_me !== message.from_me;
-                  const isLastInSequence = !nextMessage || nextMessage.from_me !== message.from_me;
-                  
-                  let messageClass;
-                  if (isMyMessage) {
-                    messageClass = isFirstInSequence ? myFirstMessageClass :
-                                   isLastInSequence ? myLastMessageClass :
-                                   myMiddleMessageClass;
-                  } else {
-                    messageClass = isFirstInSequence ? otherFirstMessageClass :
-                                   isLastInSequence ? otherLastMessageClass :
-                                   otherMiddleMessageClass;
-                  }
+          )}
+          {selectedChatId && (
+            <>
+              {messages
+                .filter((message) => message.type !== 'action'&& 
+                message.type !== 'e2e_notification' && 
+                message.type !== 'notification_template'&&
+                (userData?.company !== "0123" || 
+                  (userData?.phone === undefined || 
+                  phoneCount === undefined || 
+                  phoneCount === 0 ||
+                  message.phoneIndex === undefined || 
+                  message.phoneIndex === null || 
+                  message.phoneIndex === userData?.phone)))
+                .slice()
+                .reverse()
+                .map((message, index, array) => {
+                  const previousMessage = messages[index - 1];
+                  const showDateHeader =
+                    index === 0 ||
+                    !isSameDay(
+                      new Date(array[index - 1]?.createdAt ?? array[index - 1]?.dateAdded ?? 0),
+                      new Date(message.createdAt ?? message.dateAdded ?? 0)
+                    );
+                    const isMyMessage = message.from_me;
+                    const prevMessage = messages[index - 1];
+                    const nextMessage = messages[index + 1];
+                    
+                    const isFirstInSequence = !prevMessage || prevMessage.from_me !== message.from_me;
+                    const isLastInSequence = !nextMessage || nextMessage.from_me !== message.from_me;
+                    
+                    let messageClass;
+                    if (isMyMessage) {
+                      messageClass = isFirstInSequence ? myFirstMessageClass :
+                                     isLastInSequence ? myLastMessageClass :
+                                     myMiddleMessageClass;
+                    } else {
+                      messageClass = isFirstInSequence ? otherFirstMessageClass :
+                                     isLastInSequence ? otherLastMessageClass :
+                                     otherMiddleMessageClass;
+                    }
 
   return (
                   <React.Fragment key={message.id}>
@@ -7775,11 +7760,11 @@ console.log(prompt);
                               </>
                             )}
                             {message.name && <span className="ml-2 text-gray-400 dark:text-gray-600">{message.name}</span>}
-                            {message.phoneIndex !== undefined && (
-                            <div className="text-xs text-white-500 dark:text-gray-400 px-2 py-1">
-                              {phoneNames[message.phoneIndex] || `Phone ${message.phoneIndex + 1}`}
-                            </div>
-                          )}
+                            {message.phoneIndex !== undefined && message.phoneIndex !== null && (
+                              <div className="text-xs text-white-500 dark:text-gray-400 px-2 py-1">
+                                {phoneNames[message.phoneIndex] || `Phone ${message.phoneIndex + 1}`}
+                              </div>
+                            )}
                             {formatTimestamp(message.createdAt || message.dateAdded)}
                           
                           </div>
@@ -7831,12 +7816,12 @@ console.log(prompt);
          <div className="flex mb-1">
             <button
               className={`px-4 py-2 mr-1 rounded-lg ${
-                messageMode === 'reply' || messageMode === `phone${selectedContact?.phoneIndex + 1}`
+                messageMode === 'reply' || messageMode === `phone${selectedContact?.phoneIndex ?? 0 + 1}`
                   ? 'bg-primary text-white'
                   : 'bg-white text-gray-800 dark:bg-gray-800 dark:text-gray-200'
               }`}
               onClick={() => {
-                const phoneIndex = selectedContact?.phoneIndex || 0;
+                const phoneIndex = selectedContact?.phoneIndex ?? 0;
                 setMessageMode(`phone${phoneIndex + 1}`);
               }}
             >
@@ -8327,6 +8312,269 @@ console.log(prompt);
   )}
 </div>
 
+<div className="p-2 h-full w-full md:w-1/2 bg-white dark:bg-gray-800 border-l border-gray-300 dark:border-gray-700 overflow-y-auto shadow-lg">
+        <div className="bg-white dark:bg-gray-700 rounded-lg shadow-md overflow-hidden">
+          <div className="bg-blue-50 dark:bg-blue-900 px-6 py-4 border-b border-gray-200 dark:border-gray-600">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-200">Contact Information</h3>
+              <div className="flex space-x-3">
+                {!isEditing ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        setIsEditing(true);
+                        setEditedContact({ ...selectedContact });
+                      }}
+                      className="px-4 py-2 bg-primary text-white rounded-md hover:bg-primary-dark transition duration-200"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (window.confirm('Are you sure you want to delete this contact? This action cannot be undone.')) {
+                          const user = auth.currentUser;
+                          const docUserRef = doc(firestore, 'user', user?.email!);
+                          getDoc(docUserRef).then((docUserSnapshot) => {
+                            if (!docUserSnapshot.exists()) {
+                              console.log('No such document for user!');
+                              return;
+                            }
+                            const userData = docUserSnapshot.data();
+                            const companyId = userData.companyId;
+                            const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
+                            deleteDoc(contactRef).then(() => {
+                              toast.success('Contact deleted successfully');
+                              setSelectedContact(null);
+                              setContacts(contacts.filter(contact => contact.id !== selectedContact.id));
+                              setIsTabOpen(false);
+                            }).catch((error) => {
+                              console.error('Error deleting contact:', error);
+                              toast.error('Failed to delete contact');
+                            });
+                          });
+                        }
+                      }}
+                      className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition duration-200"
+                    >
+                      Delete
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={handleSaveContact}
+                      className="px-4 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 transition duration-200"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsEditing(false);
+                        setEditedContact(null);
+                      }}
+                      className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600 transition duration-200"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+          
+          <div className="p-6">
+              {/* Phone Index Selector */}
+              <div className="mb-6 flex justify-between items-center">
+                <p className="text-md font-semibold text-gray-500 dark:text-gray-400">Active Phone:</p>
+                {selectedContact ? ( // Add conditional rendering check
+                  <select
+                    value={selectedContact?.phoneIndex ?? 0}
+                    onChange={async (e) => {
+                      const newPhoneIndex = parseInt(e.target.value);
+                      // Update local state
+                      setSelectedContact({ ...selectedContact, phoneIndex: newPhoneIndex });
+                      const user = auth.currentUser;
+                      const docUserRef = doc(firestore, 'user', user?.email!);
+                      const docUserSnapshot = await getDoc(docUserRef);
+                      if (!docUserSnapshot.exists()) {
+                        console.log('No such document for user!');
+                        return;
+                      }
+                      const userData = docUserSnapshot.data();
+                      const companyId = userData.companyId;
+                      // Update Firestore
+                      try {
+                        const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
+                        await updateDoc(contactRef, { phoneIndex: newPhoneIndex });
+                        toast.success('Phone updated successfully');
+                      } catch (error) {
+                        console.error('Error updating phone:', error);
+                        toast.error('Failed to update phone');
+                        // Revert local state on error
+                        setSelectedContact({ ...selectedContact });
+                      }
+                    }}
+                    className="px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 ml-4 w-40"
+                  >
+                    {Object.entries(phoneNames).map(([index, name]) => (
+                      <option key={index} value={index}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+              </div>
+              <div className="grid grid-cols-2 gap-6">
+  {[
+    { label: "First Name", key: "contactName" },
+    { label: "Last Name", key: "lastName" },
+    { label: "Email", key: "email" },
+    { label: "Company", key: "companyName" },
+    { label: "Address", key: "address1" },
+    { label: "Website", key: "website" },
+  ].map((item, index) => (
+    <div key={index} className="col-span-1">
+      <p className="text-md font-semibold text-gray-500 dark:text-gray-400">{item.label}</p>
+      {isEditing ? (
+        <input
+          type="text"
+          value={editedContact?.[item.key as keyof Contact] || ''}
+          onChange={(e) => setEditedContact({ ...editedContact, [item.key]: e.target.value } as Contact)}
+          className="w-full mt-2 px-3 py-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+        />
+      ) : (
+        <p className="text-gray-800 dark:text-gray-200 mt-2">
+          {selectedContact?.[item.key as keyof Contact] || 'N/A'}
+        </p>
+      )}
+    </div>
+  ))}
+</div>
+            <div className="border-t border-gray-200 dark:border-gray-600 mt-6 pt-6"></div>
+            {selectedContact?.tags?.some((tag: string) => employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase())) && (
+                    <div className="w-full">
+                      <h4 className="font-semibold text-gray-500 dark:text-gray-400 inline-block mr-2">Employees Assigned:</h4>
+                      <div className="flex flex-wrap gap-3 mt-3">
+                      {selectedContact?.tags
+                        ?.filter((tag: string) => employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase()))
+                        .map((employeeTag: string, index: number) => (
+                            <div key={index} className="inline-flex items-center bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 text-md font-semibold px-4 py-2 rounded-full border border-green-400 dark:border-green-600">
+                              <span>{employeeTag}</span>
+                              <button
+                                className="ml-3 focus:outline-none"
+                                onClick={() => handleRemoveTag(selectedContact.id, employeeTag)}
+                              >
+                                <Lucide icon="X" className="w-5 h-5 text-green-600 hover:text-green-800 dark:text-green-300 dark:hover:text-green-100" />
+                              </button>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+          </div>
+        </div>
+        <div className="bg-white dark:bg-gray-700 rounded-lg shadow-md overflow-hidden mt-6">
+          <div className="bg-indigo-50 dark:bg-indigo-900 px-6 py-4 border-b border-gray-200 dark:border-gray-600">
+            <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-200">Tags</h3>
+          </div>
+          <div className="p-6">
+            <div className="flex flex-wrap gap-3">
+              {selectedContact && selectedContact.tags && selectedContact.tags.length > 0 ? (
+                <>
+                  {selectedContact.tags
+                    .filter((tag: string) => 
+                      tag.toLowerCase() !== 'stop bot' && 
+                      !employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase())
+                    )
+                    .map((tag: string, index: number) => (
+                      <div key={index} className="inline-flex items-center bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-200 text-md font-semibold px-4 py-2 rounded-full border border-blue-400 dark:border-blue-600">
+                        <span>{tag}</span>
+                        <button
+                          className="ml-3 focus:outline-none"
+                          onClick={() => handleRemoveTag(selectedContact.id, tag)}
+                        >
+                          <Lucide icon="X" className="w-5 h-5 text-blue-600 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-100" />
+                        </button>
+                      </div>
+                    ))}
+                </>
+              ) : (
+                <span className="text-gray-500 dark:text-gray-400">No tags assigned</span>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="bg-white dark:bg-gray-700 rounded-lg shadow-md overflow-hidden mt-6">
+          <div className="bg-indigo-50 dark:bg-indigo-900 px-6 py-4 border-b border-gray-200 dark:border-gray-600">
+            <h4 className="text-xl font-semibold text-gray-800 dark:text-gray-200">Conversation Actions</h4>
+          </div>
+          <div className="p-6">
+            <div className="mb-6">
+              <div className="flex justify-between items-center">
+                <span className="text-xl text-gray-800 dark:text-gray-200">Assigned Agent</span>
+                <button
+                  onClick={() => handleAddTagToSelectedContacts(userData?.name || '', selectedContact)}
+                  className="text-primary hover:text-primary-dark dark:text-primary-light flex items-center"
+                >
+                  <span className="mr-3">→</span>
+                  Assign to me
+                </button>
+              </div>
+              
+              <div className="relative mt-3">
+                <input
+                  type="text"
+                  placeholder="Search employees..."
+                  value={employeeSearch}
+                  onChange={(e) => setEmployeeSearch(e.target.value)}
+                  className="w-full p-3 mb-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                <select
+                  className="w-full p-3 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary"
+                  value={selectedContact?.tags?.find((tag: string) => employeeList.some(emp => emp.name === tag)) || 'None'}
+                  onChange={(e) => {
+                    if (e.target.value !== 'None') {
+                      // Remove existing employee assignments first
+                      const existingEmployeeTags = selectedContact?.tags?.filter((tag: string) => 
+                        employeeList.some(emp => emp.name === tag)
+                      ) || [];
+                      existingEmployeeTags.forEach((tag: string) => {
+                        handleRemoveTag(selectedContact.id, tag);
+                      });
+                      // Add new assignment
+                      handleAddTagToSelectedContacts(e.target.value, selectedContact);
+                    } else {
+                      // Remove all employee assignments
+                      const existingEmployeeTags = selectedContact?.tags?.filter((tag: string) => 
+                        employeeList.some(emp => emp.name === tag)
+                      ) || [];
+                      existingEmployeeTags.forEach((tag: string) => {
+                        handleRemoveTag(selectedContact.id, tag);
+                      });
+                    }
+                  }}
+                >
+                  <option value="None">None</option>
+                  {employeeList
+                    .filter(employee => {
+                      const matchesSearch = employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                      if (userRole === '4' || userRole === '2') {
+                        return employee.role === '2' && employee.name !== userData?.name && matchesSearch;
+                      }
+                      return employee.name !== userData?.name && matchesSearch;
+                    })
+                    .map((employee) => (
+                      <option key={employee.id} value={employee.name}>
+                        {employee.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
 {selectedMessages.length > 0 && (
   <div className="fixed bottom-16 right-2 md:right-10 space-y-2 md:space-y-0 md:space-x-4 flex flex-col md:flex-row">
     <button
@@ -8435,293 +8683,6 @@ console.log(prompt);
             {userRole === '1' && (
               <span className="text-sm text-gray-500 dark:text-gray-400">{selectedContact.phone}</span>
             )}
-          </div>
-        </div>
-        <button onClick={handleEyeClick} className="p-2 bg-gray-200 dark:bg-gray-700 rounded-full hover:bg-gray-300 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 dark:focus:ring-gray-500 transition-all duration-200">
-          <Lucide icon="X" className="w-6 h-6 text-gray-800 dark:text-gray-200" />
-        </button>
-      </div>
-      <div className="flex-grow overflow-y-auto p-4 space-y-4">
-        <div className="bg-white dark:bg-gray-700 rounded-lg shadow-md overflow-hidden">
-          <div className="bg-blue-50 dark:bg-blue-900 px-4 py-3 border-b border-gray-200 dark:border-gray-600">
-            <div className="flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Contact Information</h3>
-              <div className="flex space-x-2">
-                {!isEditing ? (
-                  <>
-                    <button
-                      onClick={() => {
-                        setIsEditing(true);
-                        setEditedContact({ ...selectedContact });
-                      }}
-                      className="px-3 py-1 bg-primary text-white rounded-md hover:bg-primary-dark transition duration-200"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (window.confirm('Are you sure you want to delete this contact? This action cannot be undone.')) {
-                          const user = auth.currentUser;
-                          const docUserRef = doc(firestore, 'user', user?.email!);
-                          getDoc(docUserRef).then((docUserSnapshot) => {
-                            if (!docUserSnapshot.exists()) {
-                              console.log('No such document for user!');
-                              return;
-                            }
-                            const userData = docUserSnapshot.data();
-                            const companyId = userData.companyId;
-                            const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
-                            deleteDoc(contactRef).then(() => {
-                              toast.success('Contact deleted successfully');
-                              handleEyeClick();
-                              setSelectedContact(null);
-                              setContacts(contacts.filter(contact => contact.id !== selectedContact.id));
-                              setIsTabOpen(false);
-                            }).catch((error) => {
-                              console.error('Error deleting contact:', error);
-                              toast.error('Failed to delete contact');
-                            });
-                          });
-                        }
-                      }}
-                      className="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition duration-200"
-                    >
-                      Delete
-                    </button>
-                  </>
-                ) : (
-                  <div className="flex space-x-2">
-                    <button
-                      onClick={handleSaveContact}
-                      className="px-3 py-1 bg-green-500 text-white rounded-md hover:bg-green-600 transition duration-200"
-                    >
-                      Save
-                    </button>
-                    <button
-                      onClick={() => {
-                        setIsEditing(false);
-                        setEditedContact(null);
-                      }}
-                      className="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition duration-200"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-          
-          <div className="p-4">
-              {/* Phone Index Selector */}
-              <div className="mb-4 flex justify-between items-center">
-                <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Active Phone:</p>
-                <select
-                  value={selectedContact.phoneIndex ?? 0}
-                  onChange={async (e) => {
-                    const newPhoneIndex = parseInt(e.target.value);
-                    // Update local state
-                    setSelectedContact({ ...selectedContact, phoneIndex: newPhoneIndex });
-                    const user = auth.currentUser;
-                    const docUserRef = doc(firestore, 'user', user?.email!);
-                    const docUserSnapshot = await getDoc(docUserRef);
-                    if (!docUserSnapshot.exists()) {
-                      console.log('No such document for user!');
-                      return;
-                    }
-                    const userData = docUserSnapshot.data();
-                    const companyId = userData.companyId;
-                    // Update Firestore
-                    try {
-                      const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
-                      await updateDoc(contactRef, { phoneIndex: newPhoneIndex });
-                      toast.success('Phone updated successfully');
-                    } catch (error) {
-                      console.error('Error updating phone:', error);
-                      toast.error('Failed to update phone');
-                      // Revert local state on error
-                      setSelectedContact({ ...selectedContact });
-                    }
-                  }}
-                  className="px-2 py-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 ml-4 w-32"
-                >
-                  {Object.entries(phoneNames).map(([index, name]) => (
-                    <option key={index} value={index}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            <div className="grid grid-cols-2 gap-4">
-
-              {[
-                { label: "First Name", key: "contactName" },
-                { label: "Last Name", key: "lastName" },
-                { label: "Email", key: "email" },
-                { label: "Company", key: "companyName" },
-                { label: "Address", key: "address1" },
-                { label: "Website", key: "website" },
-              ].map((item, index) => (
-                <div key={index} className="col-span-1">
-                  <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">{item.label}</p>
-                  {isEditing ? (
-                    <input
-                      type="text"
-                      value={editedContact?.[item.key as keyof Contact] || ''}
-                      onChange={(e) => setEditedContact({ ...editedContact, [item.key]: e.target.value } as Contact)}
-                      className="w-full mt-1 px-2 py-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                    />
-                  ) : (
-                    <p className="text-gray-800 dark:text-gray-200">
-                      {selectedContact[item.key as keyof Contact] || 'N/A'}
-                    </p>
-                  )}
-                </div>
-              ))}
-              <div className="col-span-1">
-                <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Status</p>
-                {isEditing ? (
-                  <select
-                  value={editedContact?.status || 'New'}
-                  onChange={(e) => setEditedContact({ ...editedContact!, status: e.target.value as Contact['status'] })}
-                  className="mt-1 block w-full bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                >
-                  <option value="New">New</option>
-                  <option value="Reach">Reach</option>
-                  <option value="Qualified">Qualified</option>
-                  <option value="Disqualified">Disqualified</option>
-                  <option value="Negotiating">Negotiating</option>
-                  <option value="Won">Won</option>
-                  <option value="Lost">Lost</option>
-                </select>
-                ) : (
-                  <p className="text-gray-800 dark:text-gray-200">
-                    {selectedContact.status || 'N/A'}
-                  </p>
-                )}
-              </div>
-            </div>
-            <div className="border-t border-gray-200 dark:border-gray-600 mt-4 pt-4"></div>
-            {selectedContact.tags.some((tag: string) => employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase())) && (
-                    <div className="w-full">
-                      <h4 className="font-semibold text-gray-500 dark:text-gray-400 inline-block mr-2">Employees Assigned:</h4>
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {selectedContact.tags
-                          .filter((tag: string) => employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase()))
-                          .map((employeeTag: string, index: number) => (
-                            <div key={index} className="inline-flex items-center bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-200 text-sm font-semibold px-3 py-1 rounded-full border border-green-400 dark:border-green-600">
-                              <span>{employeeTag}</span>
-                              <button
-                                className="ml-2 focus:outline-none"
-                                onClick={() => handleRemoveTag(selectedContact.id, employeeTag)}
-                              >
-                                <Lucide icon="X" className="w-4 h-4 text-green-600 hover:text-green-800 dark:text-green-300 dark:hover:text-green-100" />
-                              </button>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  )}
-          </div>
-        </div>
-        <div className="bg-white dark:bg-gray-700 rounded-lg shadow-md overflow-hidden">
-          <div className="bg-indigo-50 dark:bg-indigo-900 px-4 py-3 border-b border-gray-200 dark:border-gray-600">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Tags</h3>
-          </div>
-          <div className="p-4">
-            <div className="flex flex-wrap gap-2">
-              {selectedContact && selectedContact.tags && selectedContact.tags.length > 0 ? (
-                <>
-                  {selectedContact.tags
-                    .filter((tag: string) => 
-                      tag.toLowerCase() !== 'stop bot' && 
-                      !employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase())
-                    )
-                    .map((tag: string, index: number) => (
-                      <div key={index} className="inline-flex items-center bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-200 text-sm font-semibold px-3 py-1 rounded-full border border-blue-400 dark:border-blue-600">
-                        <span>{tag}</span>
-                        <button
-                          className="ml-2 focus:outline-none"
-                          onClick={() => handleRemoveTag(selectedContact.id, tag)}
-                        >
-                          <Lucide icon="X" className="w-4 h-4 text-blue-600 hover:text-blue-800 dark:text-blue-300 dark:hover:text-blue-100" />
-                        </button>
-                      </div>
-                    ))}
-                </>
-              ) : (
-                <span className="text-gray-500 dark:text-gray-400">No tags assigned</span>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="bg-white dark:bg-gray-700 rounded-lg shadow-md overflow-hidden mt-4">
-          <div className="bg-indigo-50 dark:bg-indigo-900 px-4 py-3 border-b border-gray-200 dark:border-gray-600">
-            <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Conversation Actions</h4>
-          </div>
-          <div className="p-4">
-            <div className="mb-4">
-              <div className="flex justify-between items-center">
-                <span className="text-lg text-gray-800 dark:text-gray-200">Assigned Agent</span>
-                <button
-                  onClick={() => handleAddTagToSelectedContacts(userData?.name || '', selectedContact)}
-                  className="text-primary hover:text-primary-dark dark:text-primary-light flex items-center"
-                >
-                  <span className="mr-2">→</span>
-                  Assign to me
-                </button>
-              </div>
-              
-              <div className="relative mt-2">
-                <input
-                  type="text"
-                  placeholder="Search employees..."
-                  value={employeeSearch}
-                  onChange={(e) => setEmployeeSearch(e.target.value)}
-                  className="w-full p-2 mb-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary"
-                />
-                <select
-                  className="w-full p-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary"
-                  value={selectedContact?.tags?.find((tag: string) => employeeList.some(emp => emp.name === tag)) || 'None'}
-                  onChange={(e) => {
-                    if (e.target.value !== 'None') {
-                      // Remove existing employee assignments first
-                      const existingEmployeeTags = selectedContact?.tags?.filter((tag: string) => 
-                        employeeList.some(emp => emp.name === tag)
-                      ) || [];
-                      existingEmployeeTags.forEach((tag: string) => {
-                        handleRemoveTag(selectedContact.id, tag);
-                      });
-                      // Add new assignment
-                      handleAddTagToSelectedContacts(e.target.value, selectedContact);
-                    } else {
-                      // Remove all employee assignments
-                      const existingEmployeeTags = selectedContact?.tags?.filter((tag: string) => 
-                        employeeList.some(emp => emp.name === tag)
-                      ) || [];
-                      existingEmployeeTags.forEach((tag: string) => {
-                        handleRemoveTag(selectedContact.id, tag);
-                      });
-                    }
-                  }}
-                >
-                  <option value="None">None</option>
-                  {employeeList
-                    .filter(employee => {
-                      const matchesSearch = employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
-                      if (userRole === '4' || userRole === '2') {
-                        return employee.role === '2' && employee.name !== userData?.name && matchesSearch;
-                      }
-                      return employee.name !== userData?.name && matchesSearch;
-                    })
-                    .map((employee) => (
-                      <option key={employee.id} value={employee.name}>
-                        {employee.name}
-                      </option>
-                    ))}
-                </select>
-              </div>
-            </div>
           </div>
         </div>
       </div>

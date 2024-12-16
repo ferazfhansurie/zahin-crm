@@ -86,122 +86,68 @@ function LoadingPage() {
   const [trialExpired, setTrialExpired] = useState(false);
   
   const fetchQRCode = async () => {
-    const auth = getAuth(app);
-    const user = auth.currentUser;
-    let v2;
-    setIsLoading(true);
-    setIsQRLoading(true);
-    setError(null);
     try {
-      const docUserRef = doc(firestore, 'user', user?.email!);
-      const docUserSnapshot = await getDoc(docUserRef);
-      if (!docUserSnapshot.exists()) {
-        throw new Error("User document does not exist");
-      }
+      setIsLoading(true);
+      setIsQRLoading(true);
+      setError(null);
 
-      const dataUser = docUserSnapshot.data();
-      const companyId = dataUser.companyId;
-      setCompanyId(companyId);
-
-      const docRef = doc(firestore, 'companies', companyId);
-      const docSnapshot = await getDoc(docRef);
-      if (!docSnapshot.exists()) {
-        throw new Error("Company document does not exist");
-      }
-
-      const companyData = docSnapshot.data();
+      const auth = getAuth(app);
+      const user = auth.currentUser;
       
-      if (companyData.trialEndDate) {
-        const trialEnd = companyData.trialEndDate.toDate();
-        const now = new Date();
-        if (now > trialEnd) {
-          setTrialExpired(true);
-        
-          return;
-        }
-      }
-
-      v2 = companyData.v2;
-      setV2(v2);
-      if (!v2) {
-        // If "v2" is not present or is false, navigate to the next page
-        if (location.pathname === '/loading') {
-          if (initialContacts.name === "Infinity Pilates & Physiotherapy") {
-            navigate('/calendar');
-          } else {
-            navigate('/chat');
-          }
-        }
+      if (!user || !user.email) {
+        setError("No authenticated user found");
+        navigate('/login');
         return;
       }
 
-      // Only proceed with QR code and bot status if v2 exists
-      const botStatusResponse = await axios.get(`https://mighty-dane-newly.ngrok-free.app/api/bot-status/${companyId}`);
-
-      console.log(botStatusResponse.data);
-      if (botStatusResponse.status !== 200) {
-        throw new Error(`Unexpected response status: ${botStatusResponse.status}`);
+      // Get company ID first
+      const docUserRef = doc(firestore, 'user', user.email);
+      const docUserSnapshot = await getDoc(docUserRef);
+      
+      if (!docUserSnapshot.exists()) {
+        throw new Error("User document not found");
       }
-      let phoneCount = companyData.phoneCount ?? null;
-      if(phoneCount === null || phoneCount === 1){
-        const { status, qrCode } = botStatusResponse.data;
-        console.log(botStatusResponse.data); 
-        console.log('phonecount is 0'); 
+
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser?.companyId;
+      
+      if (!companyId) {
+        throw new Error("Company ID not found");
+      }
+
+      setCompanyId(companyId); // Set company ID in state
+
+      // Make API call with company ID
+      const response = await axios({
+        method: 'get',
+        url: `https://mighty-dane-newly.ngrok-free.app/api/bot-status/${companyId}`,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        withCredentials: false
+      });
+
+      // Handle response
+      if (response.data) {
+        const { status, qrCode } = response.data;
         setBotStatus(status);
         if (status === 'qr') {
           setQrCodeImage(qrCode);
-          console.log({companyId});
-        } else if (status === 'authenticated' || status === 'ready') {
-          console.log("Bot authenticated, preparing to fetch contacts");
-          setShouldFetchContacts(true);
-        }
-      } else {
-        console.log(botStatusResponse.data);
-        let anyAuthenticated = false;
-        for (let i = 0; i < botStatusResponse.data.length; i++) {
-          const status = botStatusResponse.data[i].status;
-          console.log(`Phone ${i + 1} status:`, status);
-          if (status === 'authenticated' || status === 'ready') {
-            anyAuthenticated = true;
-            break;
-          }
-        }
-        if (anyAuthenticated) {
-          console.log("At least one bot authenticated, preparing to fetch contacts");
-          setShouldFetchContacts(true);
-        } else {
-          console.log("No bots are authenticated yet");
-          for (let i = 0; i < botStatusResponse.data.length; i++) {
-            const status = botStatusResponse.data[i].status;
-            setBotStatus(status);
-            console.log(`Phone ${i + 1} status:`, status);
-            if (status === 'qr') {
-              const { status, qrCode } = botStatusResponse.data[i];
-              if (status === 'qr') {
-                setQrCodeImage(qrCode);
-              }
-              break;
-            }
-          }
-          
         }
       }
-   
-      setIsLoading(false);
+
     } catch (error) {
-      setIsLoading(false);
+      console.error('Error fetching QR code:', error);
       if (axios.isAxiosError(error)) {
+        // Handle specific axios errors
         if (error.code === 'ERR_NETWORK') {
-          setError('Network error. Please check your internet connection and try again.');
+          setError('Network error. Please check your connection and try again.');
         } else {
-          setError(error.response?.data || 'Failed to fetch QR code. Please try again.');
+          setError(error.response?.data?.message || 'Failed to fetch QR code');
         }
-      } else if (error instanceof Error) {
-        setError(error.message);
       } else {
-        setError('An unknown error occurred. Please try again.');
+        setError('An unexpected error occurred');
       }
-      console.error("Error fetching QR code:", error);
     } finally {
       setIsQRLoading(false);
       setIsLoading(false);
@@ -218,80 +164,94 @@ function LoadingPage() {
 
   useEffect(() => {
     const initWebSocket = async (retries = 3) => {
-      if (!wsConnected) {
-        try {
-          const auth = getAuth(app);
-          const user = auth.currentUser;
-          const docUserRef = doc(firestore, 'user', user?.email!);
-          const docUserSnapshot = await getDoc(docUserRef);
-          
-          if (!docUserSnapshot.exists()) {
-            if (retries > 0) {
-              console.log(`User document not found. Retrying... (${retries} attempts left)`);
-              setTimeout(() => initWebSocket(retries - 1), 2000); // Retry after 2 seconds
-              return;
-            } else {
-              throw new Error("User document does not exist after retries");
-            }
-          }
+      try {
+        const auth = getAuth(app);
+        const user = auth.currentUser;
 
-          const dataUser = docUserSnapshot.data();
-          const companyId = dataUser.companyId;
-          ws.current = new WebSocket(`wss://mighty-dane-newly.ngrok-free.app/ws/${user?.email}/${companyId}`);
-          ws.current.onopen = () => {
-            console.log('WebSocket connected');
-            setWsConnected(true);
-            setError('')
-          };
-          
-          ws.current.onmessage = async (event) => {
+        if (!user?.email) {
+          if (retries > 0) {
+            console.log(`Retrying WebSocket connection... (${retries} attempts left)`);
+            setTimeout(() => initWebSocket(retries - 1), 2000);
+            return;
+          }
+          throw new Error("No authenticated user found");
+        }
+
+        // Get company ID
+        const docUserRef = doc(firestore, 'user', user.email);
+        const docUserSnapshot = await getDoc(docUserRef);
+        
+        if (!docUserSnapshot.exists()) {
+          throw new Error("User document does not exist");
+        }
+
+        const dataUser = docUserSnapshot.data();
+        const companyId = dataUser.companyId;
+
+        // Close existing connection if any
+        if (ws.current) {
+          ws.current.close();
+        }
+
+        // Create new WebSocket connection
+        ws.current = new WebSocket(`wss://mighty-dane-newly.ngrok-free.app/ws/${user.email}/${companyId}`);
+
+        ws.current.onopen = () => {
+          console.log('WebSocket connected');
+          setWsConnected(true);
+          setError(null);
+        };
+
+        ws.current.onmessage = (event) => {
+          try {
             const data = JSON.parse(event.data);
             console.log('WebSocket message received:', data);
-      
+            
             if (data.type === 'auth_status') {
-              console.log(`Bot status: ${data.status}`);
               setBotStatus(data.status);
               if (data.status === 'qr') {
                 setQrCodeImage(data.qrCode);
-        
               } else if (data.status === 'authenticated' || data.status === 'ready') {
-                navigate('/chat');
-                
+                setShouldFetchContacts(true);
               }
-            } else if (data.type === 'progress') {
-              setBotStatus(data.status);
-              setCurrentAction(data.action);
-              setFetchedChats(data.fetchedChats);
-              setTotalChats(data.totalChats);
+            }
+          } catch (error) {
+            console.error('Error processing WebSocket message:', error);
+          }
+        };
 
-              if (data.action === 'done_process') {
-                setBotStatus(data.status);
-                setProcessingComplete(true);
-              }
-            }
-            if(data.status === 'authenticated' || data.status === 'ready'){
-              setBotStatus(data.status);
-              navigate('/chat');
-            }
-          };
-          
-          ws.current.onerror = (error) => {
-            console.error('WebSocket error:', error);
-            setError('WebSocket connection error. Please try again.');
-          };
-          
-          ws.current.onclose = () => {
-            console.log('WebSocket disconnected');
-            setWsConnected(false);
-          };
-        } catch (error) {
-          console.error('Error initializing WebSocket:', error);
-          setError('Failed to initialize WebSocket. Please try again.');
+        ws.current.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          setError('Connection error. Please try again.');
+          if (retries > 0) {
+            setTimeout(() => initWebSocket(retries - 1), 2000);
+          }
+        };
+
+        ws.current.onclose = () => {
+          console.log('WebSocket disconnected');
+          setWsConnected(false);
+          if (retries > 0) {
+            setTimeout(() => initWebSocket(retries - 1), 2000);
+          }
+        };
+
+      } catch (error) {
+        console.error('Error initializing WebSocket:', error);
+        if (retries > 0) {
+          setTimeout(() => initWebSocket(retries - 1), 2000);
         }
       }
     };
 
     initWebSocket();
+
+    return () => {
+      if (ws.current) {
+        ws.current.close();
+        ws.current = null;
+      }
+    };
   }, []);
 
   // New useEffect for WebSocket cleanup
@@ -525,6 +485,35 @@ useEffect(() => {
       setIsPairingCodeLoading(false);
     }
   };
+
+  useEffect(() => {
+    const auth = getAuth(app);
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      if (!user) {
+        navigate('/login');
+      }
+    });
+
+    return () => unsubscribe();
+  }, [navigate]);
+
+  useEffect(() => {
+    if (!initialContacts) {
+      setError("Configuration not loaded");
+      return;
+    }
+    // ... rest of your effect
+  }, [initialContacts]);
+
+  useEffect(() => {
+    if (botStatus === 'authenticated' || botStatus === 'ready') {
+      if (!contactsFetched) {
+        fetchContacts();
+      } else if (processingComplete) {
+        navigate('/chat');
+      }
+    }
+  }, [botStatus, contactsFetched, processingComplete]);
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-white dark:bg-gray-900 py-8">
