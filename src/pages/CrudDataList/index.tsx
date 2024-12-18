@@ -3904,9 +3904,9 @@ const getFilteredScheduledMessages = () => {
               </div>
             </div>
           </div>
-          <div className="w-full flex-shrink">
+          <div className="w-full flex-wrap">
             <div className="h-[calc(150vh-200px)] overflow-y-auto mb-4" ref={contactListRef}>
-              <table className="w-full border-collapse">
+              <table className="w-full border-collapse hidden sm:table">
                 <thead className="sticky top-0 bg-white dark:bg-gray-700 z-10 py-2">
                   <tr className="text-left">
                     <th className="p-4 font-medium text-gray-700 dark:text-gray-300">
@@ -4041,6 +4041,118 @@ const getFilteredScheduledMessages = () => {
                   })}
                 </tbody>
               </table>
+               {/* Mobile Layout - Shown only on small screens */}
+              <div className="sm:hidden">
+                {currentContacts.map((contact, index) => {
+                  const isSelected = selectedContacts.some((c) => c.phone === contact.phone);
+                  return (
+                    <div 
+                      key={index}
+                      className={`mb-4 p-4 rounded-lg border border-gray-200 dark:border-gray-700 ${
+                        isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-white dark:bg-gray-800'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center space-x-3">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleContactSelection(contact)}
+                            className="rounded border-gray-300"
+                          />
+                          {contact.profilePicUrl ? (
+                            <img 
+                              src={contact.profilePicUrl} 
+                              alt={contact.contactName || "Profile"} 
+                              className="w-10 h-10 rounded-full object-cover" 
+                            />
+                          ) : (
+                            <div className="w-10 h-10 border-2 border-gray-500 dark:border-gray-400 rounded-full flex items-center justify-center">
+                              {contact.chat_id && contact.chat_id.includes('@g.us') ? (
+                                <Lucide icon="Users" className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+                              ) : (
+                                <Lucide icon="User" className="w-5 h-5 text-gray-500 dark:text-gray-400" />
+                              )}
+                            </div>
+                          )}
+                          <div>
+                            <div className="font-medium text-gray-900 dark:text-white">
+                              {contact.contactName ? (contact.lastName ? `${contact.contactName} ${contact.lastName}` : contact.contactName) : contact.phone}
+                            </div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">
+                              {contact.phone ?? contact.source}
+                            </div>
+                          </div>
+                        </div>
+                        
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => {
+                              setCurrentContact(contact);
+                              setEditContactModal(true);
+                            }}
+                            className="p-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                            title="View/Edit"
+                          >
+                            <Lucide icon="Eye" className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => handleClick(contact.phone)}
+                            className="p-2 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300"
+                            title="Chat"
+                          >
+                            <Lucide icon="MessageSquare" className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setCurrentContact(contact);
+                              setDeleteConfirmationModal(true);
+                            }}
+                            className="p-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                            title="Delete"
+                          >
+                            <Lucide icon="Trash" className="w-5 h-5" />
+                          </button>
+                          </div>
+                      </div>
+
+                      <div className="mt-2">
+                        <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Points: {contact.points || 0}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {contact.tags && contact.tags.length > 0 ? (
+                            contact.tags.map((tag, index) => (
+                              <div key={index} className="relative group">
+                                <span className={`px-2 py-1 text-xs font-semibold rounded-full inline-flex justify-center items-center ${
+                                  employeeNames.includes(tag.toLowerCase())
+                                    ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
+                                    : 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
+                                }`}>
+                                  {tag.charAt(0).toUpperCase() + tag.slice(1)}
+                                </span>
+                                <button
+                                  className="absolute right-0 top-0 transform translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-red-500 hover:text-red-700"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveTag(contact.id!, tag);
+                                  }}
+                                >
+                                  <div className="w-4 h-4 bg-red-600 hover:bg-red-800 dark:bg-red-600 dark:hover:bg-red-800 rounded-full flex items-center justify-center">
+                                    <Lucide icon="X" className="w-3 h-3 text-white" />
+                                  </div>
+                                </button>
+                              </div>
+                            ))
+                          ) : (
+                            <span className="text-sm text-gray-500 dark:text-gray-400">No tags</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    );
+                })}
+              </div>
             </div>
           </div>
         </div>
