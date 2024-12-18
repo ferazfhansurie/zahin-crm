@@ -372,6 +372,11 @@ const paginatedEmployees = filteredEmployees
                 AI Responses
               </Button>
             </Link>
+            <Link to="a-i-generative-responses">
+              <Button variant="primary" className="mr-2 shadow-md">
+                AI Generative Responses
+              </Button>
+            </Link>
             <Link to="follow-ups-select">
             <Button variant="primary" className="mr-2 shadow-md">
                   Follow Ups

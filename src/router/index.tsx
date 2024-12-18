@@ -81,7 +81,7 @@ import AIResponses from "../pages/AIResponses";
 import StoragePricing from "../pages/StoragePricing";
 import { ContactsProvider, useContacts } from "../contact"; // Adjust the path as needed
 import DatabaseManager from "../pages/DatabaseManager";
-import ScheduledMessage from "../pages/ScheduledMessage";
+import AIGenerativeResponses from "../pages/AIGenerativeResponses";
 function Router() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const auth = getAuth();
@@ -121,7 +121,7 @@ function Router() {
         { path: "users-layout-2/follow-ups-select", element: <SelectFollowUpMode /> },
         { path: "users-layout-2/follow-ups-old", element: <OldFollowUps /> },
         { path: "users-layout-2/a-i-responses", element: <AIResponses /> },
-        { path: "users-layout-2/scheduled-message", element: <ScheduledMessage /> },
+        { path: "users-layout-2/a-i-generative-responses", element: <AIGenerativeResponses /> },
         { path: "users-layout-2/builder", element: <Builder /> },
         { path: "users-layout-2/storage-pricing", element: <StoragePricing /> },
         { path: "dashboard-overview-3", element: <DashboardOverview3 /> },
