@@ -119,7 +119,8 @@ function LoadingPage() {
       }
 
       const companyData = docSnapshot.data();
-      
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      console.log('baseUrl: '+baseUrl);
       if (companyData.trialEndDate) {
         const trialEnd = companyData.trialEndDate.toDate();
         const now = new Date();
@@ -146,7 +147,7 @@ function LoadingPage() {
 
       // Only proceed with QR code and bot status if v2 exists
       const botStatusResponse = await axios.get(
-        `https://mighty-dane-newly.ngrok-free.app/api/bot-status/${companyId}`,
+        `${baseUrl}/api/bot-status/${companyId}`,
         {
           withCredentials: true,
           headers: {
@@ -558,7 +559,27 @@ useEffect(() => {
     setIsPairingCodeLoading(true);
     setError(null);
     try {
-      const response = await axios.post(`https://mighty-dane-newly.ngrok-free.app/api/request-pairing-code/${companyId}`, {
+      const user = getAuth().currentUser;
+      if (!user) {
+        console.error("User not authenticated");
+      }
+      const docUserRef = doc(firestore, 'user', user?.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      const response = await axios.post(`${baseUrl}/api/request-pairing-code/${companyId}`, {
         phoneNumber
       });
       setPairingCode(response.data.pairingCode);

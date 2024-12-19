@@ -362,8 +362,24 @@ const Main: React.FC = () => {
         setError("User not authenticated");
         return;
       }
-  
-      const res = await axios.get(`https://mighty-dane-newly.ngrok-free.app/api/assistant-test/`, {
+   
+      const docUserRef = doc(firestore, 'user', user?.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      const res = await axios.get(`${baseUrl}/api/assistant-test/`, {
         params: {
           message: messageText,
           email: user.email!,

@@ -250,6 +250,26 @@ function Main() {
 const handleDeleteEmployee = async (employeeId: string, companyId: any) => {
   try {
     // Get the employee's email before deleting
+    const user = getAuth().currentUser;
+    if (!user) {
+      console.error("User not authenticated");
+    }
+    const docUserRef = doc(firestore, 'user', user?.email!);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const dataUser = docUserSnapshot.data();
+    const companyId = dataUser.companyId;
+    const docRef = doc(firestore, 'companies', companyId);
+    const docSnapshot = await getDoc(docRef);
+    if (!docSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const data2 = docSnapshot.data();
+    const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
     const employeeRef = doc(firestore, `companies/${companyId}/employee/${employeeId}`);
     const employeeDoc = await getDoc(employeeRef);
     const employeeEmail = employeeDoc.data()?.email;
@@ -266,7 +286,7 @@ const handleDeleteEmployee = async (employeeId: string, companyId: any) => {
     
     // Delete from Firebase Auth via your API endpoint
     console.log('Sending delete request to API for email:', employeeEmail);
-    const response = await axios.delete(`https://mighty-dane-newly.ngrok-free.app/api/auth/user`, {
+    const response = await axios.delete(`${baseUrl}/api/auth/user`, {
       data: { email: employeeEmail }
     });
     console.log('API Response:', response.data);

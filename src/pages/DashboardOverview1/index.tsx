@@ -1366,8 +1366,30 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
   const fetchEmployeeStats = async (employeeId: string) => {
     try {
       console.log('Fetching stats for employee:', employeeId);
+      const user = getAuth().currentUser;
+      if (!user) {
+        console.error("User not authenticated");
+        setError("User not authenticated");
+        return;
+      }
+      const docUserRef = doc(firestore, 'user', user?.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       // Update the URL to match your actual API endpoint
-      const response = await axios.get(`https://mighty-dane-newly.ngrok-free.app/api/stats/${companyId}?employeeId=${employeeId}`);
+      const response = await axios.get(`${baseUrl}/api/stats/${companyId}?employeeId=${employeeId}`);
       console.log('Received employee stats:', response.data);
       setEmployeeStats(response.data);
     } catch (error) {

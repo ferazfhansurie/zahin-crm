@@ -554,6 +554,26 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
   };
   const sendWhatsAppNotification = async (contacts: any[], appointmentDetails: any, companyId: string) => {
     try {
+      const user = getAuth().currentUser;
+      if (!user) {
+        console.error("User not authenticated");
+      }
+      const docUserRef = doc(firestore, 'user', user?.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       // Format the message
       const message = `
   🗓️ New Appointment Details:
@@ -571,7 +591,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         }
   
         try {
-          const response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${contact.id}`, {
+          const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${contact.id}`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

@@ -784,6 +784,28 @@ const handleVideoUpload = async (caption: string = '') => {
 const sendVoiceMessage = async () => {
   if (audioBlob && selectedChatId && userData) {
     try {
+      const user = getAuth().currentUser;
+      if (!user) {
+        console.error("User not authenticated");
+        setError("User not authenticated");
+        return;
+      }
+      const docUserRef = doc(firestore, 'user', user?.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       // Convert the audio Blob to a File
       const audioFile = new File([audioBlob], `voice_message_${Date.now()}.webm`, { type: "audio/webm" });
 
@@ -798,7 +820,7 @@ const sendVoiceMessage = async () => {
       };
 
       const response = await axios.post(
-        `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/audio/${userData.companyId}/${selectedChatId}`,
+        `${baseUrl}/api/v2/messages/audio/${userData.companyId}/${selectedChatId}`,
         requestBody
       );
 
@@ -821,6 +843,28 @@ const sendVoiceMessage = async () => {
 
 const handleReaction = async (message: any, emoji: string) => {
   try {
+    const user = getAuth().currentUser;
+    if (!user) {
+      console.error("User not authenticated");
+      setError("User not authenticated");
+      return;
+    }
+    const docUserRef = doc(firestore, 'user', user?.email!);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const dataUser = docUserSnapshot.data();
+    const companyId = dataUser.companyId;
+    const docRef = doc(firestore, 'companies', companyId);
+    const docSnapshot = await getDoc(docRef);
+    if (!docSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const data2 = docSnapshot.data();
+    const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
     // Ensure we have all required data
     if (!userData?.companyId || !message.id) {
       throw new Error('Missing required data: companyId or messageId');
@@ -837,7 +881,7 @@ const handleReaction = async (message: any, emoji: string) => {
     });
     
     // Construct the endpoint with the full message ID
-    const endpoint = `https://mighty-dane-newly.ngrok-free.app/api/messages/react/${userData.companyId}/${messageId}`;
+    const endpoint = `${baseUrl}/api/messages/react/${userData.companyId}/${messageId}`;
     
     const payload = {
       reaction: emoji,
@@ -1322,6 +1366,7 @@ const sendWhatsAppAlert = async (employeeName: string, chatId: string) => {
 
     const companyData = docSnapshot.data();
 
+    const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
     // Fetch employee's WhatsApp number
     const employeesRef = collection(firestore, 'companies', companyId, 'employee');
     const q = query(employeesRef, where("name", "==", employeeName));
@@ -1341,7 +1386,7 @@ const sendWhatsAppAlert = async (employeeName: string, chatId: string) => {
     console.log(selectedChatId);
 
     // Send WhatsApp alert using the ngrok URL
-    const response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${employeeId}`, {
+    const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${employeeId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1401,7 +1446,14 @@ const closePDFModal = () => {
       }
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-  
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       let successCount = 0;
       let failureCount = 0;
   
@@ -1411,7 +1463,7 @@ const closePDFModal = () => {
         try {
           console.log(`Attempting to delete message: ${message.id}`);
           const response = await axios.delete(
-            `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/${companyId}/${selectedChatId}/${message.id}`,
+            `${baseUrl}/api/v2/messages/${companyId}/${selectedChatId}/${message.id}`,
             {
               data: { 
                 deleteForEveryone: true, 
@@ -2923,7 +2975,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
       return;
     }
     const data2 = docSnapshot.data();
-  
+    const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
     if (messageMode === 'privateNote') {
       handleAddPrivateNote(newMessage);
     } else {
@@ -2932,7 +2984,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
         console.log("v2 is true");
         // Use the new API
       
-        response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${selectedChatId}`, {
+        response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${selectedChatId}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -3213,9 +3265,31 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
 
   const handleBinaTag = async (requestType: string, phone: string, first_name: string, phoneIndex: number) => {
     console.log('Request Payload:', JSON.stringify({ requestType, phone, first_name, phoneIndex }));
-    
+    const user = getAuth().currentUser;
+    if (!user) {
+      console.error("User not authenticated");
+      setError("User not authenticated");
+      return;
+    }
+    const docUserRef = doc(firestore, 'user', user?.email!);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const dataUser = docUserSnapshot.data();
+    const companyId = dataUser.companyId;
+    const docRef = doc(firestore, 'companies', companyId);
+    const docSnapshot = await getDoc(docRef);
+    if (!docSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const data2 = docSnapshot.data();
+    const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+
     try {
-        const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/bina/tag', {
+        const response = await fetch(`${baseUrl}/api/bina/tag`, {
             method: 'POST', // Ensure this is set to POST
             headers: {
                 'Content-Type': 'application/json',
@@ -3241,9 +3315,30 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
 
 const handleEdwardTag = async (requestType: string, phone: string, first_name: string, phoneIndex: number) => {
   console.log('Request Payload:', JSON.stringify({ requestType, phone, first_name, phoneIndex }));
-  
+  const user = getAuth().currentUser;
+  if (!user) {
+    console.error("User not authenticated");
+    setError("User not authenticated");
+    return;
+  }
+  const docUserRef = doc(firestore, 'user', user?.email!);
+  const docUserSnapshot = await getDoc(docUserRef);
+  if (!docUserSnapshot.exists()) {
+    console.log('No such document!');
+    return;
+  }
+  const dataUser = docUserSnapshot.data();
+  const companyId = dataUser.companyId;
+  const docRef = doc(firestore, 'companies', companyId);
+  const docSnapshot = await getDoc(docRef);
+  if (!docSnapshot.exists()) {
+    console.log('No such document!');
+    return;
+  }
+  const data2 = docSnapshot.data();
+  const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
   try {
-      const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/edward/tag', {
+      const response = await fetch(`${baseUrl}/api/edward/tag`, {
           method: 'POST', // Ensure this is set to POST
           headers: {
               'Content-Type': 'application/json',
@@ -3453,6 +3548,14 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
     }
     const userData = docUserSnapshot.data();
     const companyId = userData.companyId;
+    const docRef = doc(firestore, 'companies', companyId);
+    const docSnapshot = await getDoc(docRef);
+    if (!docSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const data2 = docSnapshot.data();
+    const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
 
     // Special handling for company '0123'
     if (companyId === '0123') {
@@ -3546,7 +3649,7 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
       // If this is a trigger tag, call the follow-up API
       if (matchingTemplate) {
         try {
-          const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/tag/followup', {
+          const response = await fetch(`${baseUrl}/api/tag/followup`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -3700,7 +3803,28 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
       const chatId = `${phoneNumber.replace(/[^\d]/g, '')}@c.us`;
       console.log('Employee Phone Number:', phoneNumber); // New log
       console.log('Formatted Chat ID:', chatId); // New log
-
+      const user = getAuth().currentUser;
+      if (!user) {
+        console.error("User not authenticated");
+        setError("User not authenticated");
+        return;
+      }
+      const docUserRef = doc(firestore, 'user', user?.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       let userPhoneIndex = userData?.phone >= 0 ? userData?.phone : 0;
       if (userPhoneIndex === -1) {
         userPhoneIndex = 0;
@@ -3708,14 +3832,14 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
       let url;
       let requestBody;
       if (companyData.v2 === true) {
-        url = `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${chatId}`;
+        url = `${baseUrl}/api/v2/messages/text/${companyId}/${chatId}`;
         requestBody = { 
           message,
           phoneIndex: userPhoneIndex,
           userName: userData.name || ''
         };
       } else {
-        url = `https://mighty-dane-newly.ngrok-free.app/api/messages/text/${chatId}/${companyData.whapiToken}`;
+        url = `${baseUrl}/api/messages/text/${chatId}/${companyData.whapiToken}`;
         requestBody = { message };
       }
       console.log('API URL:', url); // New log
@@ -3878,15 +4002,36 @@ const sendWhatsAppMessage = async (phoneNumber: string, message: string, company
     if (userPhoneIndex === -1) {
       userPhoneIndex = 0;
     }
-
+    const user = getAuth().currentUser;
+    if (!user) {
+      console.error("User not authenticated");
+      setError("User not authenticated");
+      return;
+    }
+    const docUserRef = doc(firestore, 'user', user?.email!);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const dataUser = docUserSnapshot.data();
+    const companyId = dataUser.companyId;
+    const docRef = doc(firestore, 'companies', companyId);
+    const docSnapshot = await getDoc(docRef);
+    if (!docSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const data2 = docSnapshot.data();
+    const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
     console.log('Sending WhatsApp message:', {
-      url: `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${chatId}`,
+      url: `${baseUrl}/api/v2/messages/text/${companyId}/${chatId}`,
       phoneIndex: userPhoneIndex, // Using adjusted phone index
       userName,
       chatId
     });
 
-    const response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${chatId}`, {
+    const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${chatId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -4595,7 +4740,15 @@ const sortContacts = (contacts: Contact[]) => {
   
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-  
+
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       for (const contact of selectedContactsForForwarding) {
         for (const message of selectedMessages) {
           try {
@@ -4632,7 +4785,7 @@ const sortContacts = (contacts: Contact[]) => {
               );
             } else {
               // For text messages, use the existing API call
-              const response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${contact.chat_id}`, {
+              const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${contact.chat_id}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -4786,11 +4939,11 @@ const sortContacts = (contacts: Contact[]) => {
       if (!docSnapshot.exists()) throw new Error('No company document found');
   
       const companyData = docSnapshot.data();
-  
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       let response;
       try {
         console.log(`Attempting to send image via API. PhoneIndex: ${phoneIndex}`);
-        response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/image/${companyId}/${chatId}`, {
+        response = await fetch(`${baseUrl}/api/v2/messages/image/${companyId}/${chatId}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -4844,11 +4997,11 @@ const sortContacts = (contacts: Contact[]) => {
       if (!docSnapshot.exists()) throw new Error('No company document found');
   
       const companyData = docSnapshot.data();
-  
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       let response;
       try {
         console.log(`Attempting to send document via API. PhoneIndex: ${phoneIndex}`);
-        response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/document/${companyId}/${chatId}`, {
+        response = await fetch(`${baseUrl}/api/v2/messages/document/${companyId}/${chatId}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -5059,7 +5212,12 @@ interface Template {
       }
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) throw new Error('No company document found');
   
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       // Check if tag is a trigger tag
       const templatesRef = collection(firestore, 'companies', companyId, 'followUpTemplates');
       const templatesSnapshot = await getDocs(templatesRef);
@@ -5086,7 +5244,7 @@ interface Template {
       // If this was a trigger tag, call the follow-up API to remove the template
       if (matchingTemplate) {
         try {
-          const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/tag/followup', {
+          const response = await fetch(`${baseUrl}/api/tag/followup`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -5241,10 +5399,15 @@ interface Template {
 
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) throw new Error('No company document found');
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       const chatId = editingMessage.id.split('_')[1];
       console.log('editing this chat id', chatId);
       const response = await axios.put(
-        `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/${companyId}/${chatId}/${editingMessage.id}`,
+        `${baseUrl}/api/v2/messages/${companyId}/${chatId}/${editingMessage.id}`,
         { newMessage: editedMessageText,
           phoneIndex: userData.phoneIndex || 0
          }
@@ -5598,6 +5761,11 @@ const toggleBot = async () => {
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
       console.log(`Company ID: ${companyId}`);
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) throw new Error('No company document found');
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       const chatIds = [selectedChatId]; // Use selectedChatId directly
       const processedMessages = [selectedContact].map(contact => {
         let processedMessage = blastMessage;
@@ -5643,7 +5811,7 @@ const toggleBot = async () => {
       console.log('Sending scheduledMessageData:', JSON.stringify(scheduledMessageData, null, 2));
 
       // Make API call to schedule the message
-      const response = await axios.post(`https://mighty-dane-newly.ngrok-free.app/api/schedule-message/${companyId}`, scheduledMessageData);
+      const response = await axios.post(`${baseUrl}/api/schedule-message/${companyId}`, scheduledMessageData);
 
       console.log(`Scheduled message added. Document ID: ${response.data.id}`);
       toast.success(`Blast message scheduled successfully.`);
@@ -5710,7 +5878,7 @@ const toggleBot = async () => {
 
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-
+      
       const companyRef = doc(firestore, 'companies', companyId);
       const companySnapshot = await getDoc(companyRef);
       if (!companySnapshot.exists()) {
@@ -5719,6 +5887,7 @@ const toggleBot = async () => {
       }
 
       const companyData = companySnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       const isV2 = companyData.v2 || false;
       const whapiToken = companyData.whapiToken || '';
       const phone = userData.phoneNumber.split('+')[1];
@@ -5748,7 +5917,7 @@ const toggleBot = async () => {
       console.log('Sending scheduledMessageData:', JSON.stringify(scheduledMessageData, null, 2));
   
       // Make API call to schedule the message
-      const response = await axios.post(`https://mighty-dane-newly.ngrok-free.app/api/schedule-message/${companyId}`, scheduledMessageData);
+      const response = await axios.post(`${baseUrl}/api/schedule-message/${companyId}`, scheduledMessageData);
 
       console.log(`Reminder scheduled. Document ID: ${response.data.id}`);
 
@@ -5843,9 +6012,10 @@ console.log(prompt);
       }
   
       const companyData = companySnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       const assistantId = companyData.assistantId;
   
-      const res = await axios.get(`https://mighty-dane-newly.ngrok-free.app/api/assistant-test/`, {
+      const res = await axios.get(`${baseUrl}/api/assistant-test/`, {
         params: {
           message: messageText,
           email: user.email!,
