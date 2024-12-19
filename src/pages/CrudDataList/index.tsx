@@ -234,7 +234,7 @@ function Main() {
   const [stopbot, setStopbot] = useState(false);
   const [userRole, setUserRole] = useState<string>("");
   const [itemOffset, setItemOffset] = useState(0);
-  const itemsPerPage = 30;
+  const itemsPerPage = 50;
   const [employeeNames, setEmployeeNames] = useState<string[]>([]);
   const [showMassDeleteModal, setShowMassDeleteModal] = useState(false);
   const [userFilter, setUserFilter] = useState<string>("");
@@ -254,7 +254,12 @@ function Main() {
   const [selectedPhoneIndex, setSelectedPhoneIndex] = useState<number | null>(null);
   const [showRecipients, setShowRecipients] = useState<string | null>(null);
   const [recipientSearch, setRecipientSearch] = useState('');
-
+  const [minDelay, setMinDelay] = useState(1);
+  const [maxDelay, setMaxDelay] = useState(2);
+  const [activateSleep, setActivateSleep] = useState(false);
+  const [sleepAfterMessages, setSleepAfterMessages] = useState(20);
+  const [sleepDuration, setSleepDuration] = useState(5);
+  const [showScheduledMessages, setShowScheduledMessages] = useState<boolean>(true);
  
 
   useEffect(() => {
@@ -1186,56 +1191,80 @@ const handleConfirmDeleteTag = async () => {
       }
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-
+  
       // Special handling for company '0123'
-    if (companyId === '0123') {
-      // Check if the new tag is an employee name
-      const isNewTagEmployee = employeeList.some(emp => emp.name === tagName);
-      
-      if (isNewTagEmployee) {
-        const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id!);
-        const contactDoc = await getDoc(contactRef);
-
-        if (!contactDoc.exists()) {
-          console.error(`Contact document does not exist: ${contact.id}`);
-          toast.error(`Failed to add tag: Contact not found`);
+      if (companyId === '0123') {
+        // Check if the new tag is an employee name
+        const isNewTagEmployee = employeeList.some(emp => emp.name === tagName);
+        
+        if (isNewTagEmployee) {
+          const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id!);
+          const contactDoc = await getDoc(contactRef);
+  
+          if (!contactDoc.exists()) {
+            console.error(`Contact document does not exist: ${contact.id}`);
+            toast.error(`Failed to add tag: Contact not found`);
+            return;
+          }
+  
+          const currentTags = contactDoc.data().tags || [];
+          // Find and remove any existing employee tags
+          const updatedTags = currentTags.filter((tag: string) => !employeeList.some(emp => emp.name === tag));
+          
+          // Add the new employee tag
+          updatedTags.push(tagName);
+  
+          // Update Firestore with the new tags
+          await updateDoc(contactRef, {
+            tags: updatedTags
+          });
+  
+          // Update local state
+          setContacts(prevContacts =>
+            prevContacts.map(c =>
+              c.id === contact.id
+                ? { ...c, tags: updatedTags }
+                : c
+            )
+          );
+  
+          console.log(`Employee tag updated to ${tagName} for contact ${contact.id}`);
+          toast.success(`Contact reassigned to ${tagName}`);
+  
+          // Send assignment notification for the new employee
+          await sendAssignmentNotification(tagName, contact);
           return;
         }
-
-        const currentTags = contactDoc.data().tags || [];
-        // Find and remove any existing employee tags
-        const updatedTags = currentTags.filter((tag: string) => !employeeList.some(emp => emp.name === tag));
-        
-        // Add the new employee tag
-        updatedTags.push(tagName);
-
-        // Update Firestore with the new tags
-        await updateDoc(contactRef, {
-          tags: updatedTags
-        });
-
-        // Update local state
-        setContacts(prevContacts =>
-          prevContacts.map(c =>
-            c.id === contact.id
-              ? { ...c, tags: updatedTags }
-              : c
-          )
-        );
-
-        console.log(`Employee tag updated to ${tagName} for contact ${contact.id}`);
-        toast.success(`Contact reassigned to ${tagName}`);
-
-        // Send assignment notification for the new employee
-        await sendAssignmentNotification(tagName, contact);
-        return;
       }
-    }
   
-      console.log(`Adding tag: ${tagName} to contact: ${contact.id}`);
+      // Check if tag is a trigger tag by looking up follow-up templates
+      const templatesRef = collection(firestore, 'companies', companyId, 'followUpTemplates');
+      const templatesSnapshot = await getDocs(templatesRef);
+      
+      let matchingTemplate: any = null;
+      templatesSnapshot.forEach(doc => {
+        const template = doc.data();
+        if (template.triggerTags?.includes(tagName) && template.status === 'active') {
+          matchingTemplate = { 
+            id: doc.id, 
+            ...template 
+          };
+        }
+      });
   
       // Update contact's tags
       const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id!);
+      const contactDoc = await getDoc(contactRef);
+  
+      if (!contactDoc.exists()) {
+        console.error(`Contact document does not exist: ${contact.id}`);
+        toast.error(`Failed to add tag: Contact not found`);
+        return;
+      }
+  
+      const currentTags = contactDoc.data().tags || [];
+  
+      // Prepare update data
       const updateData: any = {
         tags: arrayUnion(tagName)
       };
@@ -1252,17 +1281,45 @@ const handleConfirmDeleteTag = async () => {
   
       await updateDoc(contactRef, updateData);
   
-      // Update state
-      setContacts(prevContacts => 
+      // Update local state
+      setContacts(prevContacts =>
         prevContacts.map(c =>
-          c.id === contact.id ? { ...c, tags: [...(c.tags || []), tagName] } : c
+          c.id === contact.id
+            ? { ...c, tags: [...(c.tags || []), tagName] }
+            : c
         )
       );
+  
       if (selectedContact && selectedContact.id === contact.id) {
         setSelectedContact((prevContact: Contact) => ({
           ...prevContact,
           tags: [...(prevContact.tags || []), tagName]
         }));
+      }
+  
+      // If this is a trigger tag, call the follow-up API
+      if (matchingTemplate) {
+        const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/tag/followup', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            requestType: 'startTemplate',
+            phone: contact.phone,
+            first_name: contact.contactName || contact.firstName || contact.phone,
+            phoneIndex: contact.phoneIndex || 0,
+            templateId: matchingTemplate.id,
+            idSubstring: companyId
+          }),
+        });
+  
+        if (!response.ok) {
+          throw new Error(`Follow-up API error: ${response.statusText}`);
+        }
+  
+        console.log('Follow-up template started successfully');
+        toast.success('Follow-up sequence started');
       }
   
       toast.success(`Tag "${tagName}" added to contact successfully!`);
@@ -1272,7 +1329,7 @@ const handleConfirmDeleteTag = async () => {
       if (employee) {
         await sendAssignmentNotification(tagName, contact);
       }
-
+  
       await fetchContacts();
   
     } catch (error) {
@@ -1280,7 +1337,6 @@ const handleConfirmDeleteTag = async () => {
       toast.error('Failed to add tag and assign contact.');
     }
   };
-
 
 
   const sendAssignmentNotification = async (assignedEmployeeName: string, contact: Contact) => {
@@ -2179,6 +2235,11 @@ const sendBlastMessage = async () => {
       status: "scheduled",
       v2: isV2,
       whapiToken: isV2 ? null : whapiToken,
+      minDelay,
+      maxDelay,
+      activateSleep,
+      sleepAfterMessages: activateSleep ? sleepAfterMessages : null,
+      sleepDuration: activateSleep ? sleepDuration : null,
     };
 
     console.log('Sending scheduledMessageData:', JSON.stringify(scheduledMessageData, null, 2));
@@ -3492,79 +3553,89 @@ const getFilteredScheduledMessages = () => {
               </div>
               {/* Scheduled Messages Section */}
               <div className="mt-3 mb-5">
-    <h2 className="z-10 text-xl font-semibold mb-1 text-gray-700 dark:text-gray-300">Scheduled Messages</h2>
-    {getFilteredScheduledMessages().length > 0 ? (
-      <div className="z-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
-        {combineScheduledMessages(getFilteredScheduledMessages()).map((message) => (
-          <div key={message.id} className="z-10 bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg flex flex-col h-full">
-            <div className="z-10 p-4 flex-grow">
-              <div className="z-10 flex justify-between items-center mb-2">
-                <span className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
-                  {message.status === 'scheduled' ? 'Scheduled' : message.status}
-                </span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {formatDate(message.scheduledTime.toDate())}
-                </span>
+                <div className="flex items-center">
+                  <h2 className="z-10 text-xl font-semibold mb-1 text-gray-700 dark:text-gray-300">Scheduled Messages</h2>
+                  <button
+                    onClick={() => setShowScheduledMessages(prev => !prev)}
+                    className="text-gray-700 dark:text-gray-300"
+                  >
+                    <Lucide icon={showScheduledMessages ? "ChevronUp" : "ChevronDown"} className="w-6 h-6 ml-2 mb-1 text-gray-700 dark:text-gray-300" />
+                  </button>
+                </div>
+                {showScheduledMessages && (
+                  getFilteredScheduledMessages().length > 0 ? (
+                    <div className="z-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
+                      {combineScheduledMessages(getFilteredScheduledMessages()).map((message) => (
+                        <div key={message.id} className="z-10 bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg flex flex-col h-full">
+                          <div className="z-10 p-4 flex-grow">
+                            <div className="z-10 flex justify-between items-center mb-2">
+                              <span className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
+                                {message.status === 'scheduled' ? 'Scheduled' : message.status}
+                              </span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                {formatDate(message.scheduledTime.toDate())}
+                              </span>
+                            </div>
+                            <p className="text-gray-800 dark:text-gray-200 mb-2 font-medium text-md line-clamp-2">
+                              {message.message ? message.message : 'No message content'}
+                            </p>  
+                            <div className="flex items-center text-xs text-gray-600 dark:text-gray-400">
+                              <Lucide icon="Users" className="w-4 h-4 mr-1" />
+                              <div className="ml-5 max-h-20 overflow-y-auto">
+                                {message.chatIds.map(chatId => {
+                                  const phoneNumber = chatId.split('@')[0];
+                                  const contact = contacts.find(c => c.phone?.replace(/\D/g, '') === phoneNumber);
+                                  return (
+                                    <div key={chatId} className="truncate">
+                                      {contact?.contactName || phoneNumber}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                            {message.mediaUrl && (
+                              <div className="flex items-center text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                <Lucide icon="Image" className="w-4 h-4 mr-1" />
+                                <span>Media attached</span>
+                              </div>
+                            )}
+                            {message.documentUrl && (
+                              <div className="flex items-center text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                <Lucide icon="File" className="w-4 h-4 mr-1" />
+                                <span>{message.fileName || 'Document attached'}</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 flex justify-end mt-auto">
+                            <button
+                              onClick={() => handleEditScheduledMessage(message)}
+                              className="text-sm bg-white dark:bg-gray-600 hover:bg-gray-50 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 font-medium py-1 px-3 rounded-md shadow-sm transition-colors duration-200 mr-2"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteScheduledMessage(message.id!)}
+                              className="text-sm bg-red-600 hover:bg-red-700 text-white font-medium py-1 px-3 rounded-md shadow-sm transition-colors duration-200"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="z-1 bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 text-center">
+                      <Lucide icon="Calendar" className="w-16 h-16 mx-auto text-gray-400 dark:text-gray-600 mb-4" />
+                      <p className="text-lg font-medium text-gray-700 dark:text-gray-300">
+                        {searchQuery ? 'No matching scheduled messages' : 'No scheduled messages yet'}
+                      </p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                        {searchQuery ? 'Try a different search term' : 'When you schedule messages, they will appear here.'}
+                      </p>
+                    </div>
+                  )
+                )}
               </div>
-              <p className="text-gray-800 dark:text-gray-200 mb-2 font-medium text-md line-clamp-2">
-                {message.message ? message.message : 'No message content'}
-              </p>  
-              <div className="flex items-center text-xs text-gray-600 dark:text-gray-400">
-                <Lucide icon="Users" className="w-4 h-4 mr-1" />
-                <div className="ml-5 max-h-20 overflow-y-auto">
-                  {message.chatIds.map(chatId => {
-                    const phoneNumber = chatId.split('@')[0];
-                    const contact = contacts.find(c => c.phone?.replace(/\D/g, '') === phoneNumber);
-                    return (
-                      <div key={chatId} className="truncate">
-                        {contact?.contactName || phoneNumber}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-              {message.mediaUrl && (
-                <div className="flex items-center text-xs text-gray-600 dark:text-gray-400 mt-1">
-                  <Lucide icon="Image" className="w-4 h-4 mr-1" />
-                  <span>Media attached</span>
-                </div>
-              )}
-              {message.documentUrl && (
-                <div className="flex items-center text-xs text-gray-600 dark:text-gray-400 mt-1">
-                  <Lucide icon="File" className="w-4 h-4 mr-1" />
-                  <span>{message.fileName || 'Document attached'}</span>
-                </div>
-              )}
-            </div>
-            <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 flex justify-end mt-auto">
-              <button
-                onClick={() => handleEditScheduledMessage(message)}
-                className="text-sm bg-white dark:bg-gray-600 hover:bg-gray-50 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 font-medium py-1 px-3 rounded-md shadow-sm transition-colors duration-200 mr-2"
-              >
-                Edit
-              </button>
-              <button
-                onClick={() => handleDeleteScheduledMessage(message.id!)}
-                className="text-sm bg-red-600 hover:bg-red-700 text-white font-medium py-1 px-3 rounded-md shadow-sm transition-colors duration-200"
-              >
-                Delete
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    ) : (
-      <div className="z-1 bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 text-center">
-        <Lucide icon="Calendar" className="w-16 h-16 mx-auto text-gray-400 dark:text-gray-600 mb-4" />
-        <p className="text-lg font-medium text-gray-700 dark:text-gray-300">
-          {searchQuery ? 'No matching scheduled messages' : 'No scheduled messages yet'}
-        </p>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-          {searchQuery ? 'Try a different search term' : 'When you schedule messages, they will appear here.'}
-        </p>
-      </div>
-    )}
-  </div>
               {/* Edit Scheduled Message Modal */}
               <Dialog open={editScheduledMessageModal} onClose={() => setEditScheduledMessageModal(false)}>
                 <div className="fixed inset-0 flex items-center justify-center p-4 bg-black bg-opacity-50">
@@ -3696,13 +3767,13 @@ const getFilteredScheduledMessages = () => {
                       onClick={handleDeselectPage}
                       className="inline-flex items-center p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg cursor-pointer transition-colors duration-200"
                     >
-                      <Lucide 
-                        icon="X" 
-                        className="w-4 h-4 mr-1 text-gray-600 dark:text-gray-300" 
-                      />
                       <span className="text-xs text-gray-700 dark:text-gray-300 whitespace-nowrap font-medium">
                         Deselect Page
                       </span>
+                      <Lucide 
+                        icon="X" 
+                        className="w-4 h-4 ml-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 focus:outline-none" 
+                      />
                     </button>
                   )}
                   {selectedTagFilter && (
@@ -3835,140 +3906,253 @@ const getFilteredScheduledMessages = () => {
               </div>
             </div>
           </div>
-          <div className="w-full flex-shrink">
+          <div className="w-full flex-wrap">
             <div className="h-[calc(150vh-200px)] overflow-y-auto mb-4" ref={contactListRef}>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 m-1">
+              <table className="w-full border-collapse hidden sm:table">
+                <thead className="sticky top-0 bg-white dark:bg-gray-700 z-10 py-2">
+                  <tr className="text-left">
+                    <th className="p-4 font-medium text-gray-700 dark:text-gray-300">
+                      <input
+                        type="checkbox"
+                        checked={currentContacts.length > 0 && currentContacts.every(contact => 
+                          selectedContacts.some(sc => sc.phone === contact.phone)
+                        )}
+                        onChange={() => handleSelectCurrentPage()}
+                        className="rounded border-gray-300"
+                      />
+                    </th>
+                    <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Contact</th>
+                    <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Phone</th>
+                    <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Tags</th>
+                    <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Points</th>
+                    <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {currentContacts.map((contact, index) => {
+                    const isSelected = selectedContacts.some((c) => c.phone === contact.phone);
+                    return (
+                      <tr 
+                        key={index}
+                        className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${
+                          isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                        }`}
+                      >
+                        <td className="p-4">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleContactSelection(contact)}
+                            className="rounded border-gray-300"
+                          />
+                        </td>
+                        <td className="p-4">
+                          <div className="flex items-center">
+                            {contact.profilePicUrl ? (
+                              <img 
+                                src={contact.profilePicUrl} 
+                                alt={contact.contactName || "Profile"} 
+                                className="w-8 h-8 rounded-full object-cover mr-3" 
+                              />
+                            ) : (
+                              <div className="w-8 h-8 mr-3 border-2 border-gray-500 dark:border-gray-400 rounded-full flex items-center justify-center">
+                                {contact.chat_id && contact.chat_id.includes('@g.us') ? (
+                                  <Lucide icon="Users" className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                                ) : (
+                                  <Lucide icon="User" className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                                )}
+                              </div>
+                            )}
+                            <span className="font-medium text-gray-900 dark:text-white">
+                              {contact.contactName ? (contact.lastName ? `${contact.contactName} ${contact.lastName}` : contact.contactName) : contact.phone}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="p-4 text-gray-600 dark:text-gray-400">
+                          {contact.phone ?? contact.source}
+                        </td>
+                        <td className="p-4">
+                          <div className="flex flex-wrap gap-2">
+                            {contact.tags && contact.tags.length > 0 ? (
+                              contact.tags.map((tag, index) => (
+                                <div key={index} className="relative group">
+                                  <span className={`px-2 py-1 text-xs font-semibold rounded-full inline-flex justify-center items-center ${
+                                    employeeNames.includes(tag.toLowerCase())
+                                      ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
+                                      : 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
+                                  }`}>
+                                    {tag.charAt(0).toUpperCase() + tag.slice(1)}
+                                  </span>
+                                  <button
+                                    className="absolute right-0 top-0 transform translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-red-500 hover:text-red-700"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleRemoveTag(contact.id!, tag);
+                                    }}
+                                  >
+                                    <div className="w-4 h-4 bg-red-600 hover:bg-red-800 dark:bg-red-600 dark:hover:bg-red-800 rounded-full flex items-center justify-center">
+                                      <Lucide 
+                                        icon="X" 
+                                        className="w-3 h-3 text-white" 
+                                      />
+                                    </div>
+                                  </button>
+                                </div>
+                              ))
+                            ) : (
+                              <span className="text-sm text-gray-500 dark:text-gray-400">No tags</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-4 text-gray-600 dark:text-gray-400">
+                          {contact.points || 0}
+                        </td>
+                        <td className="p-4">
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => {
+                                setCurrentContact(contact);
+                                setEditContactModal(true);
+                              }}
+                              className="p-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                              title="View/Edit"
+                            >
+                              <Lucide icon="Eye" className="w-5 h-5" />
+                            </button>
+                            <button
+                              onClick={() => handleClick(contact.phone)}
+                              className="p-2 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300"
+                              title="Chat"
+                            >
+                              <Lucide icon="MessageSquare" className="w-5 h-5" />
+                            </button>
+                            <button
+                              onClick={() => {
+                                setCurrentContact(contact);
+                                setDeleteConfirmationModal(true);
+                              }}
+                              className="p-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                              title="Delete"
+                            >
+                              <Lucide icon="Trash" className="w-5 h-5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+               {/* Mobile Layout - Shown only on small screens */}
+              <div className="sm:hidden">
                 {currentContacts.map((contact, index) => {
                   const isSelected = selectedContacts.some((c) => c.phone === contact.phone);
                   return (
                     <div 
-                      key={index} 
-                      className={`bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 flex flex-col cursor-pointer transition-all duration-200 ${
-                        isSelected ? 'ring-2 ring-blue-500 dark:ring-blue-400' : ''
+                      key={index}
+                      className={`mb-4 p-4 rounded-lg border border-gray-200 dark:border-gray-700 ${
+                        isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : 'bg-white dark:bg-gray-800'
                       }`}
-                      onClick={() => toggleContactSelection(contact)}
                     >
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center overflow-hidden">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center space-x-3">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleContactSelection(contact)}
+                            className="rounded border-gray-300"
+                          />
                           {contact.profilePicUrl ? (
                             <img 
                               src={contact.profilePicUrl} 
                               alt={contact.contactName || "Profile"} 
-                              className="w-10 h-10 rounded-full object-cover mr-3 flex-shrink-0" 
+                              className="w-10 h-10 rounded-full object-cover" 
                             />
                           ) : (
-                            <div className="w-10 h-10 mr-3 border-2 border-gray-500 dark:border-gray-400 rounded-full flex items-center justify-center flex-shrink-0">
+                            <div className="w-10 h-10 border-2 border-gray-500 dark:border-gray-400 rounded-full flex items-center justify-center">
                               {contact.chat_id && contact.chat_id.includes('@g.us') ? (
-                                <Lucide icon="Users" className="w-6 h-6 text-gray-500 dark:text-gray-400" />
+                                <Lucide icon="Users" className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                               ) : (
-                                <Lucide icon="User" className="w-6 h-6 text-gray-500 dark:text-gray-400" />
+                                <Lucide icon="User" className="w-5 h-5 text-gray-500 dark:text-gray-400" />
                               )}
                             </div>
                           )}
-                          <div className="overflow-hidden">
-                            {userRole === '1' ? (
-                              <>
-                                <h3 className="font-medium text-lg text-gray-900 dark:text-white truncate">
-                                  {contact.contactName ? (contact.lastName ? `${contact.contactName} ${contact.lastName}` : contact.contactName) : (contact.contactName || contact.phone)}
-                                </h3>
-                                <p className="text-sm text-gray-600 dark:text-gray-400 truncate">{contact.phone ?? contact.source}</p>
-                              </>
-                            ) : (
-                              <p className="font-medium text-lg text-gray-900 dark:text-white truncate">
-                                {contact.leadNumber}
-                              </p>
-                            )}
+                          <div>
+                            <div className="font-medium text-gray-900 dark:text-white">
+                              {contact.contactName ? (contact.lastName ? `${contact.contactName} ${contact.lastName}` : contact.contactName) : contact.phone}
+                            </div>
+                            <div className="text-sm text-gray-600 dark:text-gray-400">
+                              {contact.phone ?? contact.source}
+                            </div>
                           </div>
                         </div>
-                        <Menu as="div" className="relative inline-block text-left ml-2">
-                          <Menu.Button className="p-2 rounded-full bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 transition-colors duration-200">
-                            <Lucide icon="MoreVertical" className="w-4 h-4" />
-                          </Menu.Button>
-                          <Menu.Items className="absolute right-0 mt-2 w-48 origin-top-right bg-white dark:bg-gray-800 rounded-md shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none z-10">
-                            <Menu.Item>
-                              {({ active }) => (
-                                <button
-                                  className={`${active ? 'bg-gray-100 dark:bg-gray-700' : ''} group flex w-full items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 transition-colors duration-200`}
-                                  onClick={() => {
-                                    setCurrentContact(contact);
-                                    setEditContactModal(true);
-                                  }}
-                                >
-                                  <Lucide icon="Eye" className="mr-3 h-5 w-5" />
-                                  View/Edit
-                                </button>
-                              )}
-                            </Menu.Item>
-                            <Menu.Item>
-                              {({ active }) => (
-                                <button
-                                  className={`${active ? 'bg-gray-100 dark:bg-gray-700' : ''} group flex w-full items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 transition-colors duration-200`}
-                                  onClick={() => handleClick(contact.phone)}
-                                >
-                                  <Lucide icon="MessageSquare" className="mr-3 h-5 w-5" />
-                                  Chat
-                                </button>
-                              )}
-                            </Menu.Item>
-                            <Menu.Item>
-                              {({ active }) => (
-                                <button
-                                  className={`${active ? 'bg-gray-100 dark:bg-gray-700' : ''} group flex w-full items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 transition-colors duration-200`}
-                                  onClick={() => {
-                                    setCurrentContact(contact);
-                                    setDeleteConfirmationModal(true);
-                                  }}
-                                >
-                                  <Lucide icon="Trash" className="mr-3 h-5 w-5" />
-                                  Delete
-                                </button>
-                              )}
-                            </Menu.Item>
-                          </Menu.Items>
-                        </Menu>
-                      </div>
-                      <div className="flex items-center mt-1">
-                        <div className="flex-grow">
-                          <div className="flex flex-wrap items-center gap-2">
-                            {contact.tags && contact.tags.length > 0 ? (
-                              <>
-                                {contact.tags.map((tag, index) => (
-                                  <div key={index} className="relative group">
-                                    <span className={`px-2 py-1 text-xs font-semibold rounded-full inline-flex items-center ${
-                                      employeeNames.includes(tag.toLowerCase())
-                                        ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
-                                        : 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
-                                    }`}>
-                                      {tag.charAt(0).toUpperCase() + tag.slice(1)}
-                                      <button
-                                        className="ml-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-white hover:text-red-500 hidden group-hover:block"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          handleRemoveTag(contact.id!, tag);
-                                        }}
-                                      >
-                                        X
-                                      </button>
-                                    </span>
-                                  </div>
-                                ))}
-                                <div className="ml-4 text-sm font-medium text-gray-600 dark:text-gray-400">
-                                  {contact.points && contact.points > 0 && `${contact.points} points`}
-                                </div>
-                              </>
-                            ) : (
-                              <>
-                                <span className="text-sm text-gray-500 dark:text-gray-400">No tags</span>
-                                <div className="ml-4 text-sm font-medium text-gray-600 dark:text-gray-400">
-                                  Points: {contact.points || 0}
-                                </div>
-                              </>
-                            )}
+                        
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => {
+                              setCurrentContact(contact);
+                              setEditContactModal(true);
+                            }}
+                            className="p-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                            title="View/Edit"
+                          >
+                            <Lucide icon="Eye" className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => handleClick(contact.phone)}
+                            className="p-2 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300"
+                            title="Chat"
+                          >
+                            <Lucide icon="MessageSquare" className="w-5 h-5" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setCurrentContact(contact);
+                              setDeleteConfirmationModal(true);
+                            }}
+                            className="p-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                            title="Delete"
+                          >
+                            <Lucide icon="Trash" className="w-5 h-5" />
+                          </button>
                           </div>
+                      </div>
+
+                      <div className="mt-2">
+                        <div className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Points: {contact.points || 0}
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {contact.tags && contact.tags.length > 0 ? (
+                            contact.tags.map((tag, index) => (
+                              <div key={index} className="relative group">
+                                <span className={`px-2 py-1 text-xs font-semibold rounded-full inline-flex justify-center items-center ${
+                                  employeeNames.includes(tag.toLowerCase())
+                                    ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
+                                    : 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
+                                }`}>
+                                  {tag.charAt(0).toUpperCase() + tag.slice(1)}
+                                </span>
+                                <button
+                                  className="absolute right-0 top-0 transform translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-red-500 hover:text-red-700"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRemoveTag(contact.id!, tag);
+                                  }}
+                                >
+                                  <div className="w-4 h-4 bg-red-600 hover:bg-red-800 dark:bg-red-600 dark:hover:bg-red-800 rounded-full flex items-center justify-center">
+                                    <Lucide icon="X" className="w-3 h-3 text-white" />
+                                  </div>
+                                </button>
+                              </div>
+                            ))
+                          ) : (
+                            <span className="text-sm text-gray-500 dark:text-gray-400">No tags</span>
+                          )}
                         </div>
                       </div>
                     </div>
-                  );
+                    );
                 })}
               </div>
             </div>
@@ -4524,6 +4708,66 @@ const getFilteredScheduledMessages = () => {
                         <option value="days">Days</option>
                       </select>
                     </div>
+                    <div className="mt-4">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Delay between messages</label>
+        <div className="flex items-center space-x-2 mt-1">
+          <div className="flex items-center">
+            <span className="text-sm text-gray-600 dark:text-gray-400 mr-2">Wait between:</span>
+            <input
+              type="number"
+              value={minDelay}
+              onChange={(e) => setMinDelay(parseInt(e.target.value))}
+              min={1}
+              className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
+          </div>
+          <div className="flex items-center">
+            <span className="text-sm text-gray-600 dark:text-gray-400 mx-2">and</span>
+            <input
+              type="number"
+              value={maxDelay}
+              onChange={(e) => setMaxDelay(parseInt(e.target.value))}
+              min={1}
+              className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
+            <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">Seconds</span>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <label className="flex items-center">
+            <input
+              type="checkbox"
+              checked={activateSleep}
+              onChange={(e) => setActivateSleep(e.target.checked)}
+              className="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+            />
+            <span className="ml-2 text-sm text-gray-600 dark:text-gray-400">Activate Sleep between sending</span>
+          </label>
+          {activateSleep && (
+            <div className="flex items-center space-x-2 mt-2 ml-6">
+              <span className="text-sm text-gray-600 dark:text-gray-400">After:</span>
+              <input
+                type="number"
+                value={sleepAfterMessages}
+                onChange={(e) => setSleepAfterMessages(parseInt(e.target.value))}
+                min={1}
+                className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+              <span className="text-sm text-gray-600 dark:text-gray-400">Messages</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">for:</span>
+              <input
+                type="number"
+                value={sleepDuration}
+                onChange={(e) => setSleepDuration(parseInt(e.target.value))}
+                min={1}
+                className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+              <span className="text-sm text-gray-600 dark:text-gray-400">Seconds</span>
+            </div>
+          )}
+        </div>
+      </div>
                     <div className="mt-2">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="phone">Phone</label>
                       <select
