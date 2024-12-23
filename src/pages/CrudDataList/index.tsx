@@ -1847,6 +1847,50 @@ const chatId = tempphone + "@c.us"
         if (!docSnapshot.exists()) throw new Error('No company document found');
         const companyData = docSnapshot.data();
         const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+
+        // Format the contact's phone number for comparison with chatIds
+        const contactChatId = currentContact.phone?.replace(/\D/g, '') + "@s.whatsapp.net";
+  
+        // Check and delete scheduled messages containing this contact
+        const scheduledMessagesRef = collection(firestore, `companies/${companyId}/scheduledMessages`);
+        const scheduledSnapshot = await getDocs(scheduledMessagesRef);
+        
+        const deletePromises = scheduledSnapshot.docs.map(async (doc) => {
+          const messageData = doc.data();
+          if (messageData.chatIds?.includes(contactChatId)) {
+            if (messageData.chatIds.length === 1) {
+              // If this is the only recipient, delete the entire scheduled message
+              try {
+                await axios.delete(`https://mighty-dane-newly.ngrok-free.app/api/schedule-message/${companyId}/${doc.id}`);
+                console.log(`Deleted scheduled message ${doc.id}`);
+              } catch (error) {
+                console.error(`Error deleting scheduled message ${doc.id}:`, error);
+              }
+            } else {
+              // If there are other recipients, remove this contact from the recipients list
+              const updatedChatIds = messageData.chatIds.filter((id: string) => id !== contactChatId);
+              const updatedMessages = messageData.messages?.filter((msg: any) => msg.chatId !== contactChatId) || [];
+              
+              try {
+                await axios.put(
+                  `https://mighty-dane-newly.ngrok-free.app/api/schedule-message/${companyId}/${doc.id}`,
+                  {
+                    ...messageData,
+                    chatIds: updatedChatIds,
+                    messages: updatedMessages
+                  }
+                );
+                console.log(`Updated scheduled message ${doc.id}`);
+              } catch (error) {
+                console.error(`Error updating scheduled message ${doc.id}:`, error);
+              }
+            }
+          }
+        });
+
+        // Wait for all scheduled message updates/deletions to complete
+        await Promise.all(deletePromises);
+  
         // Check for active templates
         const templatesRef = collection(firestore, `companies/${companyId}/followUpTemplates`);
         const templatesSnapshot = await getDocs(templatesRef);
@@ -1898,10 +1942,13 @@ const chatId = tempphone + "@c.us"
   
         // Update local state
         setContacts(prevContacts => prevContacts.filter(contact => contact.id !== currentContact.id));
+        setScheduledMessages(prev => prev.filter(msg => !msg.chatIds.includes(contactChatId)));
         setDeleteConfirmationModal(false);
         setCurrentContact(null);
-        toast.success("Contact deleted successfully!");
+        
+        toast.success("Contact and associated scheduled messages deleted successfully!");
         await fetchContacts();
+        await fetchScheduledMessages(); // Refresh scheduled messages list
       } catch (error) {
         console.error('Error deleting contact:', error);
         toast.error("An error occurred while deleting the contact.");
