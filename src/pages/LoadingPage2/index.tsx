@@ -192,7 +192,7 @@ function LoadingPage2() {
   useEffect(() => {
     fetchQRCode();
   }, []);
-//
+//dd
   useEffect(() => {
     const initWebSocket = async () => {
       if (!wsConnected) {
