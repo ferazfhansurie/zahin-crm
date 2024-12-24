@@ -174,7 +174,7 @@ function LoadingPage2() {
   };
   const getPhoneName = (phoneIndex: number) => {
     if (companyId === '0123') {
-      return phoneIndex === 0 ? 'Revotrend' : 'Storeguru';
+      return phoneIndex === 0 ? 'Revotrend' : phoneIndex === 1 ? 'Storeguru':'ShipGuru';
     }
     return `Phone ${phoneIndex + 1}`;
   };
