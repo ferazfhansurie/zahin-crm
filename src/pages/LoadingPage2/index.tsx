@@ -125,7 +125,9 @@ function LoadingPage2() {
         throw new Error(`Unexpected response status: ${botStatusResponse.status}`);
       }
 
-      const qrCodesData: QRCodeData[] = botStatusResponse.data;
+      const qrCodesData = Array.isArray(botStatusResponse.data) 
+        ? botStatusResponse.data 
+        : [];
       setQrCodes(qrCodesData);
 
       const qrIndex = qrCodesData.findIndex(qr => qr.status === 'qr');
@@ -178,7 +180,21 @@ function LoadingPage2() {
 
         const dataUser = docUserSnapshot.data();
         const companyId = dataUser.companyId;
-        ws.current = new WebSocket(`wss://mighty-dane-newly.ngrok-free.app/ws/${user?.email}/${companyId}`);
+        
+        // Get company data to fetch baseUrl
+        const docRef = doc(firestore, 'companies', companyId);
+        const docSnapshot = await getDoc(docRef);
+        if (!docSnapshot.exists()) {
+          throw new Error("Company document does not exist");
+        }
+
+        const companyData = docSnapshot.data();
+        const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+        // Remove 'https://' from baseUrl when creating WebSocket connection
+        const wsBaseUrl = baseUrl.replace('https://', '');
+        console.log(wsBaseUrl);
+        ws.current = new WebSocket(`wss://${wsBaseUrl}/ws/${user?.email}/${companyId}`);
+        
         ws.current.onopen = () => {
           console.log('WebSocket connected');
           setWsConnected(true);
@@ -189,13 +205,35 @@ function LoadingPage2() {
           console.log('WebSocket message received:', data);
 
           if (data.type === 'auth_status') {
-            console.log(`Bot status: ${data.status}`);
+            console.log(`Bot status: ${data.status} for bot: ${data.botName}`);
             setBotStatus(data.status);
+            
             if (data.status === 'qr') {
+              // Set QR code image
               setQrCodeImage(data.qrCode);
-      
+              setCurrentQrIndex(data.phoneIndex);
+              
+              // Update QR codes array with new data
+              setQrCodes(prevCodes => {
+                const newCodes = [...(prevCodes || [])];
+                newCodes[data.phoneIndex] = {
+                  phoneIndex: data.phoneIndex,
+                  status: data.status,
+                  qrCode: data.qrCode
+                };
+                return newCodes;
+              });
+
+              // Reset any previous errors
+              setError(null);
+              
+              // Update loading state
+              setIsLoading(false);
+              setLoadingPhase('qr_ready');
+              
             } else if (data.status === 'authenticated' || data.status === 'ready') {
               setIsProcessingChats(true);
+              setLoadingPhase('authenticated');
             }
           } else if (data.type === 'progress') {
             setCurrentAction(data.action);
@@ -431,7 +469,9 @@ function LoadingPage2() {
     }
   };
 
-  const unscannedPhones = qrCodes.filter(qr => qr.status !== 'ready');
+  const unscannedPhones = Array.isArray(qrCodes) 
+    ? qrCodes.filter(qr => qr.status !== 'ready')
+    : [];
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-white dark:bg-gray-900 p-4">
