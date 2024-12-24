@@ -5,7 +5,8 @@ import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
-import { ChangeEvent, JSXElementConstructor, Key, ReactElement, ReactNode, useEffect, useState, useRef } from "react";
+import googleCalendarPlugin from '@fullcalendar/google-calendar';
+import { ChangeEvent, JSXElementConstructor, Key, ReactElement, ReactNode, useEffect, useState, useRef, Component, ErrorInfo } from "react";
 import axios from "axios";
 import { getAuth } from 'firebase/auth';
 import { initializeApp } from "firebase/app";
@@ -16,6 +17,7 @@ import Select from 'react-select';
 import { error } from "console";
 import { title } from "process";
 import CreatableSelect from 'react-select/creatable';
+import React from "react";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCc0oSHlqlX7fLeqqonODsOIC3XA8NI7hc",
@@ -141,6 +143,16 @@ function Main() {
   const calendarRef = useRef(null);
   const [appointmentTags, setAppointmentTags] = useState<Tag[]>([]);
   const [companyId, setCompanyId] = useState<string>('');
+
+  class ErrorBoundary extends Component<{ children: ReactNode; onError: (error: Error) => void }> {
+    componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+      this.props.onError(error);
+    }
+  
+    render() {
+      return this.props.children;
+    }
+  }
   const [config, setConfig] = useState<CalendarConfig>({
     calendarId: '',
     startHour: 11,
@@ -726,8 +738,19 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
 
   const handleAddAppointment = async () => {
     const firstEmployeeId = selectedEmployeeIds[0];
+    const secondEmployeeId = selectedEmployeeIds[1];
     const firstEmployee = employees.find(emp => emp.id === firstEmployeeId);
-  
+    const secondEmployee = employees.find(emp => emp.id === secondEmployeeId);
+
+    let color;
+    if (firstEmployee && secondEmployee) {
+      color = `linear-gradient(to right, ${firstEmployee.color} 50%, ${secondEmployee.color} 50%)`;
+    } else if (firstEmployee) {
+      color = firstEmployee.color;
+    } else {
+      color = '#51484f'; // Default color
+    }
+
     const newEvent = {
       title: currentEvent.title,
       startTime: new Date(`${currentEvent.dateStr}T${currentEvent.startTimeStr}`).toISOString(),
@@ -736,7 +759,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       appointmentStatus: currentEvent.extendedProps.appointmentStatus,
       staff: selectedEmployeeIds,
       tags: currentEvent.extendedProps.tags || [],
-      color: firstEmployee ? firstEmployee.color : '#51484f',
+      color: color,
       contacts: selectedContacts.map(contact => ({
         id: contact.id,
         name: contact.contactName,
@@ -744,23 +767,42 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       })),
       packageId: currentEvent.extendedProps.package?.id || null,
     };
-    await createAppointment(newEvent);
-    setAddModalOpen(false);
+
+    const newAppointment = await createAppointment(newEvent);
+    if (newAppointment) {
+      // Update the calendar immediately
+      if (calendarRef.current) {
+        const calendarApi = (calendarRef.current as any).getApi();
+        calendarApi.addEvent({
+          id: newAppointment.id,
+          title: newAppointment.title,
+          start: new Date(newAppointment.startTime),
+          end: new Date(newAppointment.endTime),
+          backgroundColor: newAppointment.color,
+          borderColor: 'transparent',
+          extendedProps: {
+            appointmentStatus: newAppointment.appointmentStatus,
+            staff: newAppointment.staff,
+            tags: newAppointment.tags || []
+          }
+        });
+      }
+      setAddModalOpen(false);
+    }
   };
-  
 
   const createAppointment = async (newEvent: any) => {
     try {
       const user = auth.currentUser;
       if (!user || !user.email) {
         console.error('No authenticated user or email found');
-        return;
+        return null;
       }
       const userRef = doc(firestore, 'user', user.email);
-  
+
       const appointmentsCollectionRef = collection(userRef, 'appointments');
       const newAppointmentRef = doc(appointmentsCollectionRef);
-  
+
       const newAppointment = {
         id: newAppointmentRef.id,
         title: newEvent.title,
@@ -775,28 +817,29 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         contacts: newEvent.contacts,
         tags: newEvent.tags || []
       };
-  
+
       await setDoc(newAppointmentRef, newAppointment);
-  
+
       const companyRef = doc(firestore, 'companies', user.email);
       const sessionsCollectionRef = collection(companyRef, 'session');
-  
+
       for (const contact of newEvent.contacts) {
         const newSessionsRef = doc(sessionsCollectionRef, contact.id);
         const newSessions = {
           id: contact.id,
           session: contact.session
         };
-  
+
         await setDoc(newSessionsRef, newSessions);
       }
-  
-      setAppointments([...appointments, newAppointment as Appointment]);
+
+      setAppointments(prevAppointments => [...prevAppointments, newAppointment as Appointment]);
+      return newAppointment; // Return the new appointment
     } catch (error) {
       console.error('Error creating appointment:', error);
+      return null;
     }
   };
-  
 
   const handleEventDrop = async (eventDropInfo: any) => {
     const { event } = eventDropInfo;
@@ -1025,25 +1068,56 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
   };
 
   const renderEventContent = (eventInfo: any) => {
-    const staffIds = eventInfo.event.extendedProps.staff;
+    // Check if this is a Google Calendar event
+    if (eventInfo.event.source?.googleCalendarId) {
+      return (
+        <div className="flex-grow text-center text-normal font-medium" 
+          style={{ 
+            backgroundColor: '#E1F5FE', // Light blue background
+            color: '#0288D1', // Darker blue text
+            padding: '5px', 
+            borderRadius: '5px',
+            border: '1px dashed #0288D1', // Dashed border
+            opacity: '0.9',
+            fontSize: '0.9em' // Slightly smaller text
+          }}>
+          <div className="flex items-center justify-center">
+            <i className="mr-1">📅</i> {/* Calendar emoji */}
+            <span>{eventInfo.event.title}</span>
+          </div>
+        </div>
+      );
+    }
+
+    // For regular appointments
+    const staffIds = eventInfo.event.extendedProps?.staff || [];
     const staffColors = employees
       .filter(employee => staffIds.includes(employee.id))
       .map(employee => employee.color);
-  
+
     let backgroundStyle: BackgroundStyle = { backgroundColor: '#51484f' }; // Default color
-  
+
     if (staffColors.length === 1) {
       backgroundStyle = { backgroundColor: staffColors[0] };
     } else if (staffColors.length === 2) {
-      backgroundStyle = { background: `linear-gradient(to right, ${staffColors[0]} 0%, ${staffColors[0]} 33%, ${staffColors[1]} 66%, ${staffColors[1]} 100%)` };
+      backgroundStyle = { 
+        background: `linear-gradient(to right, ${staffColors[0]} 0%, ${staffColors[0]} 33%, ${staffColors[1]} 66%, ${staffColors[1]} 100%)`
+      };
     } else if (staffColors.length > 2) {
       backgroundStyle = { backgroundColor: '#FFD700' }; // Distinct color for more than 2 colors
     }
-  
+
     return (
-      <div className="flex-grow text-center text-normal font-medium" style={{ ...backgroundStyle, color: 'white', padding: '5px', borderRadius: '5px' }}>
+      <div className="flex-grow text-center text-normal font-medium" 
+        style={{ 
+          ...backgroundStyle, 
+          color: 'white', 
+          padding: '5px', 
+          borderRadius: '5px',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.12)', // Subtle shadow for regular appointments
+        }}>
         <i>{eventInfo.event.title}</i>
-        {/* {eventInfo.event.extendedProps.tags && eventInfo.event.extendedProps.tags.length > 0 && (
+        {eventInfo.event.extendedProps?.tags && eventInfo.event.extendedProps.tags.length > 0 && (
           <div className="text-xs mt-1">
             {eventInfo.event.extendedProps.tags.map((tag: Tag) => (
               <span key={tag.id} className="bg-gray-200 text-gray-800 px-1 rounded mr-1">
@@ -1051,7 +1125,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
               </span>
             ))}
           </div>
-        )} */}
+        )}
       </div>
     );
   };
@@ -1302,33 +1376,28 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
     fetchCalendarConfig();
   }, []);
 
-  // Modify the updateCalendarConfig function
-  const updateCalendarConfig = async (newConfig: typeof config) => {
+  const updateCalendarConfig = async (newConfig: CalendarConfig) => {
     try {
       const auth = getAuth(app);
       const user = auth.currentUser;
-      if (!user) return;
-
-      const docUserRef = doc(firestore, 'user', user.email!);
+      if (!user || !user.email) return;
+  
+      const docUserRef = doc(firestore, 'user', user.email);
       const docUserSnapshot = await getDoc(docUserRef);
-      if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
-        return;
-      }
-
+      if (!docUserSnapshot.exists()) return;
+  
       const dataUser = docUserSnapshot.data();
       const companyId = dataUser.companyId;
       
-      // Update the path to match your structure
       const configRef = doc(firestore, `companies/${companyId}/config/calendar`);
       await setDoc(configRef, newConfig);
-      
-      setConfig(newConfig);
-      console.log('Calendar config updated successfully');
     } catch (error) {
       console.error('Error updating calendar config:', error);
+      throw error;
     }
   };
+
+  
 
   // Add this JSX somewhere in your return statement, perhaps in the settings section or as a new modal
   const renderCalendarConfigModal = () => (
@@ -1341,10 +1410,21 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Google Calendar ID</label>
               <input
                 type="text"
-                className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                value={config.calendarId}
+                className="block w-full mt-1 border-gray-300 rounded-md shadow-sm"
+                value={config.calendarId || ''}
                 onChange={(e) => setConfig({ ...config, calendarId: e.target.value })}
+                placeholder="example@group.calendar.google.com"
               />
+              <p className="mt-1 text-sm text-gray-500">
+                Enter your Google Calendar ID or leave empty to disable integration.
+                <br />
+                Example format: xxx@group.calendar.google.com
+              </p>
+              {config.calendarId && !validateCalendarId(config.calendarId) && (
+                <p className="mt-1 text-sm text-red-500">
+                  Invalid calendar ID format
+                </p>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Start Hour (24h)</label>
@@ -1398,7 +1478,18 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
               </button>
               <button
                 className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600"
-                onClick={() => {
+                onClick={async () => {
+                  if (!config.calendarId) {
+                    alert('Please enter a Calendar ID');
+                    return;
+                  }
+                  
+                  const isValid = await testGoogleCalendarConnection(config.calendarId);
+                  if (!isValid) {
+                    alert('Unable to connect to the calendar. Please check the Calendar ID and try again.');
+                    return;
+                  }
+                  
                   updateCalendarConfig(config);
                   setIsCalendarConfigOpen(false);
                 }}
@@ -1411,6 +1502,215 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       </div>
     </Dialog>
   );
+
+  // Add this logging function to help debug
+  const debugLog = (message: string, data?: any) => {
+    console.log(`Calendar Config - ${message}:`, data);
+  };
+
+  // Update the validation function to be more permissive and add logging
+  const validateCalendarId = (calendarId: string | null | undefined) => {
+    debugLog('Validating calendar ID', calendarId);
+    
+    // Allow empty, null, or undefined calendar IDs
+    if (!calendarId || calendarId.trim() === '') {
+      debugLog('Empty calendar ID - valid');
+      return true;
+    }
+    
+    // More permissive regex for Google Calendar IDs
+    const regex = /^[\w.-]+@[\w.-]+\.(calendar\.google\.com|gmail\.com)$/;
+    const isValid = regex.test(calendarId.trim());
+    debugLog('Calendar ID validation result', isValid);
+    return isValid;
+  };
+
+  // Update the Google Calendar connection test
+  const testGoogleCalendarConnection = async (calendarId: string) => {
+    debugLog('Testing calendar connection', calendarId);
+    try {
+      const encodedCalendarId = encodeURIComponent(calendarId.trim());
+      const apiKey = import.meta.env.VITE_GOOGLE_CALENDAR_API_KEY;
+      
+      if (!apiKey) {
+        debugLog('Missing Google Calendar API key');
+        return false;
+      }
+
+      const response = await fetch(
+        `https://www.googleapis.com/calendar/v3/calendars/${encodedCalendarId}/events?key=${apiKey}&maxResults=1`
+      );
+      
+      debugLog('Calendar API response status', response.status);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        debugLog('Calendar API error', errorData);
+        return false;
+      }
+      
+      return true;
+    } catch (error) {
+      debugLog('Calendar connection error', error);
+      return false;
+    }
+  };
+
+  // Update the save function with better error handling
+  const handleSaveCalendarConfig = async () => {
+    debugLog('Saving calendar config', config);
+    
+    const newConfig = {
+      ...config,
+      calendarId: config.calendarId?.trim() || ''
+    };
+
+    debugLog('Processed config', newConfig);
+
+    // Skip validation for empty calendar ID
+    if (newConfig.calendarId) {
+      if (!validateCalendarId(newConfig.calendarId)) {
+        alert('Invalid Calendar ID format. Please enter a valid Google Calendar ID or leave it empty to disable integration.');
+        return;
+      }
+
+      try {
+        const isValid = await testGoogleCalendarConnection(newConfig.calendarId);
+        if (!isValid) {
+          alert('Unable to connect to the calendar. Please check the Calendar ID and your internet connection.');
+          return;
+        }
+      } catch (error) {
+        debugLog('Connection test error', error);
+        alert('Error testing calendar connection. Please try again.');
+        return;
+      }
+    }
+
+    try {
+      await updateCalendarConfig(newConfig);
+      setConfig(newConfig);
+      
+      // Safely refresh the calendar
+      if (calendarRef.current) {
+        const calendarApi = (calendarRef.current as any).getApi();
+        try {
+          calendarApi.removeAllEventSources();
+          await calendarApi.refetchEvents();
+          debugLog('Calendar refreshed successfully');
+        } catch (error) {
+          debugLog('Calendar refresh error', error);
+        }
+      }
+      
+      setIsCalendarConfigOpen(false);
+    } catch (error) {
+      debugLog('Save config error', error);
+      alert('Error saving calendar configuration. Please try again.');
+    }
+  };
+
+  // Update the calendar options to handle errors gracefully
+  const calendarOptions = {
+    plugins: [
+      dayGridPlugin,
+      timeGridPlugin,
+      interactionPlugin,
+      googleCalendarPlugin
+    ],
+    initialView: view,
+    headerToolbar: {
+      left: 'prev,next today',
+      center: 'title',
+      right: 'dayGridMonth,timeGridWeek,timeGridDay'
+    },
+    editable: true, // Enable event editing
+    eventClick: handleEventClick, // Add this to handle event clicks
+    eventDrop: handleEventDrop,
+    select: handleDateSelect,
+    selectable: true,
+    googleCalendarApiKey: import.meta.env.VITE_GOOGLE_CALENDAR_API_KEY,
+    eventSources: [
+      {
+        events: filteredAppointments.map(appointment => ({
+          id: appointment.id,
+          title: appointment.title,
+          start: new Date(appointment.startTime),
+          end: new Date(appointment.endTime),
+          backgroundColor: appointment.color || '#51484f',
+          borderColor: 'transparent',
+          extendedProps: {
+            address: appointment.address,
+            appointmentStatus: appointment.appointmentStatus,
+            staff: appointment.staff,
+            package: packages.find(p => p.id === appointment.packageId) || null,
+            dateAdded: appointment.dateAdded,
+            contacts: appointment.contacts,
+            tags: appointment.tags || []
+          }
+        }))
+      },
+      ...(config.calendarId && config.calendarId.trim() !== '' && validateCalendarId(config.calendarId) ? [{
+        googleCalendarId: config.calendarId,
+        className: 'gcal-event',
+        color: '#a8d7e0',
+        editable: false
+      }] : [])
+    ],
+    eventContent: renderEventContent, // Add this to use your custom event rendering
+    eventDidMount: (info: any) => {
+      // Apply the color directly to the event element
+      if (info.event.source?.googleCalendarId) return; // Skip for Google Calendar events
+      
+      const staffIds = info.event.extendedProps?.staff || [];
+      const staffColors = employees
+        .filter(employee => staffIds.includes(employee.id))
+        .map(employee => employee.color);
+
+      if (staffColors.length === 1) {
+        info.el.style.backgroundColor = staffColors[0];
+      } else if (staffColors.length === 2) {
+        info.el.style.background = `linear-gradient(to right, ${staffColors[0]} 50%, ${staffColors[1]} 50%)`;
+      }
+      
+      // Make sure the event is clickable
+      info.el.style.cursor = 'pointer';
+    }
+  };
+
+  // 3. Add error boundary around the calendar component
+  const CalendarErrorBoundary = ({ children }: { children: React.ReactNode }) => {
+    const [hasError, setHasError] = React.useState(false);
+
+    if (hasError) {
+      return (
+        <div className="p-4 text-center">
+          <p>Something went wrong loading the calendar. Please try refreshing the page.</p>
+        </div>
+      );
+    }
+
+    return (
+      <ErrorBoundary onError={() => setHasError(true)}>
+        {children}
+      </ErrorBoundary>
+    );
+  };
+
+  // Use the error boundary in your JSX
+  <div className="p-5 box intro-y">
+    <CalendarErrorBoundary>
+      <FullCalendar
+        {...calendarOptions}
+        ref={calendarRef}
+        slotLabelFormat={{
+          hour: 'numeric' as const,
+          minute: '2-digit' as const,
+          meridiem: 'short' as const
+        }}
+      />
+    </CalendarErrorBoundary>
+  </div>
 
   return (
     <>
@@ -1623,34 +1923,9 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         {/* Calendar */}
         <div className={`${isMobile ? 'hidden' : ''} md:col-span-8 xl:col-span-8 2xl:col-span-9`}>
           <div className="p-5 box intro-y">
-            <FullCalendar
-              ref={calendarRef}
-              plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-              initialView={view}
-              events={filteredAppointments.map(appointment => ({
-                id: appointment.id,
-                title: appointment.title,
-                start: appointment.startTime,
-                end: appointment.endTime,
-                extendedProps: {
-                  appointmentStatus: appointment.appointmentStatus,
-                  staff: appointment.staff,
-                  tags: appointment.tags || []
-                }
-              }))}
-              selectable={true}
-              select={handleDateSelect}
-              eventClick={handleEventClick}
-              editable={true}
-              eventDrop={handleEventDrop}
-              eventContent={renderEventContent}
-              headerToolbar={{
-                left: 'prev,next today',
-                center: 'title',
-                right: 'dayGridMonth,timeGridWeek,timeGridDay'
-              }}
-              datesSet={(dateInfo) => setView(dateInfo.view.type)}
-            />
+            <CalendarErrorBoundary>
+              <FullCalendar {...calendarOptions} ref={calendarRef} slotLabelFormat={{ hour: 'numeric', minute: '2-digit', meridiem: 'short' }} />
+            </CalendarErrorBoundary>
             <style>{`
               .fc .fc-toolbar {
                 color: #0C4A6E;
