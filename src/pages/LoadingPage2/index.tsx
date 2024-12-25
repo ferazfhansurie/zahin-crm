@@ -185,6 +185,7 @@ function LoadingPage2() {
     setBotStatus(null);
     setError(null);
     
+    
     // Fetch new QR code
     await fetchQRCode();
   };

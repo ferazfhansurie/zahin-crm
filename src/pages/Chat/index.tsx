@@ -7386,7 +7386,7 @@ console.log(prompt);
               .filter((message) => message.type !== 'action'&& 
               message.type !== 'e2e_notification' && 
               message.type !== 'notification_template'&&
-              (userData?.company !== "0123" || 
+              (userData?.company !== "Revotrend" || 
                 (userData?.phone === undefined || 
                 phoneCount === undefined || 
                 phoneCount === 0 ||
