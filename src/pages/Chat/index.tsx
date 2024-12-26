@@ -2363,9 +2363,81 @@ useEffect(() => {
       fetchMessages(selectedChatId, whapiToken!);
     }
   }, [selectedChatId]);
+
+  const storeMessagesInLocalStorage = (chatId: string, messages: any[]) => {
+    try {
+      console.log(`Attempting to store ${messages.length} messages for chat ${chatId}`);
+      const storageKey = `messages_${chatId}`;
+      
+      // Compress and store messages
+      const compressedMessages = LZString.compress(JSON.stringify(messages));
+      localStorage.setItem(storageKey, compressedMessages);
+      
+      // Store timestamp
+      const timestamp = Date.now().toString();
+      localStorage.setItem(`${storageKey}_timestamp`, timestamp);
+      
+      console.log('Messages stored successfully:', {
+        chatId,
+        messageCount: messages.length,
+        timestamp: new Date(parseInt(timestamp)).toISOString()
+      });
+    } catch (error) {
+      console.error('Error storing messages in localStorage:', error);
+    }
+  };
+
+  const getMessagesFromLocalStorage = (chatId: string): any[] | null => {
+    try {
+      console.log(`Attempting to retrieve messages for chat ${chatId}`);
+      const storageKey = `messages_${chatId}`;
+      const compressedMessages = localStorage.getItem(storageKey);
+      const timestamp = localStorage.getItem(`${storageKey}_timestamp`);
+      
+      if (!compressedMessages || !timestamp) {
+        console.log('No cached messages found');
+        return null;
+      }
+      
+      if (Date.now() - parseInt(timestamp) > 3600000) {
+        console.log('Cache expired:', {
+          storedAt: new Date(parseInt(timestamp)).toISOString(),
+          age: Math.floor((Date.now() - parseInt(timestamp)) / 1000 / 60) + ' minutes'
+        });
+        return null;
+      }
+      
+      const messages = JSON.parse(LZString.decompress(compressedMessages));
+      console.log('Retrieved messages from cache:', {
+        chatId,
+        messageCount: messages.length,
+        cacheAge: Math.floor((Date.now() - parseInt(timestamp)) / 1000 / 60) + ' minutes'
+      });
+      
+      return messages;
+    } catch (error) {
+      console.error('Error retrieving messages from localStorage:', error);
+      return null;
+    }
+  };
+
   async function fetchMessages(selectedChatId: string, whapiToken: string) {
     setLoading(true);
     setSelectedIcon('ws');
+
+    // Try to get messages from localStorage first
+    const cachedMessages = getMessagesFromLocalStorage(selectedChatId);
+    
+    if (cachedMessages) {
+      console.log('Using cached messages');
+      setMessages(cachedMessages);
+      setLoading(false);
+      
+      // Fetch fresh messages in the background
+      fetchMessagesBackground(selectedChatId, whapiToken);
+      return;
+    }
+
     const auth = getAuth(app);
     const user = auth.currentUser;
     
@@ -2575,6 +2647,8 @@ useEffect(() => {
                 message.reactions = reactionsMap[message.id];
             }
         });
+
+        storeMessagesInLocalStorage(selectedChatId, formattedMessages);
         
         setMessages(formattedMessages);
         fetchContactsBackground(
@@ -2834,6 +2908,8 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
       a.timestamp - b.timestamp
     );
 
+    storeMessagesInLocalStorage(selectedChatId, allMessages);
+
     setMessages(allMessages);
     
     // Update private notes state
@@ -2952,138 +3028,179 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
 
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !selectedChatId) return;
-      
+    
+    // Store the message text before clearing input
+    const messageText = newMessage;
     setNewMessage('');
     setReplyToMessage(null);
-    const user = auth.currentUser;
-    const docUserRef = doc(firestore, 'user', user?.email!);
-    const docUserSnapshot = await getDoc(docUserRef);
-    if (!docUserSnapshot.exists()) {
-      console.log('No such document!');
-      return;
-    }
-    const dataUser = docUserSnapshot.data();
-    companyId = dataUser.companyId;
-  // Use contact's phoneIndex instead of user's phone
-  let phoneIndex = selectedContact?.phoneIndex ?? 0;
+  
+    // Create temporary message object for immediate display
+    const tempMessage = {
+      id: `temp_${Date.now()}`,
+      from_me: true,
+      text: { body: messageText },
+      createdAt: new Date().toISOString(),
+      type: 'text',
+      phoneIndex: selectedContact?.phoneIndex ?? 0,
+      chat_id: selectedChatId,
+      from_name: userData?.name || '',
+      timestamp: Math.floor(Date.now() / 1000)
+    };
+
+    console.log('Current messages in localStorage:', getMessagesFromLocalStorage(selectedChatId));
+  
+    const currentMessages = getMessagesFromLocalStorage(selectedChatId) || [];
+    console.log('Retrieved current messages from localStorage:', currentMessages.length, 'messages');
     
-    const userName = dataUser.name || dataUser.email || ''; // Get the user's name
-    const docRef = doc(firestore, 'companies', companyId);
-    const docSnapshot = await getDoc(docRef);
-    if (!docSnapshot.exists()) {
-      console.log('No such document!');
-      return;
-    }
-    const data2 = docSnapshot.data();
-    const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
-    if (messageMode === 'privateNote') {
-      handleAddPrivateNote(newMessage);
-    } else {
-      try {
-        let response;
-        console.log("v2 is true");
-        // Use the new API
-      
-        response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${selectedChatId}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: newMessage,
-            quotedMessageId: replyToMessage?.id || null,
-            phoneIndex: phoneIndex,
-            userName: userName
-          }),
-        });
+    const updatedMessages = [...currentMessages, tempMessage];
+    console.log('Adding new message to localStorage. Total messages:', updatedMessages.length);
     
-        if (!response.ok) {
-          throw new Error('Failed to send message');
-        }
-        const now = new Date();
-        const data = await response.json();
-        console.log('response:', data);
+    storeMessagesInLocalStorage(selectedChatId, updatedMessages);
+    console.log('Messages stored in localStorage successfully');
+
+    // Update UI immediately
+    setMessages(prevMessages => [
+      ...prevMessages, 
+      { 
+        ...tempMessage, 
+        createdAt: new Date(tempMessage.createdAt).getTime() 
+      } as unknown as Message
+    ]);
+  
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error('No authenticated user');
+  
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) throw new Error('No user document found');
+  
+      const dataUser = docUserSnapshot.data();
+      companyId = dataUser.companyId;
+      const phoneIndex = selectedContact?.phoneIndex ?? 0;
+      const userName = dataUser.name || dataUser.email || '';
+  
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) throw new Error('No company document found');
+  
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+  
+      if (messageMode === 'privateNote') {
+        handleAddPrivateNote(messageText);
+        return;
+      }
+  
+      // Send message to API
+      const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${selectedChatId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: messageText,
+          quotedMessageId: replyToMessage?.id || null,
+          phoneIndex,
+          userName
+        }),
+      });
+  
+      if (!response.ok) throw new Error('Failed to send message');
+  
+      const now = new Date();
+      const data = await response.json();
+      console.log('response:', data);
+  
+      // Update contacts list
+      setContacts(prevContacts => 
+        prevContacts.map(contact => 
+          contact.id === selectedContact?.id 
+            ? updateContactWithNewMessage(contact, messageText, now, phoneIndex)
+            : contact
+        )
+      );
+  
+      // Handle special case for company 0123
+      if (companyId === '0123' && selectedContact?.id) {
+        const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
+        const contactSnapshot = await getDoc(contactRef);
         
-        // Update the local state
-        setContacts(prevContacts => 
-          prevContacts.map(contact => 
-            contact.id === selectedContact.id 
-              ? updateContactWithNewMessage(contact, newMessage, now,phoneIndex)
-              : contact
-          )
-        );
-    
-        // Add "stop bot" tag for companyId 0123
-        if (companyId === '0123' && selectedContact?.id) {
-          const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
-          
-          // Get current contact data
-          const contactSnapshot = await getDoc(contactRef);
-          if (contactSnapshot.exists()) {
-            const currentTags = contactSnapshot.data().tags || [];
-            
-            // Only add "stop bot" if it's not already present
-            if (!currentTags.includes('stop bot')) {
-              await updateDoc(contactRef, {
-                tags: arrayUnion('stop bot'),
-                last_message: {
-                  text: { body: newMessage },
-                  chat_id: selectedContact.chat_id || '',
-                  timestamp: Math.floor(Date.now() / 1000),
-                  id: selectedContact.last_message?.id || `temp_${now.getTime()}`,
-                  from_me: true,
-                  type: 'text',
-                  phoneIndex: phoneIndex,
-                }
-              });
-              
-              // Update local state to reflect the new tag
-              setContacts(prevContacts =>
-                prevContacts.map(contact =>
-                  contact.id === selectedContact.id
-                    ? { ...contact, tags: [...(contact.tags || []), 'stop bot'] }
-                    : contact
-                )
-              );
-            } else {
-              // If "stop bot" tag already exists, just update the last message
-              await updateDoc(contactRef, {
-                last_message: {
-                  text: { body: newMessage },
-                  chat_id: selectedContact.chat_id || '',
-                  timestamp: Math.floor(Date.now() / 1000),
-                  id: selectedContact.last_message?.id || `temp_${now.getTime()}`,
-                  from_me: true,
-                  type: 'text',
-                  phoneIndex: phoneIndex,
-                }
-              });
-            }
-          }
-        } else {
-          // Original update for non-0123 companies
-          const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
-          const updatedLastMessage: Message = {
-            text: { body: newMessage },
+        if (contactSnapshot.exists()) {
+          const currentTags = contactSnapshot.data().tags || [];
+          const updatedLastMessage = {
+            text: { body: messageText },
             chat_id: selectedContact.chat_id || '',
-            timestamp: Math.floor(Date.now() / 1000),
+            timestamp: Math.floor(now.getTime() / 1000),
             id: selectedContact.last_message?.id || `temp_${now.getTime()}`,
             from_me: true,
             type: 'text',
-            phoneIndex: phoneIndex,
+            phoneIndex,
           };
-          
-          await updateDoc(contactRef, {
-            last_message: updatedLastMessage
-          });
+  
+          if (!currentTags.includes('stop bot')) {
+            await updateDoc(contactRef, {
+              tags: arrayUnion('stop bot'),
+              last_message: updatedLastMessage
+            });
+            
+            setContacts(prevContacts =>
+              prevContacts.map(contact =>
+                contact.id === selectedContact.id
+                  ? { ...contact, tags: [...(contact.tags || []), 'stop bot'] }
+                  : contact
+              )
+            );
+          } else {
+            await updateDoc(contactRef, { last_message: updatedLastMessage });
+          }
         }
-    
-        console.log('Message sent successfully:', data);
-        fetchMessagesBackground(selectedChatId!, data2.apiToken);
-      } catch (error) {
-        console.error('Error sending message:', error);
-        toast.error("Failed to send message");
+      } else {
+        // Update for non-0123 companies
+        const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact?.id);
+        const updatedLastMessage: Message = {
+          text: { body: messageText },
+          chat_id: selectedContact?.chat_id || '',
+          timestamp: Math.floor(now.getTime() / 1000),
+          id: selectedContact?.last_message?.id || `temp_${now.getTime()}`,
+          from_me: true,
+          type: 'text',
+          phoneIndex,
+        };
+        
+        await updateDoc(contactRef, { last_message: updatedLastMessage });
       }
-    }
+  
+      // Fetch updated messages and update local storage
+      fetchMessagesBackground(selectedChatId, data2.apiToken);
 
+      // After successful API call
+      console.log('Message sent successfully to API');
+
+      // Verify local storage was updated
+      const storedMessages = getMessagesFromLocalStorage(selectedChatId);
+      console.log('Current state of localStorage after API call:', {
+        messageCount: storedMessages?.length || 0,
+        lastMessage: storedMessages?.[storedMessages.length - 1]
+      });
+  
+    } catch (error) {
+      console.error('Error sending message:', error);
+      toast.error("Failed to send message");
+      
+      // Remove temporary message from local storage and UI if send failed
+      console.log('Message send failed, removing temporary message from localStorage');
+      const currentMessages = getMessagesFromLocalStorage(selectedChatId) || [];
+      const filteredMessages = currentMessages.filter(msg => msg.id !== tempMessage.id);
+      storeMessagesInLocalStorage(selectedChatId, filteredMessages);
+      
+      // Verify removal
+      const updatedStoredMessages = getMessagesFromLocalStorage(selectedChatId);
+      console.log('LocalStorage state after removing failed message:', {
+        messageCount: updatedStoredMessages?.length || 0,
+        tempMessageStillExists: updatedStoredMessages?.some(msg => msg.id === tempMessage.id)
+      });
+
+      setMessages(prevMessages => prevMessages.filter(msg => msg.id !== tempMessage.id));
+    }
   };
 
   
