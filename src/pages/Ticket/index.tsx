@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getDoc, getFirestore, doc, setDoc, collection, addDoc, getDocs, updateDoc, deleteDoc } from 'firebase/firestore';
+import { getDoc, getFirestore, doc, setDoc, collection, addDoc, getDocs, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { initializeApp } from "firebase/app";
 import { Dialog } from '@headlessui/react';
@@ -28,9 +28,11 @@ interface Task {
   title: string;
   deadline: string;
   poc: string;
+  creator: string;
   clientName: string;
-  description: string;
-  status: 'open' | 'in-progress' | 'completed' | 'blocked';
+  tasks: string;
+  taskStatus: { [key: string]: boolean };
+  status: 'open' | 'in-progress' | 'doing-now' | 'completed' | 'blocked';
   dateCreated: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
   estimatedHours: number;
@@ -65,8 +67,9 @@ const Ticket = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<Task['status'] | 'all'>('all');
   const [filterPriority, setFilterPriority] = useState<Task['priority'] | 'all'>('all');
-  const [hideCompleted, setHideCompleted] = useState(false);
+  const [hideCompleted, setHideCompleted] = useState(true);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [filterPOC, setFilterPOC] = useState<string>('all');
 
   useEffect(() => {
     fetchTasks();
@@ -78,16 +81,38 @@ const Ticket = () => {
     try {
       const user = auth.currentUser;
       if (!user?.email) return;
-
-      const tasksRef = collection(firestore, `user/${user.email}/tasks`);
-      const tasksSnapshot = await getDocs(tasksRef);
-      
-      const tasksData = tasksSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Task[];
-
-      setTasks(tasksData);
+  
+      // First get the company ID for the current user
+      const docUserRef = doc(firestore, 'user', user.email);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document for user!');
+        return;
+      }
+  
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+  
+      // Get all employees in the company
+      const employeeRef = collection(firestore, `companies/${companyId}/employee`);
+      const employeeSnapshot = await getDocs(employeeRef);
+  
+      // Fetch tasks for all employees
+      const allTasksPromises = employeeSnapshot.docs.map(async (employeeDoc) => {
+        const employeeEmail = employeeDoc.data().email;
+        const tasksRef = collection(firestore, `user/${employeeEmail}/tasks`);
+        const tasksSnapshot = await getDocs(tasksRef);
+        
+        return tasksSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+      });
+  
+      const allTasksArrays = await Promise.all(allTasksPromises);
+      const allTasks = allTasksArrays.flat() as Task[];
+  
+      setTasks(allTasks);
     } catch (error) {
       console.error('Error fetching tasks:', error);
     }
@@ -151,15 +176,42 @@ const Ticket = () => {
       const user = auth.currentUser;
       if (!user?.email) return;
 
-      const clientsRef = collection(firestore, `user/${user.email}/clients`);
-      const clientsSnapshot = await getDocs(clientsRef);
-      
-      const clientsData = clientsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as Client[];
+      // First get the company ID for the current user
+      const docUserRef = doc(firestore, 'user', user.email);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document for user!');
+        return;
+      }
 
-      setClients(clientsData);
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+
+      // Get all employees in the company
+      const employeeRef = collection(firestore, `companies/${companyId}/employee`);
+      const employeeSnapshot = await getDocs(employeeRef);
+
+      // Fetch clients for all employees
+      const allClientsPromises = employeeSnapshot.docs.map(async (employeeDoc) => {
+        const employeeEmail = employeeDoc.data().email;
+        const clientsRef = collection(firestore, `user/${employeeEmail}/clients`);
+        const clientsSnapshot = await getDocs(clientsRef);
+        
+        return clientsSnapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+      });
+
+      const allClientsArrays = await Promise.all(allClientsPromises);
+      // Flatten and remove duplicates based on client name
+      const allClients = Array.from(new Map(
+        allClientsArrays
+          .flat()
+          .map(client => [client.id, client])
+      ).values()) as Client[];
+
+      setClients(allClients);
     } catch (error) {
       console.error('Error fetching clients:', error);
     }
@@ -171,6 +223,8 @@ const Ticket = () => {
         return 'bg-blue-500';
       case 'in-progress':
         return 'bg-yellow-500';
+      case 'doing-now':
+        return 'bg-purple-500';
       case 'completed':
         return 'bg-green-500';
       case 'blocked':
@@ -180,21 +234,24 @@ const Ticket = () => {
     }
   };
 
-  const filteredTasks = tasks.filter(task => {
-    if (hideCompleted && task.status === 'completed') {
-      return false;
-    }
+  const filteredTasks = tasks
+    .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
+    .filter(task => {
+      if (hideCompleted && task.status === 'completed') {
+        return false;
+      }
 
-    const matchesSearch = 
-      task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      task.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      task.clientName.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesStatus = filterStatus === 'all' || task.status === filterStatus;
-    const matchesPriority = filterPriority === 'all' || task.priority === filterPriority;
+      const matchesSearch = 
+        task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        task.tasks.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        task.clientName.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      const matchesStatus = filterStatus === 'all' || task.status === filterStatus;
+      const matchesPriority = filterPriority === 'all' || task.priority === filterPriority;
+      const matchesPOC = filterPOC === 'all' || task.poc === filterPOC;
 
-    return matchesSearch && matchesStatus && matchesPriority;
-  });
+      return matchesSearch && matchesStatus && matchesPriority && matchesPOC;
+    });
 
   const getPriorityColor = (priority: Task['priority']) => {
     switch (priority) {
@@ -203,6 +260,102 @@ const Ticket = () => {
       case 'high': return 'bg-orange-500';
       case 'critical': return 'bg-red-500';
       default: return 'bg-gray-500';
+    }
+  };
+
+  const sendTaskNotification = async (poc: string, task: Task, isNew: boolean) => {
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      // Get company ID
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) return;
+
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+
+      // Get company data
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) return;
+
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+
+      // Find employee's phone number
+      const employeesRef = collection(firestore, 'companies', companyId, 'employee');
+      const q = query(employeesRef, where("email", "==", poc));
+      const querySnapshot = await getDocs(q);
+      
+      if (querySnapshot.empty) {
+        console.log(`No employee found with email ${poc}`);
+        return;
+      }
+
+      const employeeData = querySnapshot.docs[0].data();
+      const employeePhone = employeeData.phoneNumber;
+      if (!employeePhone) return;
+
+      const chatId = `${employeePhone.replace(/[^\d]/g, '')}@c.us`;
+      const groupChatId = "120363178065670386@g.us";
+
+      // Check if this is a completion message by looking for celebration indicators
+      const isCompletionMessage = task.title.includes('YEEP YEEP HURRAY') || 
+                                 task.title.includes('Task Completed') ||
+                                 task.title.includes('🎉') ||
+                                 task.title.includes('🎊');
+
+      // Prepare message based on context
+      const taskUrl = `https://web.jutasoftware.co/ticket`;
+      let message: string;
+      let recipients: string[];
+
+      if (isCompletionMessage) {
+        // For completion messages, send only to group
+        message = task.title; // Use the formatted completion message
+        recipients = [groupChatId];
+      } else if (isNew) {
+        // For new tasks, send to both individual and group
+        message = `Hello ${employeeData.name},\n\nA new task has been assigned to you:\n\nTitle: ${task.title}\nDeadline: ${format(new Date(task.deadline), 'dd/MM/yyyy')}\nClient: ${task.clientName}\nPriority: ${task.priority}\n\nPlease check the details at ${taskUrl}`;
+        recipients = [chatId, groupChatId];
+      } else {
+        // For regular reminders, send only to individual
+        message = `🔔 Reminder: ${employeeData.name},\n\nPlease check this task:\n\nTitle: ${task.title}\nDeadline: ${format(new Date(task.deadline), 'dd/MM/yyyy')}\nClient: ${task.clientName}\nPriority: ${task.priority}\nStatus: ${task.status}\n\nTask details at ${taskUrl}`;
+        recipients = [chatId];
+      }
+
+      // Send messages to designated recipients
+      for (const recipient of recipients) {
+        const url = companyData.v2 === true
+          ? `${baseUrl}/api/v2/messages/text/${companyId}/${recipient}`
+          : `${baseUrl}/api/messages/text/${recipient}/${companyData.whapiToken}`;
+
+        const requestBody = companyData.v2 === true
+          ? { 
+              message,
+              phoneIndex: userData?.phone >= 0 ? userData?.phone : 0,
+              userName: userData.name || ''
+            }
+          : { message };
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Error sending task notification:', errorText);
+          continue;
+        }
+      }
+
+      console.log('Task notifications sent successfully');
+    } catch (error) {
+      console.error('Error sending task notification:', error);
     }
   };
 
@@ -247,6 +400,7 @@ const Ticket = () => {
           <option value="all">All Status</option>
           <option value="open">Open</option>
           <option value="in-progress">In Progress</option>
+          <option value="doing-now">Doing Now</option>
           <option value="completed">Completed</option>
           <option value="blocked">Blocked</option>
         </select>
@@ -261,6 +415,18 @@ const Ticket = () => {
           <option value="high">High</option>
           <option value="critical">Critical</option>
         </select>
+        <select
+          value={filterPOC}
+          onChange={(e) => setFilterPOC(e.target.value)}
+          className="px-4 py-2 border rounded-md"
+        >
+          <option value="all">All Employees</option>
+          {employees.map((employee) => (
+            <option key={employee.id} value={employee.email}>
+              {employee.name}
+            </option>
+          ))}
+        </select>
         <label className="flex items-center gap-2">
           <input
             type="checkbox"
@@ -272,75 +438,222 @@ const Ticket = () => {
         </label>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full border-collapse border border-gray-300 dark:border-gray-600">
+      <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 shadow">
+        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead>
-            <tr>
-              <th className="border border-gray-300 dark:border-gray-600 p-2 bg-gray-100 dark:bg-gray-700 text-left">Title</th>
-              <th className="border border-gray-300 dark:border-gray-600 p-2 bg-gray-100 dark:bg-gray-700 text-left">Deadline</th>
-              <th className="border border-gray-300 dark:border-gray-600 p-2 bg-gray-100 dark:bg-gray-700 text-left">POC</th>
-              <th className="border border-gray-300 dark:border-gray-600 p-2 bg-gray-100 dark:bg-gray-700 text-left">Client</th>
-              <th className="border border-gray-300 dark:border-gray-600 p-2 bg-gray-100 dark:bg-gray-700 text-left">Description</th>
-              <th className="border border-gray-300 dark:border-gray-600 p-2 bg-gray-100 dark:bg-gray-700 text-left">Status</th>
-              <th className="border border-gray-300 dark:border-gray-600 p-2 bg-gray-100 dark:bg-gray-700 text-left">Priority</th>
-              <th className="border border-gray-300 dark:border-gray-600 p-2 bg-gray-100 dark:bg-gray-700 text-left">Est. Hours</th>
-              <th className="border border-gray-300 dark:border-gray-600 p-2 bg-gray-100 dark:bg-gray-700 text-left">Comments</th>
-              <th className="border border-gray-300 dark:border-gray-600 p-2 bg-gray-100 dark:bg-gray-700 text-left">Created</th>
-              <th className="border border-gray-300 dark:border-gray-600 p-2 bg-gray-100 dark:bg-gray-700 text-left">Actions</th>
+            <tr className="bg-gray-50 dark:bg-gray-800">
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Title</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Deadline</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">POC</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Client</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Tasks</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Priority</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Est. Hours</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Comments</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Created</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
-          <tbody>
-            {filteredTasks.map((task) => (
-              <tr key={task.id}>
-                <td className="border border-gray-300 dark:border-gray-600 p-2">{task.title}</td>
-                <td className="border border-gray-300 dark:border-gray-600 p-2">
-                  {format(new Date(task.deadline), 'dd/MM/yyyy')}
+          <tbody className="bg-white divide-y divide-gray-200 dark:bg-gray-900 dark:divide-gray-700">
+            {filteredTasks.map((task, idx) => (
+              <tr key={task.id} className={`
+                ${idx % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50 dark:bg-gray-800'}
+                hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors
+              `}>
+                <td className="px-4 py-3 whitespace-nowrap">{task.title}</td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <div className={`
+                    ${(() => {
+                      const daysUntilDeadline = Math.ceil((new Date(task.deadline).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+                      if (daysUntilDeadline < 0) return 'text-red-500'; 
+                      if (daysUntilDeadline <= 3) return 'text-orange-500';
+                      if (daysUntilDeadline <= 7) return 'text-yellow-500';
+                      return 'text-gray-900 dark:text-gray-300';
+                    })()}
+                    font-medium
+                  `}>
+                    {format(new Date(task.deadline), 'dd/MM/yyyy')}
+                  </div>
                 </td>
-                <td className="border border-gray-300 dark:border-gray-600 p-2">
-                  {employees.find(emp => emp.email === task.poc)?.name || task.poc}
-                  <div
-                    className="w-3 h-3 rounded-full inline-block ml-2"
-                    style={{ backgroundColor: employees.find(emp => emp.email === task.poc)?.color }}
-                  />
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <div className="flex items-center">
+                    <span className="mr-2">{employees.find(emp => emp.email === task.poc)?.name || task.poc}</span>
+                    <div
+                      className="w-3 h-3 rounded-full"
+                      style={{ backgroundColor: employees.find(emp => emp.email === task.poc)?.color }}
+                    />
+                  </div>
                 </td>
-                <td className="border border-gray-300 dark:border-gray-600 p-2">{task.clientName}</td>
-                <td className="border border-gray-300 dark:border-gray-600 p-2">
-                  <div className="max-w-xs overflow-hidden text-ellipsis">{task.description}</div>
+                <td className="px-4 py-3 whitespace-nowrap">{task.clientName}</td>
+                <td className="px-4 py-3">
+                  <div className="max-w-xs">
+                    {task.tasks.split('\n').map((item, index) => (
+                      <div key={index} className="flex items-center gap-2 mb-1">
+                        <input
+                          type="checkbox"
+                          checked={task.taskStatus?.[item] || false}
+                          onChange={async () => {
+                            try {
+                              const user = auth.currentUser;
+                              if (!user?.email) return;
+
+                              const taskRef = doc(firestore, `user/${task.creator}/tasks`, task.id);
+                              const newTaskStatus = {
+                                ...task.taskStatus,
+                                [item]: !task.taskStatus?.[item]
+                              };
+
+                              await updateDoc(taskRef, {
+                                taskStatus: newTaskStatus
+                              });
+
+                              // Update local state
+                              setTasks(tasks.map(t => 
+                                t.id === task.id 
+                                  ? { ...t, taskStatus: newTaskStatus }
+                                  : t
+                              ));
+                            } catch (error) {
+                              console.error('Error updating task status:', error);
+                            }
+                          }}
+                          className="rounded border-gray-300 text-primary focus:ring-primary dark:border-gray-600 dark:bg-gray-700"
+                        />
+                        <span className={`text-sm ${task.taskStatus?.[item] ? 'line-through text-gray-500' : 'text-gray-900 dark:text-gray-300'}`}>
+                          {item}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </td>
-                <td className="border border-gray-300 dark:border-gray-600 p-2">
-                  <span className={`px-2 py-1 rounded-full text-white text-sm ${getStatusColor(task.status)}`}>
-                    {task.status}
-                  </span>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <select
+                    value={task.status}
+                    onChange={async (e) => {
+                      try {
+                        const user = auth.currentUser;
+                        if (!user?.email) return;
+
+                        const taskRef = doc(firestore, `user/${task.creator}/tasks`, task.id);
+                        const newStatus = e.target.value as Task['status'];
+                        const completionTime = new Date().toISOString();
+
+                        await updateDoc(taskRef, {
+                          status: newStatus,
+                          completionTime: newStatus === 'completed' ? completionTime : null
+                        });
+
+                        // Update local state
+                        setTasks(tasks.map(t => 
+                          t.id === task.id 
+                            ? { ...t, status: newStatus, completionTime }
+                            : t
+                        ));
+
+                        // Send detailed completion message if task is marked as completed
+                        if (newStatus === 'completed' && task.status !== 'completed') {
+                          const celebrationMessages = [
+                            "🎉 YEEP YEEP HURRAY! Task Completed! 🌟",
+                            "🎊 Amazing Achievement Unlocked! 🏆",
+                            "🌟 BOOM! Outstanding Performance! 💪",
+                            "🎯 Mission Accomplished in Style! 🚀",
+                            "🏆 Excellent Work! Time to Celebrate! 💃"
+                          ];
+                          const randomMessage = celebrationMessages[Math.floor(Math.random() * celebrationMessages.length)];
+                          
+                          const employeeData = employees.find(emp => emp.email === task.poc);
+                          const creatorData = employees.find(emp => emp.email === task.creator);
+                          
+                          // Calculate time statistics
+                          const startDate = new Date(task.dateCreated);
+                          const endDate = new Date();
+                          const timeToComplete = endDate.getTime() - startDate.getTime();
+                          const daysToComplete = Math.floor(timeToComplete / (1000 * 60 * 60 * 24));
+                          const hoursToComplete = Math.floor((timeToComplete % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                          
+                          // Calculate if completed before or after deadline
+                          const deadlineDate = new Date(task.deadline);
+                          const deadlineDiff = endDate.getTime() - deadlineDate.getTime();
+                          const daysFromDeadline = Math.floor(deadlineDiff / (1000 * 60 * 60 * 24));
+                          
+                          // Calculate completion percentage of subtasks
+                          const totalSubtasks = task.tasks.split('\n').length;
+                          const completedSubtasks = Object.values(task.taskStatus || {}).filter(status => status).length;
+                          const completionPercentage = Math.round((completedSubtasks / totalSubtasks) * 100);
+
+                          const message = `${randomMessage}
+
+🎯 Task Completed: ${task.title}
+👤 Completed by: ${employeeData?.name || task.poc}
+🏢 Client: ${task.clientName}
+⏱️ Time to Complete: ${daysToComplete}d ${hoursToComplete}h
+⚡ Estimated Hours: ${task.estimatedHours}h
+${daysFromDeadline > 0 
+  ? `⚠️ Completed ${daysFromDeadline} days after deadline`
+  : `✅ Completed ${Math.abs(daysFromDeadline)} days before deadline`}
+📊 Subtasks Completed: ${completedSubtasks}/${totalSubtasks} (${completionPercentage}%)
+🎯 Priority Level: ${task.priority.toUpperCase()}
+👥 Assigned by: ${creatorData?.name || task.creator}
+
+Great work team! 🌟`;
+                          
+                          await sendTaskNotification(task.poc, { ...task, title: message }, false);
+                        }
+                      } catch (error) {
+                        console.error('Error updating task status:', error);
+                      }
+                    }}
+                    className={`px-3 py-1 rounded-full text-white text-sm font-medium ${getStatusColor(task.status)}`}
+                  >
+                    <option value="open">Open</option>
+                    <option value="in-progress">In Progress</option>
+                    <option value="doing-now">Doing Now</option>
+                    <option value="completed">Completed</option>
+                    <option value="blocked">Blocked</option>
+                  </select>
                 </td>
-                <td className="border border-gray-300 dark:border-gray-600 p-2">
-                  <span className={`px-2 py-1 rounded-full text-white text-sm ${getPriorityColor(task.priority)}`}>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <span className={`px-3 py-1 rounded-full text-white text-sm font-medium ${getPriorityColor(task.priority)}`}>
                     {task.priority}
                   </span>
                 </td>
-                <td className="border border-gray-300 dark:border-gray-600 p-2">{task.estimatedHours}</td>
-                <td className="border border-gray-300 dark:border-gray-600 p-2">
-                  {task.comments?.map((comment, index) => (
-                    <div key={index} className="text-sm text-gray-500 mb-1">
-                      <div className="font-medium">{comment.text}</div>
-                      <div className="text-xs">
-                        {comment.author} - {new Date(comment.timestamp).toLocaleString()}
+                <td className="px-4 py-3 whitespace-nowrap text-gray-900 dark:text-gray-300">{task.estimatedHours}</td>
+                <td className="px-4 py-3">
+                  <div className="max-h-20 overflow-y-auto">
+                    {task.comments?.map((comment, index) => (
+                      <div key={index} className="text-sm text-gray-500 mb-1">
+                        <div className="font-medium text-gray-900 dark:text-gray-300">{comment.text}</div>
+                        <div className="text-xs">
+                          {comment.author} - {new Date(comment.timestamp).toLocaleString()}
+                        </div>
                       </div>
-                    </div>
-                  )) || 'No comments'}
+                    ))}
+                  </div>
                 </td>
-                <td className="border border-gray-300 dark:border-gray-600 p-2">
+                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-gray-300">
                   {format(new Date(task.dateCreated), 'dd/MM/yyyy HH:mm')}
                 </td>
-                <td className="border border-gray-300 dark:border-gray-600 p-2">
-                  <button
-                    onClick={() => {
-                      setCurrentTask(task);
-                      setIsTaskFormOpen(true);
-                    }}
-                    className="px-3 py-1 text-sm text-white bg-primary rounded hover:bg-blue-700"
-                  >
-                    Edit
-                  </button>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setCurrentTask(task);
+                        setIsTaskFormOpen(true);
+                      }}
+                      className="inline-flex items-center px-3 py-1 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 transition-colors"
+                    >
+                      <Lucide icon="Pencil" className="w-4 h-4 mr-1" />
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => sendTaskNotification(task.poc, task, false)}
+                      className="inline-flex items-center px-3 py-1 text-sm font-medium text-white bg-yellow-500 rounded-md hover:bg-yellow-600 transition-colors"
+                    >
+                      <Lucide icon="Bell" className="w-4 h-4 mr-1" />
+                      Remind
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -359,15 +672,30 @@ const Ticket = () => {
             const user = auth.currentUser;
             if (!user?.email) return;
 
-            const tasksRef = collection(firestore, `user/${user.email}/tasks`);
+            // If editing an existing task, use the original creator's email
+            const taskCreatorEmail = currentTask ? currentTask.creator : user.email;
+            const tasksRef = collection(firestore, `user/${taskCreatorEmail}/tasks`);
             
             if (currentTask) {
-              await updateDoc(doc(tasksRef, currentTask.id), taskData);
+              // When updating, exclude creator from taskData and use the original creator
+              const { creator, ...updateData } = taskData;
+              await updateDoc(doc(tasksRef, currentTask.id), {
+                ...updateData,
+                creator: currentTask.creator // Keep the original creator
+              });
+              
+              // Send notification for task update
+              await sendTaskNotification(taskData.poc, currentTask, false);
             } else {
-              await addDoc(tasksRef, {
+              // Create new task under current user
+              const newTaskRef = await addDoc(tasksRef, {
                 ...taskData,
+                creator: user.email,
                 dateCreated: new Date().toISOString()
               });
+              
+              // Send notification for new task
+              await sendTaskNotification(taskData.poc, { ...taskData, id: newTaskRef.id }, true);
             }
 
             fetchTasks();
@@ -392,7 +720,16 @@ const Ticket = () => {
             const user = auth.currentUser;
             if (!user?.email) return;
 
-            const clientsRef = collection(firestore, `user/${user.email}/clients`);
+            // Get company ID
+            const docUserRef = doc(firestore, 'user', user.email);
+            const docUserSnapshot = await getDoc(docUserRef);
+            if (!docUserSnapshot.exists()) return;
+            
+            const userData = docUserSnapshot.data();
+            const companyId = userData.companyId;
+
+            // Add/update client at company level
+            const clientsRef = collection(firestore, `companies/${companyId}/clients`);
             
             if (editingClient) {
               await updateDoc(doc(clientsRef, editingClient.id), { name: clientName });
@@ -411,7 +748,16 @@ const Ticket = () => {
             const user = auth.currentUser;
             if (!user?.email) return;
 
-            await deleteDoc(doc(firestore, `user/${user.email}/clients`, clientId));
+            // Get company ID
+            const docUserRef = doc(firestore, 'user', user.email);
+            const docUserSnapshot = await getDoc(docUserRef);
+            if (!docUserSnapshot.exists()) return;
+            
+            const userData = docUserSnapshot.data();
+            const companyId = userData.companyId;
+
+            // Delete client at company level
+            await deleteDoc(doc(firestore, `companies/${companyId}/clients`, clientId));
             fetchClients();
           } catch (error) {
             console.error('Error deleting client:', error);
@@ -432,223 +778,311 @@ interface TaskFormModalProps {
 }
 
 const TaskFormModal = ({ isOpen, onClose, task, onSubmit, employees, clients }: TaskFormModalProps) => {
-  const [formData, setFormData] = useState<Omit<Task, 'id'>>({
+  const [taskForms, setTaskForms] = useState<Omit<Task, 'id'>[]>([{
     title: '',
     deadline: new Date().toISOString().split('T')[0],
     poc: '',
+    creator: auth.currentUser?.email || '',
     clientName: '',
-    description: '',
+    tasks: '',
+    taskStatus: {},
     status: 'open',
     dateCreated: new Date().toISOString(),
     priority: 'medium',
     estimatedHours: 0,
     comments: []
-  });
+  }]);
 
   const [newComment, setNewComment] = useState('');
+  const [bulkInput, setBulkInput] = useState('');
 
   useEffect(() => {
     if (task) {
-      setFormData({
+      setTaskForms([{
         title: task.title,
         deadline: task.deadline,
         poc: task.poc,
+        creator: task.creator,
         clientName: task.clientName,
-        description: task.description,
+        tasks: task.tasks,
+        taskStatus: task.taskStatus || {},
         status: task.status,
         dateCreated: task.dateCreated,
         priority: task.priority || 'medium',
         estimatedHours: task.estimatedHours || 0,
         comments: task.comments || []
-      });
+      }]);
     } else {
-      setFormData({
+      setTaskForms([{
         title: '',
         deadline: new Date().toISOString().split('T')[0],
         poc: '',
+        creator: auth.currentUser?.email || '',
         clientName: '',
-        description: '',
+        tasks: '',
+        taskStatus: {},
         status: 'open',
         dateCreated: new Date().toISOString(),
         priority: 'medium',
         estimatedHours: 0,
         comments: []
-      });
+      }]);
     }
   }, [task]);
+
+  const addTaskForm = () => {
+    setTaskForms([...taskForms, {
+      ...taskForms[0],
+      title: '',
+      tasks: '',
+      comments: []
+    }]);
+  };
+
+  const removeTaskForm = (index: number) => {
+    setTaskForms(taskForms.filter((_, i) => i !== index));
+  };
+
+  const updateTaskForm = (index: number, updates: Partial<Omit<Task, 'id'>>) => {
+    setTaskForms(taskForms.map((form, i) => 
+      i === index ? { ...form, ...updates } : form
+    ));
+  };
+
+  const parseBulkInput = () => {
+    const items = bulkInput
+      .split('*')
+      .map(item => item.trim())
+      .filter(item => item.length > 0);
+
+    if (items.length > 0) {
+      const formattedTasks = items
+        .map(item => `• ${item}`)
+        .join('\n');
+
+      // Initialize taskStatus object with all items set to false
+      const taskStatus = items.reduce((acc, item) => {
+        acc[`• ${item}`] = false;
+        return acc;
+      }, {} as { [key: string]: boolean });
+
+      setTaskForms([{
+        ...taskForms[0],
+        tasks: formattedTasks,
+        taskStatus: taskStatus,
+        creator: auth.currentUser?.email || ''
+      }]);
+      
+      setBulkInput('');
+    }
+  };
 
   return (
     <Dialog open={isOpen} onClose={onClose}>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
-        <Dialog.Panel className="w-full max-w-md p-6 bg-white rounded-md dark:bg-gray-800">
-          <form onSubmit={(e) => {
+        <Dialog.Panel className="w-full max-w-2xl p-6 bg-white rounded-md dark:bg-gray-800 max-h-[90vh] overflow-y-auto">
+          <form onSubmit={async (e) => {
             e.preventDefault();
-            onSubmit(formData);
+            for (const taskData of taskForms) {
+              await onSubmit(taskData);
+            }
+            onClose();
           }}>
-            <h2 className="text-xl font-bold mb-4 dark:text-white">
-              {task ? 'Edit Task' : 'New Task'}
-            </h2>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Title</label>
-                <input
-                  type="text"
-                  required
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary dark:bg-gray-700 dark:border-gray-600"
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Deadline</label>
-                <input
-                  type="date"
-                  required
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary dark:bg-gray-700 dark:border-gray-600"
-                  value={formData.deadline.split('T')[0]}
-                  onChange={(e) => setFormData({ ...formData, deadline: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Assign To</label>
-                <select
-                  required
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary dark:bg-gray-700 dark:border-gray-600"
-                  value={formData.poc}
-                  onChange={(e) => setFormData({ ...formData, poc: e.target.value })}
-                >
-                  <option value="">Select an employee</option>
-                  {employees.map((employee) => (
-                    <option 
-                      key={employee.id} 
-                      value={employee.email}
-                      style={{ backgroundColor: employee.color + '20' }}
-                    >
-                      {employee.name} ({employee.email})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Client</label>
-                <select
-                  required
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary dark:bg-gray-700 dark:border-gray-600"
-                  value={formData.clientName}
-                  onChange={(e) => setFormData({ ...formData, clientName: e.target.value })}
-                >
-                  <option value="">Select a client</option>
-                  {clients.map((client) => (
-                    <option key={client.id} value={client.name}>
-                      {client.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
-                <textarea
-                  required
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary dark:bg-gray-700 dark:border-gray-600"
-                  rows={3}
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
-                <select
-                  required
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary dark:bg-gray-700 dark:border-gray-600"
-                  value={formData.status}
-                  onChange={(e) => setFormData({ ...formData, status: e.target.value as Task['status'] })}
-                >
-                  <option value="open">Open</option>
-                  <option value="in-progress">In Progress</option>
-                  <option value="completed">Completed</option>
-                  <option value="blocked">Blocked</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Priority</label>
-                <select
-                  required
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary dark:bg-gray-700 dark:border-gray-600"
-                  value={formData.priority}
-                  onChange={(e) => setFormData({ ...formData, priority: e.target.value as Task['priority'] })}
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                  <option value="critical">Critical</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Estimated Hours</label>
-                <input
-                  type="number"
-                  required
-                  min="0"
-                  step="0.5"
-                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary dark:bg-gray-700 dark:border-gray-600"
-                  value={formData.estimatedHours}
-                  onChange={(e) => setFormData({ ...formData, estimatedHours: parseFloat(e.target.value) })}
-                />
-              </div>
-
-              <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Comments</label>
-                <div className="mt-2 space-y-2 max-h-40 overflow-y-auto">
-                  {formData.comments?.map((comment, index) => (
-                    <div key={index} className="p-2 bg-gray-50 dark:bg-gray-700 rounded">
-                      <p className="text-sm">{comment.text}</p>
-                      <p className="text-xs text-gray-500">
-                        {comment.author} - {new Date(comment.timestamp).toLocaleString()}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-                <div className="mt-2 flex gap-2">
-                  <input
-                    type="text"
-                    className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary dark:bg-gray-700 dark:border-gray-600"
-                    value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
-                    placeholder="Add a comment..."
-                  />
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold dark:text-white">
+                {task ? 'Edit Task' : 'New Tasks'}
+              </h2>
+              {!task && (
+                <div className="flex gap-2">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (newComment.trim()) {
-                        setFormData({
-                          ...formData,
-                          comments: [
-                            ...(formData.comments || []),
-                            {
-                              text: newComment.trim(),
-                              author: auth.currentUser?.email || 'Unknown',
-                              timestamp: new Date().toISOString()
-                            }
-                          ]
-                        });
-                        setNewComment('');
-                      }
-                    }}
-                    className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700"
+                    onClick={addTaskForm}
+                    className="px-3 py-1 text-sm text-white bg-primary rounded hover:bg-blue-700"
                   >
-                    Add
+                    Add Another Task
                   </button>
                 </div>
-              </div>
+              )}
             </div>
+
+
+            {taskForms.map((taskForm, index) => (
+              <div key={index} className="mb-6 p-4 border rounded-lg">
+                <div className="flex justify-between items-center mb-4">
+                 
+                  {!task && taskForms.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeTaskForm(index)}
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      <Lucide icon="X" className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Title</label>
+                    <input
+                      type="text"
+                      required
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary dark:bg-gray-700 dark:border-gray-600"
+                      value={taskForm.title}
+                      onChange={(e) => updateTaskForm(index, { title: e.target.value })}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Deadline</label>
+                    <input
+                      type="date"
+                      required
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary dark:bg-gray-700 dark:border-gray-600"
+                      value={taskForm.deadline.split('T')[0]}
+                      onChange={(e) => updateTaskForm(index, { deadline: e.target.value })}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Assign To</label>
+                    <select
+                      required
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary dark:bg-gray-700 dark:border-gray-600"
+                      value={taskForm.poc}
+                      onChange={(e) => updateTaskForm(index, { poc: e.target.value })}
+                    >
+                      <option value="">Select an employee</option>
+                      {employees.map((employee) => (
+                        <option 
+                          key={employee.id} 
+                          value={employee.email}
+                          style={{ backgroundColor: employee.color + '20' }}
+                        >
+                          {employee.name} ({employee.email})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Client</label>
+                    <select
+                      required
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary dark:bg-gray-700 dark:border-gray-600"
+                      value={taskForm.clientName}
+                      onChange={(e) => updateTaskForm(index, { clientName: e.target.value })}
+                    >
+                      <option value="">Select a client</option>
+                      {clients.map((client) => (
+                        <option key={client.id} value={client.name}>
+                          {client.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tasks</label>
+                    <textarea
+                      required
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary dark:bg-gray-700 dark:border-gray-600"
+                      rows={3}
+                      value={taskForm.tasks}
+                      onChange={(e) => updateTaskForm(index, { tasks: e.target.value })}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
+                    <select
+                      required
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary dark:bg-gray-700 dark:border-gray-600"
+                      value={taskForm.status}
+                      onChange={(e) => updateTaskForm(index, { status: e.target.value as Task['status'] })}
+                    >
+                      <option value="open">Open</option>
+                      <option value="in-progress">In Progress</option>
+                      <option value="doing-now">Doing Now</option>
+                      <option value="completed">Completed</option>
+                      <option value="blocked">Blocked</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Priority</label>
+                    <select
+                      required
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary dark:bg-gray-700 dark:border-gray-600"
+                      value={taskForm.priority}
+                      onChange={(e) => updateTaskForm(index, { priority: e.target.value as Task['priority'] })}
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                      <option value="critical">Critical</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Estimated Hours</label>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      step="0.5"
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary dark:bg-gray-700 dark:border-gray-600"
+                      value={taskForm.estimatedHours}
+                      onChange={(e) => updateTaskForm(index, { estimatedHours: parseFloat(e.target.value) })}
+                    />
+                  </div>
+
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Comments</label>
+                    <div className="mt-2 space-y-2 max-h-40 overflow-y-auto">
+                      {taskForm.comments?.map((comment, index) => (
+                        <div key={index} className="p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                          <p className="text-sm">{comment.text}</p>
+                          <p className="text-xs text-gray-500">
+                            {comment.author} - {new Date(comment.timestamp).toLocaleString()}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-2 flex gap-2">
+                      <input
+                        type="text"
+                        className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-primary focus:ring-primary dark:bg-gray-700 dark:border-gray-600"
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        placeholder="Add a comment..."
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (newComment.trim()) {
+                            updateTaskForm(index, {
+                              comments: [
+                                ...(taskForm.comments || []),
+                                {
+                                  text: newComment.trim(),
+                                  author: auth.currentUser?.email || 'Unknown',
+                                  timestamp: new Date().toISOString()
+                                }
+                              ]
+                            });
+                            setNewComment('');
+                          }
+                        }}
+                        className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700"
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
 
             <div className="mt-6 flex justify-end space-x-3">
               <button
@@ -662,7 +1096,7 @@ const TaskFormModal = ({ isOpen, onClose, task, onSubmit, employees, clients }: 
                 type="submit"
                 className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700"
               >
-                {task ? 'Update' : 'Create'} Task
+                {task ? 'Update Task' : 'Create Tasks'}
               </button>
             </div>
           </form>
@@ -701,6 +1135,30 @@ const ClientFormModal = ({
     }
   }, [editingClient]);
 
+  const handleSubmit = async () => {
+    try {
+      const user = auth.currentUser;
+      if (!user?.email || !newClientName.trim()) return;
+
+      // Get company ID
+      const docUserRef = doc(firestore, 'user', user.email);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) return;
+      
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+
+      // Add client to user's clients collection
+      const clientsRef = collection(firestore, `user/${user.email}/clients`);
+      await addDoc(clientsRef, { name: newClientName.trim() });
+
+      onSubmit(newClientName.trim());
+      setNewClientName('');
+    } catch (error) {
+      console.error('Error adding client:', error);
+    }
+  };
+
   return (
     <Dialog open={isOpen} onClose={onClose}>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
@@ -719,12 +1177,7 @@ const ClientFormModal = ({
                 onChange={(e) => setNewClientName(e.target.value)}
               />
               <button
-                onClick={() => {
-                  if (newClientName.trim()) {
-                    onSubmit(newClientName.trim());
-                    setNewClientName('');
-                  }
-                }}
+                onClick={handleSubmit}
                 className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700"
               >
                 {editingClient ? 'Update' : 'Add'} Client
