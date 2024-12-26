@@ -82,6 +82,8 @@ import StoragePricing from "../pages/StoragePricing";
 import { ContactsProvider, useContacts } from "../contact"; // Adjust the path as needed
 import DatabaseManager from "../pages/DatabaseManager";
 import AIGenerativeResponses from "../pages/AIGenerativeResponses";
+import Ticket from "../pages/Ticket";
+import PublicTaskForm from "../pages/PublicTaskForm";
 function Router() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const auth = getAuth();
@@ -110,6 +112,8 @@ function Router() {
         { path: "/", element: <Chat /> },
         { path: "chat", element: <Chat /> },
         { path: "/dashboard", element: <DashboardOverview1 /> },
+        { path: "ticket", element: <Ticket /> },
+     
         {
           path: "/database-manager",
           element: <DatabaseManager />
@@ -196,6 +200,7 @@ function Router() {
     { path: "product-grid", element: <ProductGrid /> },
     { path: "/login", element: isLoggedIn ? <Navigate to="/loading" /> : <Login /> },
     { path: "/register", element: isLoggedIn ? <Navigate to="/loading" /> : <Register /> },
+    { path: "/client-ticket", element: <PublicTaskForm /> },
     { path: "/error-page", element: <ErrorPage /> },
     { path: "*", element: <ErrorPage /> },
   ];

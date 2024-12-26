@@ -10,7 +10,7 @@ import { ChangeEvent, JSXElementConstructor, Key, ReactElement, ReactNode, useEf
 import axios from "axios";
 import { getAuth } from 'firebase/auth';
 import { initializeApp } from "firebase/app";
-import { format } from 'date-fns';
+import { format, parse, addHours } from 'date-fns';
 import { getDoc, getFirestore, doc, setDoc, collection, addDoc, getDocs, updateDoc, deleteDoc, QueryDocumentSnapshot, DocumentData, query, where } from 'firebase/firestore';
 import { useContacts } from "@/contact";
 import Select from 'react-select';
@@ -49,6 +49,8 @@ interface Appointment {
   contacts: { id: string, name: string, session: number }[];
   meetLink?: string;
   notificationSent?: boolean;
+  minyak?: number;
+  toll?: number;
 }
 interface CalendarConfig {
   calendarId: string;
@@ -143,6 +145,9 @@ function Main() {
   const calendarRef = useRef(null);
   const [appointmentTags, setAppointmentTags] = useState<Tag[]>([]);
   const [companyId, setCompanyId] = useState<string>('');
+  const [viewType, setViewType] = useState('calendar'); // 'calendar' or 'grid'
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [employeeExpenses, setEmployeeExpenses] = useState<Record<string, { minyak: number; toll: number }>>({});
 
   class ErrorBoundary extends Component<{ children: ReactNode; onError: (error: Error) => void }> {
     componentDidCatch(error: Error, errorInfo: ErrorInfo) {
@@ -632,17 +637,18 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
     }
   };
   
-  // Update the handleSaveAppointment function
   const handleSaveAppointment = async () => {
-
-
- 
     const { id, title, dateStr, startTimeStr, endTimeStr, extendedProps } = currentEvent;
     const startTime = new Date(`${dateStr}T${startTimeStr}`).toISOString();
     const endTime = new Date(`${dateStr}T${endTimeStr}`).toISOString();
-   
-    const firstEmployeeId = extendedProps.staff[0];
-    const secondEmployeeId = extendedProps.staff[1];
+  
+    // Combine title with type and units if they exist
+    const combinedTitle = extendedProps.units 
+      ? `${title} | ${extendedProps.type || ''} | ${extendedProps.units} Units`
+      : title;
+  
+    const firstEmployeeId = extendedProps.staff?.[0];
+    const secondEmployeeId = extendedProps.staff?.[1];
     const firstEmployee = employees.find(emp => emp.id === firstEmployeeId);
     const secondEmployee = employees.find(emp => emp.id === secondEmployeeId);
   
@@ -654,6 +660,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
     } else {
       color = '#51484f'; // Default color
     }
+  
     try {
       const user = auth.currentUser;
       if (!user?.email) return;
@@ -666,50 +673,78 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       }
       const companyId = userDocSnap.data().companyId;
   
-      const updatedAppointment: Appointment = {
+      // Create a clean appointment object with no undefined values
+      const updatedAppointment: Partial<Appointment> = {
         id,
-        title,
+        title: combinedTitle,
         startTime,
         endTime,
-        address: extendedProps.address,
-        appointmentStatus: extendedProps.appointmentStatus,
-        staff: extendedProps.staff,
+        address: extendedProps.address || '',
+        appointmentStatus: extendedProps.appointmentStatus || '',
+        staff: extendedProps.staff || [],
         color: color,
         tags: extendedProps.tags || [],
-        packageId: extendedProps.package ? extendedProps.package.id : null,
-        dateAdded: extendedProps.dateAdded,
-        meetLink: extendedProps.meetLink,
-        notificationSent: extendedProps.notificationSent || false,
+        packageId: extendedProps.package?.id || null,
+        dateAdded: extendedProps.dateAdded || new Date().toISOString(),
         contacts: selectedContacts.map(contact => ({
           id: contact.id,
           name: contact.contactName,
           session: contactSessions[contact.id] || 0
         })),
+        minyak: Number(extendedProps.minyak) || 0,
+        toll: Number(extendedProps.toll) || 0,
       };
   
-      const appointmentRef = doc(firestore, `user/${user.email}/appointments/${id}`);
-      await setDoc(appointmentRef, updatedAppointment);
+      // Only add meetLink and notificationSent if they exist
+      if (extendedProps.meetLink) {
+        updatedAppointment.meetLink = extendedProps.meetLink;
+        updatedAppointment.notificationSent = extendedProps.notificationSent || false;
+      }
   
-      // Send WhatsApp notification if there's a meet link and notifications haven't been sent
-      if (updatedAppointment.meetLink && !updatedAppointment.notificationSent) {
-        const notificationSent = await sendWhatsAppNotification(selectedContacts, updatedAppointment, companyId);
-        if (notificationSent) {
-          // Update the appointment to mark notifications as sent
-          updatedAppointment.notificationSent = true;
-          await setDoc(appointmentRef, updatedAppointment);
+      // Remove any remaining undefined values
+      const cleanAppointment = Object.fromEntries(
+        Object.entries(updatedAppointment).filter(([_, value]) => value !== undefined)
+      ) as unknown as Appointment;
+  
+      const appointmentRef = doc(firestore, `user/${user.email}/appointments/${id}`);
+      await setDoc(appointmentRef, cleanAppointment);
+  
+      // Update expenses if they exist
+      if (extendedProps.minyak || extendedProps.toll) {
+        for (const staffId of extendedProps.staff || []) {
+          const expenseRef = doc(
+            firestore,
+            `user/${user.email}/expenses/${format(new Date(startTime), 'yyyy-MM-dd')}_${staffId}`
+          );
+          await setDoc(expenseRef, {
+            date: format(new Date(startTime), 'yyyy-MM-dd'),
+            employeeId: staffId,
+            minyak: Number(extendedProps.minyak) || 0,
+            toll: Number(extendedProps.toll) || 0
+          }, { merge: true });
         }
       }
   
+      // Send WhatsApp notification only if meetLink exists
+      if (cleanAppointment.meetLink && !cleanAppointment.notificationSent) {
+        const notificationSent = await sendWhatsAppNotification(selectedContacts, cleanAppointment, companyId);
+        if (notificationSent) {
+          cleanAppointment.notificationSent = true;
+          await setDoc(appointmentRef, cleanAppointment);
+        }
+      }
+  
+      // Update the appointments state
       setAppointments(appointments.map(appointment =>
-        appointment.id === id ? updatedAppointment : appointment
+        appointment.id === id ? cleanAppointment : appointment
       ));
   
+      // Close the modal
       setEditModalOpen(false);
     } catch (error) {
       console.error('Error saving appointment:', error);
     }
   };
-
   const handleDateSelect = (selectInfo: any) => {
     const dateStr = format(new Date(selectInfo.startStr), 'yyyy-MM-dd');
     const date = new Date(dateStr);
@@ -750,9 +785,13 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
     } else {
       color = '#51484f'; // Default color
     }
+  // Combine title and address
+  const combinedTitle = currentEvent.extendedProps.units 
+    ? `${currentEvent.title} | ${currentEvent.extendedProps.type} | ${currentEvent.extendedProps.units} Units`
+    : currentEvent.title;
 
     const newEvent = {
-      title: currentEvent.title,
+      title: combinedTitle,
       startTime: new Date(`${currentEvent.dateStr}T${currentEvent.startTimeStr}`).toISOString(),
       endTime: new Date(`${currentEvent.dateStr}T${currentEvent.endTimeStr}`).toISOString(),
       address: currentEvent.extendedProps.address,
@@ -766,6 +805,8 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         session: contactSessions[contact.id] || getPackageSessions(currentEvent.extendedProps.package)
       })),
       packageId: currentEvent.extendedProps.package?.id || null,
+      minyak: currentEvent.extendedProps?.minyak || 0,
+      toll: currentEvent.extendedProps?.toll || 0,
     };
 
     const newAppointment = await createAppointment(newEvent);
@@ -999,7 +1040,6 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
     setInitialAppointmentStatus(appointment.appointmentStatus);
     setEditModalOpen(true);
   };
-  
 
   const handleDeleteAppointment = async (appointmentId: string) => {
     const user = auth.currentUser;
@@ -1712,9 +1752,382 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
     </CalendarErrorBoundary>
   </div>
 
+  // Add new component for grid view
+  const GridView = () => {
+    const hours = ['9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '2:00 PM', '3:00 PM', '4:00 PM'];
+    
+    // Debug logs
+    console.log('Selected date:', format(selectedDate, 'yyyy-MM-dd'));
+    console.log('All appointments:', appointments);
+    
+    // Convert UTC to local time for comparison
+    const selectedDateAppointments = appointments.filter(apt => {
+      const aptDate = new Date(apt.startTime);
+      const localAptDate = new Date(aptDate.getTime());
+      const aptDateStr = format(localAptDate, 'yyyy-MM-dd');
+      const selectedDateStr = format(selectedDate, 'yyyy-MM-dd');
+      
+      console.log('Comparing dates:', {
+        appointment: apt.title,
+        appointmentDate: aptDateStr,
+        selectedDate: selectedDateStr,
+        isMatch: aptDateStr === selectedDateStr
+      });
+      
+      return aptDateStr === selectedDateStr;
+    });
+
+    console.log('Filtered appointments:', selectedDateAppointments);
+
+    const formatAppointmentTime = (isoString: string) => {
+      const date = new Date(isoString);
+      // Don't adjust for timezone since we want to display the stored time
+      return format(date, 'h:mm a');
+    };
+
+    // Helper function to find employee by email
+    const findEmployeeByEmail = (email: string) => {
+      const employee = employees.find(emp => emp.id === email);
+      console.log('Finding employee for email:', email, 'Found:', employee);
+      return employee;
+    };
+    const [employeeExpenses, setEmployeeExpenses] = useState<Record<string, { minyak: number; toll: number }>>({});
+
+    // Add this useEffect to fetch expenses when the date changes
+    useEffect(() => {
+      const fetchExpenses = async () => {
+        try {
+          const user = auth.currentUser;
+          if (!user?.email) return;
+    
+          const expensesPromises = employees.map(async (employee) => {
+            const expenseRef = doc(
+              firestore,
+              `user/${user.email}/expenses/${format(selectedDate, 'yyyy-MM-dd')}_${employee.id}`
+            );
+            const expenseDoc = await getDoc(expenseRef);
+            return {
+              employeeId: employee.id,
+              expenses: expenseDoc.exists() ? expenseDoc.data() : { minyak: 0, toll: 0 }
+            };
+          });
+    
+          const expenses = await Promise.all(expensesPromises);
+          const expensesMap = expenses.reduce((acc, { employeeId, expenses }) => {
+            acc[employeeId] = expenses as { minyak: number; toll: number };
+            return acc;
+          }, {} as Record<string, { minyak: number; toll: number }>);
+    
+          setEmployeeExpenses(expensesMap);
+        } catch (error) {
+          console.error('Error fetching expenses:', error);
+        }
+      };
+    
+      fetchExpenses();
+    }, [selectedDate, employees]);
+    return (
+      <div>
+        {/* Date selector */}
+        <div className="mb-4 flex items-center gap-2">
+          <button
+            className="px-3 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 dark:bg-gray-600 dark:text-white dark:hover:bg-gray-500"
+            onClick={() => {
+              const newDate = new Date(selectedDate);
+              newDate.setDate(newDate.getDate() - 1);
+              console.log('Setting date to:', format(newDate, 'yyyy-MM-dd'));
+              setSelectedDate(newDate);
+            }}
+          >
+            <Lucide icon="ChevronLeft" className="w-4 h-4" />
+          </button>
+          
+          <input
+            type="date"
+            value={format(selectedDate, 'yyyy-MM-dd')}
+            onChange={(e) => {
+              const newDate = new Date(e.target.value);
+              console.log('Setting date to:', format(newDate, 'yyyy-MM-dd'));
+              setSelectedDate(newDate);
+            }}
+            className="px-3 py-2 text-sm font-medium border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+          />
+          
+          <button
+            className="px-3 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 dark:bg-gray-600 dark:text-white dark:hover:bg-gray-500"
+            onClick={() => {
+              const newDate = new Date(selectedDate);
+              newDate.setDate(newDate.getDate() + 1);
+              console.log('Setting date to:', format(newDate, 'yyyy-MM-dd'));
+              setSelectedDate(newDate);
+            }}
+          >
+            <Lucide icon="ChevronRight" className="w-4 h-4" />
+          </button>
+          
+          <button
+            className="px-3 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 dark:bg-gray-600 dark:text-white dark:hover:bg-gray-500"
+            onClick={() => {
+              const newDate = new Date();
+              console.log('Setting date to today:', format(newDate, 'yyyy-MM-dd'));
+              setSelectedDate(newDate);
+            }}
+          >
+            Today
+          </button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full border-collapse border border-gray-300 dark:border-gray-600">
+            <thead>
+              <tr>
+                <th className="border border-gray-300 dark:border-gray-600 p-2 bg-gray-100 dark:bg-gray-700">
+                  <div className="flex justify-between items-center">
+                    <span className="text-gray-800 dark:text-white">TIME</span>
+                    <span className="text-sm text-gray-600 dark:text-white">
+                      {format(selectedDate, 'dd/MM/yyyy')}
+                    </span>
+                  </div>
+                </th>
+                {employees.map((employee) => (
+                  <th key={employee.id} className="border border-gray-300 dark:border-gray-600 p-2 bg-gray-100 dark:bg-gray-700">
+                    <div className="font-medium text-sm text-gray-800 dark:text-white">
+                      {employee.name}
+                    </div>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {hours.map((hour) => (
+                <tr key={hour}>
+                  <td className="border border-gray-300 dark:border-gray-600 p-2 font-medium text-gray-800 dark:text-white">
+                    {hour}
+                  </td>
+                  {employees.map((employee) => {
+                    const appointments = selectedDateAppointments.filter(apt => {
+                      const aptTime = formatAppointmentTime(apt.startTime);
+                      const isAssignedToStaff = apt.staff.length === 0 || apt.staff.includes(employee.id);
+                      
+                      console.log('Checking appointment slot:', {
+                        appointment: apt.title,
+                        hour,
+                        aptTime,
+                        employee: employee.id,
+                        isAssignedToStaff,
+                        matches: aptTime === hour && isAssignedToStaff
+                      });
+                      
+                      return aptTime === hour && isAssignedToStaff;
+                    });
+
+                    const handleEmptySlotClick = () => {
+                      // Convert the hour string to 24-hour format for consistency
+                      const timeDate = parse(hour, 'h:mm a', new Date());
+                      const formattedHour = format(timeDate, 'HH:mm');
+                      
+                      // Create end time (1 hour after start time)
+                      const endTimeDate = addHours(timeDate, 1);
+                      const formattedEndHour = format(endTimeDate, 'HH:mm');
+
+                      // Set up the new appointment
+                      setCurrentEvent({
+                        title: '',
+                        dateStr: format(selectedDate, 'yyyy-MM-dd'),
+                        startTimeStr: formattedHour,
+                        endTimeStr: formattedEndHour,
+                        extendedProps: {
+                          address: '',
+                          appointmentStatus: 'new',
+                          staff: [employee.id], // Pre-select the employee
+                          package: '',
+                          dateAdded: new Date().toISOString(),
+                          tags: []
+                        }
+                      });
+
+                      // Pre-select the employee
+                      setSelectedEmployeeIds([employee.id]);
+                      
+                      // Open the add modal
+                      setAddModalOpen(true);
+                    };
+
+                    return (
+                      <td 
+                        key={`${employee.id}-${hour}`} 
+                        className="border border-gray-300 dark:border-gray-600 p-2 min-w-[200px] relative cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700"
+                        onClick={() => {
+                          if (appointments.length === 0) {
+                            handleEmptySlotClick();
+                          }
+                        }}
+                      >
+                        {appointments.map((apt) => (
+                          <div 
+                            key={apt.id}
+                            className="text-xs p-2 mb-1 rounded cursor-pointer hover:opacity-90 text-white"
+                            style={{
+                              backgroundColor: '#51484f',
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation(); // Prevent triggering the empty slot click
+                              handleAppointmentClick(apt);
+                            }}
+                          >
+                            {/* Existing appointment content */}
+                            <div className="font-medium flex justify-between items-center">
+                              <span>{apt.title || 'Untitled'}</span>
+                              {apt.appointmentStatus && (
+                                <span className="text-xs px-1 rounded bg-white/20 text-white">
+                                  {apt.appointmentStatus}
+                                </span>
+                              )}
+                            </div>
+                            
+                            {apt.contacts && apt.contacts.length > 0 && (
+                              <div className="mt-1">
+                                {apt.contacts.map((contact) => (
+                                  <div key={contact.id} className="flex items-center justify-between text-xs text-white">
+                                    <span>{contact.name}</span>
+                                    {contact.session !== undefined && (
+                                      <span className="bg-white/20 px-1 rounded text-white">
+                                        Session {contact.session}
+                                      </span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            
+                            {apt.address && (
+                              <div className="text-xs mt-1 opacity-75 text-white">
+                                📍 {apt.address}
+                              </div>
+                            )}
+                            
+                            <div className="text-xs mt-1 opacity-75 text-white">
+                              {formatAppointmentTime(apt.startTime)} - {formatAppointmentTime(apt.endTime)}
+                            </div>
+                          </div>
+                        ))}
+                        {appointments.length === 0 && (
+                          <div className="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100">
+                            <span className="text-xs text-gray-400 dark:text-gray-500">Click to add appointment</span>
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+             <tr>
+  <td className="border border-gray-300 dark:border-gray-600 p-2 font-medium text-gray-800 dark:text-white">
+    MINYAK & TOL
+  </td>
+  {employees.map((employee) => {
+    const expenses = employeeExpenses[employee.id] || { minyak: 0, toll: 0 };
+
+    const handleExpenseChange = async (type: 'minyak' | 'toll', value: number) => {
+      try {
+        const user = auth.currentUser;
+        if (!user?.email) return;
+
+        const newExpenses = {
+          ...expenses,
+          [type]: value
+        };
+
+        // Update local state immediately
+        setEmployeeExpenses(prev => ({
+          ...prev,
+          [employee.id]: newExpenses
+        }));
+
+        // Save to Firestore
+        const expenseRef = doc(
+          firestore,
+          `user/${user.email}/expenses/${format(selectedDate, 'yyyy-MM-dd')}_${employee.id}`
+        );
+
+        await setDoc(expenseRef, {
+          date: format(selectedDate, 'yyyy-MM-dd'),
+          employeeId: employee.id,
+          ...newExpenses
+        }, { merge: true });
+
+      } catch (error) {
+        console.error('Error updating expense:', error);
+      }
+    };
+
+    return (
+      <td key={`${employee.id}-expenses`} className="border border-gray-300 dark:border-gray-600 p-2">
+        <div className="text-sm">
+          <div className="flex justify-between items-center mb-2">
+            <span>Minyak:</span>
+            <div className="flex items-center">
+              <span className="mr-1">RM</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                className="w-20 px-2 py-1 text-right border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                value={expenses.minyak === 0 ? "0" : expenses.minyak || ""}
+                onChange={(e) => {
+                  const value = e.target.value === "" ? 0 : parseFloat(e.target.value);
+                  handleExpenseChange('minyak', value);
+                }}
+              />
+            </div>
+          </div>
+          <div className="flex justify-between items-center mb-2">
+            <span>Toll:</span>
+            <div className="flex items-center">
+              <span className="mr-1">RM</span>
+              <input
+                type="number"
+                min="0"
+                step="1"
+                className="w-20 px-2 py-1 text-right border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                value={expenses.toll === 0 ? "0" : expenses.toll || ""}
+                onChange={(e) => {
+                  const value = e.target.value === "" ? 0 : parseFloat(e.target.value);
+                  handleExpenseChange('toll', value);
+                }}
+              />
+            </div>
+          </div>
+          <div className="flex justify-between font-medium border-t border-gray-200 dark:border-gray-600 mt-1 pt-1">
+            <span>Total:</span>
+            <span>RM {((expenses.minyak || 0) + (expenses.toll || 0)).toFixed(2)}</span>
+          </div>
+        </div>
+      </td>
+    );
+  })}
+</tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
+
+  // Modify the return statement to include the view toggle button and conditional rendering
   return (
     <>
       <div className="flex flex-col items-start mt-8 intro-y sm:flex-row sm:flex-wrap lg:flex-nowrap">
+           {/* Add view toggle button */}
+           <div className="w-full mb-4 sm:w-auto sm:mr-2 lg:mb-0 lg:mr-4">
+          <button
+            className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
+            onClick={() => setViewType(viewType === 'calendar' ? 'grid' : 'calendar')}
+          >
+            <Lucide icon={viewType === 'calendar' ? 'TableProperties' : 'Calendar'} className="w-4 h-4 mr-2 inline-block" />
+            {viewType === 'calendar' ? 'Slots View' : 'Calendar View'}
+          </button>
+        </div>
         {/* Employee selection dropdown */}
         <div className="w-full mb-4 sm:w-1/4 sm:mr-2 lg:w-auto lg:mb-0 lg:mr-4">
           {employees.length > 0 && (
@@ -1815,6 +2228,8 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
             <Lucide icon="FilePenLine" className="w-4 h-4 mr-2" /> Add New Appointment
           </Button>
         </div>
+
+     
       </div>
 
       {/* Main content grid */}
@@ -1920,38 +2335,16 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
           </div>
         </div>
 
-        {/* Calendar */}
+        {/* Calendar/Grid View */}
         <div className={`${isMobile ? 'hidden' : ''} md:col-span-8 xl:col-span-8 2xl:col-span-9`}>
           <div className="p-5 box intro-y">
-            <CalendarErrorBoundary>
-              <FullCalendar {...calendarOptions} ref={calendarRef} slotLabelFormat={{ hour: 'numeric', minute: '2-digit', meridiem: 'short' }} />
-            </CalendarErrorBoundary>
-            <style>{`
-              .fc .fc-toolbar {
-                color: #0C4A6E;
-              }
-              .fc .fc-toolbar button {
-                background-color: #0C4A6E;
-                color: white;
-                border: none;
-                padding: 0.5rem 1rem;
-                margin: 0 0.25rem;
-                border-radius: 0.375rem;
-                cursor: pointer;
-              }
-              .fc .fc-toolbar button:hover {
-                background-color: #082F49;
-              }
-              .dark .fc .fc-toolbar {
-                color: #fff;
-              }
-              .dark .fc .fc-toolbar button {
-                background-color: #1e40af;
-              }
-              .dark .fc .fc-toolbar button:hover {
-                background-color: #1e3a8a;
-              }
-            `}</style>
+            {viewType === 'calendar' ? (
+              <CalendarErrorBoundary>
+                <FullCalendar {...calendarOptions} ref={calendarRef} />
+              </CalendarErrorBoundary>
+            ) : (
+              <GridView />
+            )}
           </div>
         </div>
       </div>
@@ -1963,16 +2356,16 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
             <Dialog.Panel className="w-full max-w-md p-6 bg-white rounded-md mt-10 dark:bg-gray-800">
               <div className="flex items-center p-4 border-b dark:border-gray-700">
                 <div className="block w-12 h-12 overflow-hidden rounded-full shadow-lg bg-gray-700 flex items-center justify-center text-white mr-4">
-                  <span className="text-xl">{currentEvent?.title.charAt(0).toUpperCase()}</span>
+                  <Lucide icon="User" className="w-6 h-6" />
                 </div>
                 <div>
-                  <div className="font-semibold text-gray-800 dark:text-white">{currentEvent?.title}</div>
-                  <div className="text-sm text-gray-600 dark:text-gray-300">{currentEvent?.extendedProps?.address}</div>
+                  <span className="text-xl dark:text-white">Edit Appointment</span>
                 </div>
               </div>
               <div className="mt-6 space-y-4">
+                {/* Phone Number (Title) */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Title</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Phone Number</label>
                   <input
                     type="text"
                     className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -1980,6 +2373,54 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                     onChange={(e) => setCurrentEvent({ ...currentEvent, title: e.target.value })}
                   />
                 </div>
+
+                {/* Address */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Address</label>
+                  <input
+                    type="text"
+                    className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    value={currentEvent?.extendedProps?.address || ''}
+                    onChange={(e) => setCurrentEvent({ ...currentEvent, extendedProps: { ...currentEvent.extendedProps, address: e.target.value } })}
+                  />
+                </div>
+
+                {/* Units */}
+                <div className="w-1/3">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Units</label>
+                  <input
+                    type="number"
+                    min="0"
+                    className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    value={currentEvent?.extendedProps?.units || ''}
+                    onChange={(e) => setCurrentEvent({ 
+                      ...currentEvent, 
+                      extendedProps: { 
+                        ...currentEvent.extendedProps, 
+                        units: e.target.value 
+                      } 
+                    })}
+                  />
+                </div>
+
+                {/* Type */}
+                <div className="w-1/3">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
+                  <input
+                    type="text"
+                    className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    value={currentEvent?.extendedProps?.type || ''}
+                    onChange={(e) => setCurrentEvent({
+                      ...currentEvent,
+                      extendedProps: {
+                        ...currentEvent.extendedProps,
+                        type: e.target.value
+                      }
+                    })}
+                  />
+                </div>
+
+                {/* Date and Time */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Date</label>
                   <input
@@ -1989,21 +2430,74 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                     onChange={handleDateChange}
                   />
                 </div>
+
+                {/* Time Selection */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Time Slot</label>
-                  <select
-                    className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    value={currentEvent?.startTimeStr && currentEvent?.endTimeStr ? `${currentEvent.startTimeStr} - ${currentEvent.endTimeStr}` : ''}
-                    onChange={handleTimeSlotChange}
-                  >
-                    <option value="" disabled>Select a time slot</option>
-                    {currentEvent?.timeSlots?.map((slot: string) => (
-                      <option key={slot} value={slot}>
-                        {slot}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <label className="block text-xs text-gray-500 dark:text-gray-400">Start Time</label>
+                      <select
+                        className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        value={currentEvent?.startTimeStr || ''}
+                        onChange={(e) => {
+                          const startTime = e.target.value;
+                          setCurrentEvent((prev: { endTimeStr: any; }) => ({
+                            ...prev,
+                            startTimeStr: startTime,
+                            endTimeStr: prev?.endTimeStr || format(addHours(parse(startTime, 'HH:mm', new Date()), 1), 'HH:mm')
+                          }));
+                        }}
+                      >
+                        <option value="" disabled>Start Time</option>
+                        {Array.from({ length: 24 }, (_, i) => {
+                          const hour = i.toString().padStart(2, '0');
+                          return (
+                            <>
+                              <option value={`${hour}:00`}>{format(parse(`${hour}:00`, 'HH:mm', new Date()), 'h:mm a')}</option>
+                              <option value={`${hour}:30`}>{format(parse(`${hour}:30`, 'HH:mm', new Date()), 'h:mm a')}</option>
+                            </>
+                          );
+                        })}
+                      </select>
+                    </div>
+
+                    <div className="flex-1">
+                      <label className="block text-xs text-gray-500 dark:text-gray-400">End Time</label>
+                      <select
+                        className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        value={currentEvent?.endTimeStr || ''}
+                        onChange={(e) => {
+                          setCurrentEvent((prev: any) => ({
+                            ...prev,
+                            endTimeStr: e.target.value
+                          }));
+                        }}
+                      >
+                        <option value="" disabled>End Time</option>
+                        {Array.from({ length: 24 }, (_, i) => {
+                          const hour = i.toString().padStart(2, '0');
+                          return (
+                            <>
+                              <option 
+                                value={`${hour}:00`}
+                                disabled={currentEvent?.startTimeStr && `${hour}:00` <= currentEvent.startTimeStr}
+                              >
+                                {format(parse(`${hour}:00`, 'HH:mm', new Date()), 'h:mm a')}
+                              </option>
+                              <option 
+                                value={`${hour}:30`}
+                                disabled={currentEvent?.startTimeStr && `${hour}:30` <= currentEvent.startTimeStr}
+                              >
+                                {format(parse(`${hour}:30`, 'HH:mm', new Date()), 'h:mm a')}
+                              </option>
+                            </>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  </div>
                 </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Appointment Status</label>
                   <select
@@ -2306,37 +2800,13 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
               </div>
               <div className="mt-6 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Title</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Phone Number</label>
                   <input
                     type="text"
                     className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                     value={currentEvent?.title || ''}
                     onChange={(e) => setCurrentEvent({ ...currentEvent, title: e.target.value })}
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Date</label>
-                  <input
-                    type="date"
-                    className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    value={currentEvent?.dateStr || ''}
-                    onChange={handleDateChange}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Time Slot</label>
-                  <select
-                    className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    value={currentEvent?.startTimeStr && currentEvent?.endTimeStr ? `${currentEvent.startTimeStr} - ${currentEvent.endTimeStr}` : ''}
-                    onChange={handleTimeSlotChange}
-                  >
-                    <option value="" disabled>Select a time slot</option>
-                    {currentEvent?.timeSlots?.map((slot: string) => (
-                      <option key={slot} value={slot}>
-                        {slot}
-                      </option>
-                    ))}
-                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Address</label>
@@ -2347,7 +2817,135 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                     onChange={(e) => setCurrentEvent({ ...currentEvent, extendedProps: { ...currentEvent.extendedProps, address: e.target.value } })}
                   />
                 </div>
+                <div className="w-1/3">
+    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Units</label>
+    <input
+      type="number"
+      min="0"
+      className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+      value={currentEvent?.extendedProps?.units || ''}
+      onChange={(e) => setCurrentEvent({ 
+        ...currentEvent, 
+        extendedProps: { 
+          ...currentEvent.extendedProps, 
+          units: e.target.value 
+        } 
+      })}
+    />
+  </div>
+ <div className="w-1/3">
+      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
+      <input
+        type="text"
+        className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+        value={currentEvent?.extendedProps?.type || ''}
+        onChange={(e) => setCurrentEvent({
+          ...currentEvent,
+          extendedProps: {
+            ...currentEvent.extendedProps,
+            type: e.target.value
+          }
+        })}
+      />
+    </div>
+
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Date</label>
+                  <input
+                    type="date"
+                    className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    value={currentEvent?.dateStr || ''}
+                    onChange={handleDateChange}
+                  />
+                </div>
+                <div>
+  <div className="flex gap-2">
+    <div className="flex-1">
+      <label className="block text-xs text-gray-500 dark:text-gray-400">Start Time</label>
+      <select
+        className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+        value={currentEvent?.startTimeStr || ''}
+        onChange={(e) => {
+          const startTime = e.target.value;
+          setCurrentEvent((prev: { endTimeStr: any; }) => ({
+            ...prev,
+            startTimeStr: startTime,
+            // Automatically set end time to 1 hour after start time if not set
+            endTimeStr: prev?.endTimeStr || format(addHours(parse(startTime, 'HH:mm', new Date()), 1), 'HH:mm')
+          }));
+        }}
+      >
+        <option value="" disabled>Start Time</option>
+        {Array.from({ length: 24 }, (_, i) => {
+          const hour = i.toString().padStart(2, '0');
+          return (
+            <>
+              <option value={`${hour}:00`}>{format(parse(`${hour}:00`, 'HH:mm', new Date()), 'h:mm a')}</option>
+              <option value={`${hour}:30`}>{format(parse(`${hour}:30`, 'HH:mm', new Date()), 'h:mm a')}</option>
+            </>
+          );
+        })}
+      </select>
+    </div>
+
+    <div className="flex-1">
+      <label className="block text-xs text-gray-500 dark:text-gray-400">End Time</label>
+      <select
+        className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+        value={currentEvent?.endTimeStr || ''}
+        onChange={(e) => {
+          setCurrentEvent((prev: typeof currentEvent) => ({
+            ...prev,
+            endTimeStr: e.target.value
+          }));
+        }}
+      >
+        <option value="" disabled>End Time</option>
+        {Array.from({ length: 24 }, (_, i) => {
+          const hour = i.toString().padStart(2, '0');
+          return (
+            <>
+              <option 
+                value={`${hour}:00`}
+                disabled={currentEvent?.startTimeStr && `${hour}:00` <= currentEvent.startTimeStr}
+              >
+                {format(parse(`${hour}:00`, 'HH:mm', new Date()), 'h:mm a')}
+              </option>
+              <option 
+                value={`${hour}:30`}
+                disabled={currentEvent?.startTimeStr && `${hour}:30` <= currentEvent.startTimeStr}
+              >
+                {format(parse(`${hour}:30`, 'HH:mm', new Date()), 'h:mm a')}
+              </option>
+            </>
+          );
+        })}
+      </select>
+    </div>
+  </div>
+</div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Staff</label>
+                  <div className="block w-full mt-1 border border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 p-2 dark:bg-gray-700 dark:border-gray-600">
+                    {employees.map((employee) => (
+                      <div key={employee.id} className="flex items-center">
+                        <input
+                          type="checkbox"
+                          id={`employee-${employee.id}`}
+                          checked={selectedEmployeeIds.includes(employee.id)}
+                          onChange={() => handleStaffChangeAddModal(employee.id)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:bg-gray-600 dark:border-gray-500"
+                        />
+                        <label htmlFor={`employee-${employee.id}`} className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                          {employee.name}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+ 
+                <div>
+
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Appointment Status</label>
                   <select
                     className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -2403,25 +3001,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                     }}
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Staff</label>
-                  <div className="block w-full mt-1 border border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 p-2 dark:bg-gray-700 dark:border-gray-600">
-                    {employees.map((employee) => (
-                      <div key={employee.id} className="flex items-center">
-                        <input
-                          type="checkbox"
-                          id={`employee-${employee.id}`}
-                          checked={selectedEmployeeIds.includes(employee.id)}
-                          onChange={() => handleStaffChangeAddModal(employee.id)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 dark:bg-gray-600 dark:border-gray-500"
-                        />
-                        <label htmlFor={`employee-${employee.id}`} className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300">
-                          {employee.name}
-                        </label>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+             
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Package</label>
                   <select
