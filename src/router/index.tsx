@@ -124,6 +124,7 @@ function Router() {
         { path: "follow-ups-old", element: <OldFollowUps /> },
         { path: "a-i-generative-responses", element: <AIGenerativeResponses /> },
         { path: "storage-pricing", element: <StoragePricing /> },
+        { path: "/client-ticket", element: <PublicTaskForm /> },
         {
           path: "/database-manager",
           element: <DatabaseManager />
@@ -211,7 +212,7 @@ function Router() {
     { path: "product-grid", element: <ProductGrid /> },
     { path: "/login", element: isLoggedIn ? <Navigate to="/loading" /> : <Login /> },
     { path: "/register", element: isLoggedIn ? <Navigate to="/loading" /> : <Register /> },
-    { path: "/client-ticket", element: <PublicTaskForm /> },
+   
     { path: "/error-page", element: <ErrorPage /> },
     { path: "*", element: <ErrorPage /> },
   ];

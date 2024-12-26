@@ -5,6 +5,7 @@ import { initializeApp } from "firebase/app";
 import { Dialog } from '@headlessui/react';
 import { format } from 'date-fns';
 import Lucide from "@/components/Base/Lucide";
+import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 
 // Firebase configuration
 const firebaseConfig = {
@@ -32,7 +33,7 @@ interface Task {
   clientName: string;
   tasks: string;
   taskStatus: { [key: string]: boolean };
-  status: 'open' | 'in-progress' | 'doing-now' | 'completed' | 'blocked';
+  status: 'open' | 'in-progress' | 'doing-now' | 'completed' | 'blocked' | 'kiv' |'client';
   dateCreated: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
   estimatedHours: number;
@@ -41,6 +42,7 @@ interface Task {
     author: string;
     timestamp: string;
   }>;
+  images?: string[];
 }
 
 interface Employee {
@@ -70,6 +72,8 @@ const Ticket = () => {
   const [hideCompleted, setHideCompleted] = useState(true);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [filterPOC, setFilterPOC] = useState<string>('all');
+  const [sortField, setSortField] = useState<keyof Task>('deadline');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   useEffect(() => {
     fetchTasks();
@@ -225,19 +229,22 @@ const Ticket = () => {
         return 'bg-yellow-500';
       case 'doing-now':
         return 'bg-purple-500';
-      case 'completed':
-        return 'bg-green-500';
+        case 'completed':
+            return 'bg-green-500';
+      case 'client':
+        return 'bg-orange-500';
       case 'blocked':
         return 'bg-red-500';
+      case 'kiv':
+        return 'bg-gray-500';
       default:
         return 'bg-gray-500';
     }
   };
 
   const filteredTasks = tasks
-    .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
     .filter(task => {
-      if (hideCompleted && task.status === 'completed') {
+      if (hideCompleted && (task.status === 'completed' || task.status === 'kiv')) {
         return false;
       }
 
@@ -251,6 +258,25 @@ const Ticket = () => {
       const matchesPOC = filterPOC === 'all' || task.poc === filterPOC;
 
       return matchesSearch && matchesStatus && matchesPriority && matchesPOC;
+    })
+    .sort((a, b) => {
+      if (sortField === 'deadline' || sortField === 'dateCreated') {
+        const dateA = new Date(a[sortField]).getTime();
+        const dateB = new Date(b[sortField]).getTime();
+        return sortDirection === 'asc' ? dateA - dateB : dateB - dateA;
+      }
+      
+      if (sortField === 'estimatedHours') {
+        return sortDirection === 'asc' 
+          ? a[sortField] - b[sortField]
+          : b[sortField] - a[sortField];
+      }
+
+      const valueA = String(a[sortField]).toLowerCase();
+      const valueB = String(b[sortField]).toLowerCase();
+      return sortDirection === 'asc'
+        ? valueA.localeCompare(valueB)
+        : valueB.localeCompare(valueA);
     });
 
   const getPriorityColor = (priority: Task['priority']) => {
@@ -265,6 +291,12 @@ const Ticket = () => {
 
   const sendTaskNotification = async (poc: string, task: Task, isNew: boolean) => {
     try {
+         // Skip notification if task is completed
+    if (task.status === 'completed') {
+        console.log('Task is completed, skipping notification');
+        return;
+      }
+  
       const user = auth.currentUser;
       if (!user) return;
 
@@ -359,10 +391,43 @@ const Ticket = () => {
     }
   };
 
+  const handleDeleteTask = async (task: Task) => {
+    if (!window.confirm('Are you sure you want to delete this task?')) {
+      return;
+    }
+
+    try {
+      // Delete task from the POC's collection
+      const taskRef = doc(firestore, `user/${task.poc}/tasks`, task.id);
+      await deleteDoc(taskRef);
+
+      // Delete any associated images from storage
+      if (task.images && task.images.length > 0) {
+        const storage = getStorage();
+        await Promise.all(
+          task.images.map(async (imageUrl) => {
+            try {
+              const imageRef = ref(storage, imageUrl);
+              await deleteObject(imageRef);
+            } catch (error) {
+              console.error('Error deleting image:', error);
+            }
+          })
+        );
+      }
+
+      // Update local state
+      setTasks(tasks.filter(t => t.id !== task.id));
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      alert('Error deleting task. Please try again.');
+    }
+  };
+
   return (
     <div className="p-5">
       <div className="mb-4 flex justify-between items-center">
-        <h2 className="text-xl font-bold dark:text-white">Task Management</h2>
+    
         <div className="flex gap-2">
           <button
             onClick={() => setIsClientFormOpen(true)}
@@ -388,14 +453,14 @@ const Ticket = () => {
         <input
           type="text"
           placeholder="Search tasks..."
-          className="px-4 py-2 border rounded-md"
+          className="px-4 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300 dark:placeholder-gray-400"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
         <select
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value as Task['status'] | 'all')}
-          className="px-4 py-2 border rounded-md"
+          className="px-4 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300"
         >
           <option value="all">All Status</option>
           <option value="open">Open</option>
@@ -403,11 +468,13 @@ const Ticket = () => {
           <option value="doing-now">Doing Now</option>
           <option value="completed">Completed</option>
           <option value="blocked">Blocked</option>
+          <option value="kiv">KIV</option>
+          <option value="client">Client</option>
         </select>
         <select
           value={filterPriority}
           onChange={(e) => setFilterPriority(e.target.value as Task['priority'] | 'all')}
-          className="px-4 py-2 border rounded-md"
+          className="px-4 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300"
         >
           <option value="all">All Priorities</option>
           <option value="low">Low</option>
@@ -418,7 +485,7 @@ const Ticket = () => {
         <select
           value={filterPOC}
           onChange={(e) => setFilterPOC(e.target.value)}
-          className="px-4 py-2 border rounded-md"
+          className="px-4 py-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300"
         >
           <option value="all">All Employees</option>
           {employees.map((employee) => (
@@ -432,38 +499,72 @@ const Ticket = () => {
             type="checkbox"
             checked={hideCompleted}
             onChange={(e) => setHideCompleted(e.target.checked)}
-            className="rounded"
+            className="rounded dark:bg-gray-700 dark:border-gray-600"
           />
-          <span className="text-sm">Hide Completed Tasks</span>
+          <span className="text-sm dark:text-gray-300">Hide Completed & KIV Tasks</span>
         </label>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 shadow">
-        <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
+        <div className="max-h-[calc(100vh-150px)] overflow-y-auto">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0 z-10">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Title</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Deadline</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">POC</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Client</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Tasks</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Priority</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Est. Hours</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Comments</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Created</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
+                {[
+                  { key: 'title', label: 'Title' },
+                  { key: 'deadline', label: 'Deadline' },
+                  { key: 'poc', label: 'POC' },
+                  { key: 'clientName', label: 'Client' },
+                  { key: 'tasks', label: 'Tasks' },
+                  { key: 'status', label: 'Status' },
+                  { key: 'priority', label: 'Priority' },
+                  { key: 'estimatedHours', label: 'Est. Hours' },
+                  { key: 'comments', label: 'Comments' },
+                  { key: 'images', label: 'Images' },
+                  { key: 'dateCreated', label: 'Created' },
+                  { key: 'actions', label: 'Actions' }
+                ].map(({ key, label }) => (
+                  <th 
+                    key={key}
+                    className={`px-4 py-3 text-left text-sm font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider ${
+                      key !== 'actions' ? 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700' : ''
+                    }`}
+                    onClick={() => {
+                      if (key !== 'actions' && key !== 'comments') {
+                        if (sortField === key) {
+                          setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setSortField(key as keyof Task);
+                          setSortDirection('asc');
+                        }
+                      }
+                    }}
+                  >
+                    <div className="flex items-center gap-1">
+                      {label}
+                      {key !== 'actions' && key !== 'comments' && (
+                        <span className="inline-block">
+                          {sortField === key && (
+                            <Lucide 
+                              icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
+                              className="w-4 h-4"
+                            />
+                          )}
+                        </span>
+                      )}
+                    </div>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200 dark:bg-gray-900 dark:divide-gray-700">
               {filteredTasks.map((task, idx) => (
                 <tr key={task.id} className={`
                   ${idx % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50 dark:bg-gray-800'}
-                  hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors
+                  hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-base
                 `}>
-                  <td className="px-4 py-3 whitespace-nowrap">{task.title}</td>
-                  <td className="px-4 py-3 whitespace-nowrap">
+                  <td className="px-4 py-4 whitespace-nowrap text-base">{task.title}</td>
+                  <td className="px-4 py-4 whitespace-nowrap text-base">
                     <div className={`
                       ${(() => {
                         const daysUntilDeadline = Math.ceil((new Date(task.deadline).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
@@ -472,12 +573,12 @@ const Ticket = () => {
                         if (daysUntilDeadline <= 7) return 'text-yellow-500';
                         return 'text-gray-900 dark:text-gray-300';
                       })()}
-                      font-medium
+                      font-medium text-base
                     `}>
                       {format(new Date(task.deadline), 'dd/MM/yyyy')}
                     </div>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
+                  <td className="px-4 py-4 whitespace-nowrap text-base">
                     <div className="flex items-center">
                       <span className="mr-2">{employees.find(emp => emp.email === task.poc)?.name || task.poc}</span>
                       <div
@@ -486,8 +587,8 @@ const Ticket = () => {
                       />
                     </div>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">{task.clientName}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-4 whitespace-nowrap text-base">{task.clientName}</td>
+                  <td className="px-4 py-4">
                     <div className="max-w-xs">
                       {task.tasks.split('\n').map((item, index) => (
                         <div key={index} className="flex items-center gap-2 mb-1">
@@ -528,7 +629,7 @@ const Ticket = () => {
                       ))}
                     </div>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
+                  <td className="px-4 py-4 whitespace-nowrap text-base">
                     <select
                       value={task.status}
                       onChange={async (e) => {
@@ -612,15 +713,17 @@ Great work team! 🌟`;
                       <option value="doing-now">Doing Now</option>
                       <option value="completed">Completed</option>
                       <option value="blocked">Blocked</option>
+                      <option value="client">Client</option>
+                      <option value="kiv">KIV</option>
                     </select>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
+                  <td className="px-4 py-4 whitespace-nowrap text-base">
                     <span className={`px-3 py-1 rounded-full text-white text-sm font-medium ${getPriorityColor(task.priority)}`}>
                       {task.priority}
                     </span>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-gray-900 dark:text-gray-300">{task.estimatedHours}</td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-4 whitespace-nowrap text-base text-gray-900 dark:text-gray-300">{task.estimatedHours}</td>
+                  <td className="px-4 py-4">
                     <div className="max-h-20 overflow-y-auto">
                       {task.comments?.map((comment, index) => (
                         <div key={index} className="text-sm text-gray-500 mb-1">
@@ -632,10 +735,35 @@ Great work team! 🌟`;
                       ))}
                     </div>
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-gray-300">
+                  <td className="px-4 py-4">
+                    {task.images && task.images.length > 0 ? (
+                      <div className="flex flex-col gap-2">
+                        {task.images.map((url, index) => (
+                          <div key={index} className="flex items-center gap-2">
+                            <img
+                              src={url}
+                              alt={`Task image ${index + 1}`}
+                              className="w-10 h-10 object-cover rounded"
+                            />
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary hover:text-blue-700 text-sm truncate max-w-[150px]"
+                            >
+                              View Image {index + 1}
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-sm text-gray-500">No images</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-4 whitespace-nowrap text-base text-sm text-gray-900 dark:text-gray-300">
                     {format(new Date(task.dateCreated), 'dd/MM/yyyy HH:mm')}
                   </td>
-                  <td className="px-4 py-3 whitespace-nowrap">
+                  <td className="px-4 py-4">
                     <div className="flex gap-2">
                       <button
                         onClick={() => {
@@ -653,6 +781,13 @@ Great work team! 🌟`;
                       >
                         <Lucide icon="Bell" className="w-4 h-4 mr-1" />
                         Remind
+                      </button>
+                      <button
+                        onClick={() => handleDeleteTask(task)}
+                        className="inline-flex items-center px-3 py-1 text-sm font-medium text-white bg-red-500 rounded-md hover:bg-red-600 transition-colors"
+                      >
+                        <Lucide icon="Trash" className="w-4 h-4 mr-1" />
+                        Delete
                       </button>
                     </div>
                   </td>
@@ -797,6 +932,7 @@ const TaskFormModal = ({ isOpen, onClose, task, onSubmit, employees, clients }: 
 
   const [newComment, setNewComment] = useState('');
   const [bulkInput, setBulkInput] = useState('');
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     if (task) {
@@ -876,6 +1012,49 @@ const TaskFormModal = ({ isOpen, onClose, task, onSubmit, employees, clients }: 
       }]);
       
       setBulkInput('');
+    }
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>, index: number) => {
+    const files = e.target.files;
+    if (!files || !auth.currentUser?.email) return;
+
+    setUploading(true);
+    try {
+      const storage = getStorage();
+      const imageUrls: string[] = [];
+
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const fileRef = ref(storage, `tasks/${auth.currentUser.email}/${Date.now()}-${file.name}`);
+        await uploadBytes(fileRef, file);
+        const url = await getDownloadURL(fileRef);
+        imageUrls.push(url);
+      }
+
+      updateTaskForm(index, {
+        images: [...(taskForms[index].images || []), ...imageUrls]
+      });
+    } catch (error) {
+      console.error('Error uploading images:', error);
+      alert('Error uploading images. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemoveImage = async (taskIndex: number, imageUrl: string) => {
+    try {
+      const storage = getStorage();
+      const imageRef = ref(storage, imageUrl);
+      await deleteObject(imageRef);
+
+      updateTaskForm(taskIndex, {
+        images: taskForms[taskIndex].images?.filter(url => url !== imageUrl)
+      });
+    } catch (error) {
+      console.error('Error removing image:', error);
+      alert('Error removing image. Please try again.');
     }
   };
 
@@ -1008,6 +1187,7 @@ const TaskFormModal = ({ isOpen, onClose, task, onSubmit, employees, clients }: 
                       <option value="doing-now">Doing Now</option>
                       <option value="completed">Completed</option>
                       <option value="blocked">Blocked</option>
+                      <option value="kiv">KIV</option>
                     </select>
                   </div>
 
@@ -1037,6 +1217,52 @@ const TaskFormModal = ({ isOpen, onClose, task, onSubmit, employees, clients }: 
                       value={taskForm.estimatedHours}
                       onChange={(e) => updateTaskForm(index, { estimatedHours: parseFloat(e.target.value) })}
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Images
+                    </label>
+                    <div className="mt-2">
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        onChange={(e) => handleImageUpload(e, index)}
+                        className="block w-full text-sm text-gray-500
+                          file:mr-4 file:py-2 file:px-4
+                          file:rounded-md file:border-0
+                          file:text-sm file:font-medium
+                          file:bg-primary file:text-white
+                          hover:file:bg-blue-700
+                          dark:text-gray-400"
+                      />
+                      {uploading && (
+                        <div className="mt-2 text-sm text-gray-500">
+                          Uploading images...
+                        </div>
+                      )}
+                      {taskForm.images && taskForm.images.length > 0 && (
+                        <div className="mt-4 grid grid-cols-2 gap-4">
+                          {taskForm.images.map((url, imgIndex) => (
+                            <div key={imgIndex} className="relative group">
+                              <img
+                                src={url}
+                                alt={`Task image ${imgIndex + 1}`}
+                                className="w-full h-32 object-cover rounded-lg"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveImage(index, url)}
+                                className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
+                                <Lucide icon="X" className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
 
                   <div className="mt-4">

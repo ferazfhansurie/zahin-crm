@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { getAuth } from 'firebase/auth';
-import { doc, getDoc, getFirestore } from 'firebase/firestore';
+import { doc, getDoc, getFirestore, updateDoc } from 'firebase/firestore';
 import axios from 'axios';
 import { initializeApp } from 'firebase/app';
 import LoadingIcon from '@/components/Base/LoadingIcon';
@@ -21,6 +21,7 @@ function SettingsPage() {
   const [showAddUserButton, setShowAddUserButton] = useState(false);
   const [phoneCount, setPhoneCount] = useState(0);
   const [role, setRole] = useState<string>('');
+  const [aiDelay, setAiDelay] = useState<number>(0);
 
   const firestore = getFirestore();
 
@@ -52,6 +53,7 @@ function SettingsPage() {
       const companyData = companyDoc.data();
       setBaseUrl(companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app');
       setPhoneCount(companyData.phoneCount || 0);
+      setAiDelay(companyData.aiDelay || 0);
 
       // Get reporting settings
       const settingsDoc = await getDoc(doc(firestore, `companies/${userCompanyId}/settings/reporting`));
@@ -106,6 +108,18 @@ function SettingsPage() {
     } catch (error) {
       console.error('Error triggering report:', error);
       alert('Failed to trigger report');
+    }
+  };
+
+  const handleSaveAiDelay = async () => {
+    try {
+      await updateDoc(doc(firestore, 'companies', companyId!), {
+        aiDelay: aiDelay
+      });
+      alert('AI delay setting saved successfully!');
+    } catch (error) {
+      console.error('Error saving AI delay:', error);
+      alert('Failed to save AI delay setting');
     }
   };
 
@@ -173,6 +187,38 @@ function SettingsPage() {
             </Button>
           </Link>
         )}
+      </div>
+
+      {/* AI Settings Section */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
+        <h2 className="text-xl font-semibold mb-6">AI Settings</h2>
+        
+        <div className="space-y-6">
+          <div>
+            <label className="block mb-2">Response Delay (seconds)</label>
+            <input
+              type="number"
+              min="0"
+              max="300"
+              value={aiDelay}
+              onChange={(e) => setAiDelay(Number(e.target.value))}
+              className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+            />
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              Set how long the AI should wait before responding (0-300 seconds)
+            </p>
+          </div>
+
+          <div>
+            <Button
+              variant="primary"
+              onClick={handleSaveAiDelay}
+              className="shadow-md"
+            >
+              Save AI Delay
+            </Button>
+          </div>
+        </div>
       </div>
 
       {/* Daily Report Settings Section */}
