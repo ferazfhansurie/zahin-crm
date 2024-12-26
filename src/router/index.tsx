@@ -84,6 +84,7 @@ import DatabaseManager from "../pages/DatabaseManager";
 import AIGenerativeResponses from "../pages/AIGenerativeResponses";
 import Ticket from "../pages/Ticket";
 import PublicTaskForm from "../pages/PublicTaskForm";
+import Settings from "../pages/Settings";
 function Router() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const auth = getAuth();
@@ -113,13 +114,23 @@ function Router() {
         { path: "chat", element: <Chat /> },
         { path: "/dashboard", element: <DashboardOverview1 /> },
         { path: "ticket", element: <Ticket /> },
-     
+        { path: "crud-form", element: <CrudForm /> },
+        { path: "settings", element: <Settings /> },
+        { path: "quick-replies", element: <QuickReplies /> },
+        { path: "a-i-responses", element: <AIResponses /> },
+        { path: "automations", element: <Automations /> },
+        { path: "follow-ups", element: <FollowUps /> },
+        { path: "follow-ups-select", element: <SelectFollowUpMode /> },
+        { path: "follow-ups-old", element: <OldFollowUps /> },
+        { path: "a-i-generative-responses", element: <AIGenerativeResponses /> },
+        { path: "storage-pricing", element: <StoragePricing /> },
         {
           path: "/database-manager",
           element: <DatabaseManager />
         },
         { path: "/dashboard/blast-history", element: <BlastHistory /> },
         { path: "users-layout-2/quick-replies", element: <QuickReplies /> },
+        { path: "users-layout-2/settings", element: <Settings /> },
         { path: "users-layout-2/automations", element: <Automations /> },
         { path: "users-layout-2/follow-ups", element: <FollowUps /> },
         { path: "users-layout-2/follow-ups-select", element: <SelectFollowUpMode /> },

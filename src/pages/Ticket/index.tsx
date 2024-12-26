@@ -439,150 +439,151 @@ const Ticket = () => {
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 shadow">
-        <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-          <thead>
-            <tr className="bg-gray-50 dark:bg-gray-800">
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Title</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Deadline</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">POC</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Client</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Tasks</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Priority</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Est. Hours</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Comments</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Created</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200 dark:bg-gray-900 dark:divide-gray-700">
-            {filteredTasks.map((task, idx) => (
-              <tr key={task.id} className={`
-                ${idx % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50 dark:bg-gray-800'}
-                hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors
-              `}>
-                <td className="px-4 py-3 whitespace-nowrap">{task.title}</td>
-                <td className="px-4 py-3 whitespace-nowrap">
-                  <div className={`
-                    ${(() => {
-                      const daysUntilDeadline = Math.ceil((new Date(task.deadline).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
-                      if (daysUntilDeadline < 0) return 'text-red-500'; 
-                      if (daysUntilDeadline <= 3) return 'text-orange-500';
-                      if (daysUntilDeadline <= 7) return 'text-yellow-500';
-                      return 'text-gray-900 dark:text-gray-300';
-                    })()}
-                    font-medium
-                  `}>
-                    {format(new Date(task.deadline), 'dd/MM/yyyy')}
-                  </div>
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap">
-                  <div className="flex items-center">
-                    <span className="mr-2">{employees.find(emp => emp.email === task.poc)?.name || task.poc}</span>
-                    <div
-                      className="w-3 h-3 rounded-full"
-                      style={{ backgroundColor: employees.find(emp => emp.email === task.poc)?.color }}
-                    />
-                  </div>
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap">{task.clientName}</td>
-                <td className="px-4 py-3">
-                  <div className="max-w-xs">
-                    {task.tasks.split('\n').map((item, index) => (
-                      <div key={index} className="flex items-center gap-2 mb-1">
-                        <input
-                          type="checkbox"
-                          checked={task.taskStatus?.[item] || false}
-                          onChange={async () => {
-                            try {
-                              const user = auth.currentUser;
-                              if (!user?.email) return;
+        <div className="max-h-[calc(100vh-300px)] overflow-y-auto">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0 z-10">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Title</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Deadline</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">POC</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Client</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Tasks</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Status</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Priority</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Est. Hours</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Comments</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Created</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200 dark:bg-gray-900 dark:divide-gray-700">
+              {filteredTasks.map((task, idx) => (
+                <tr key={task.id} className={`
+                  ${idx % 2 === 0 ? 'bg-white dark:bg-gray-900' : 'bg-gray-50 dark:bg-gray-800'}
+                  hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors
+                `}>
+                  <td className="px-4 py-3 whitespace-nowrap">{task.title}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className={`
+                      ${(() => {
+                        const daysUntilDeadline = Math.ceil((new Date(task.deadline).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+                        if (daysUntilDeadline < 0) return 'text-red-500'; 
+                        if (daysUntilDeadline <= 3) return 'text-orange-500';
+                        if (daysUntilDeadline <= 7) return 'text-yellow-500';
+                        return 'text-gray-900 dark:text-gray-300';
+                      })()}
+                      font-medium
+                    `}>
+                      {format(new Date(task.deadline), 'dd/MM/yyyy')}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <span className="mr-2">{employees.find(emp => emp.email === task.poc)?.name || task.poc}</span>
+                      <div
+                        className="w-3 h-3 rounded-full"
+                        style={{ backgroundColor: employees.find(emp => emp.email === task.poc)?.color }}
+                      />
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">{task.clientName}</td>
+                  <td className="px-4 py-3">
+                    <div className="max-w-xs">
+                      {task.tasks.split('\n').map((item, index) => (
+                        <div key={index} className="flex items-center gap-2 mb-1">
+                          <input
+                            type="checkbox"
+                            checked={task.taskStatus?.[item] || false}
+                            onChange={async () => {
+                              try {
+                                const user = auth.currentUser;
+                                if (!user?.email) return;
 
-                              const taskRef = doc(firestore, `user/${task.creator}/tasks`, task.id);
-                              const newTaskStatus = {
-                                ...task.taskStatus,
-                                [item]: !task.taskStatus?.[item]
-                              };
+                                const taskRef = doc(firestore, `user/${task.creator}/tasks`, task.id);
+                                const newTaskStatus = {
+                                  ...task.taskStatus,
+                                  [item]: !task.taskStatus?.[item]
+                                };
 
-                              await updateDoc(taskRef, {
-                                taskStatus: newTaskStatus
-                              });
+                                await updateDoc(taskRef, {
+                                  taskStatus: newTaskStatus
+                                });
 
-                              // Update local state
-                              setTasks(tasks.map(t => 
-                                t.id === task.id 
-                                  ? { ...t, taskStatus: newTaskStatus }
-                                  : t
-                              ));
-                            } catch (error) {
-                              console.error('Error updating task status:', error);
-                            }
-                          }}
-                          className="rounded border-gray-300 text-primary focus:ring-primary dark:border-gray-600 dark:bg-gray-700"
-                        />
-                        <span className={`text-sm ${task.taskStatus?.[item] ? 'line-through text-gray-500' : 'text-gray-900 dark:text-gray-300'}`}>
-                          {item}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap">
-                  <select
-                    value={task.status}
-                    onChange={async (e) => {
-                      try {
-                        const user = auth.currentUser;
-                        if (!user?.email) return;
+                                // Update local state
+                                setTasks(tasks.map(t => 
+                                  t.id === task.id 
+                                    ? { ...t, taskStatus: newTaskStatus }
+                                    : t
+                                ));
+                              } catch (error) {
+                                console.error('Error updating task status:', error);
+                              }
+                            }}
+                            className="rounded border-gray-300 text-primary focus:ring-primary dark:border-gray-600 dark:bg-gray-700"
+                          />
+                          <span className={`text-sm ${task.taskStatus?.[item] ? 'line-through text-gray-500' : 'text-gray-900 dark:text-gray-300'}`}>
+                            {item}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <select
+                      value={task.status}
+                      onChange={async (e) => {
+                        try {
+                          const user = auth.currentUser;
+                          if (!user?.email) return;
 
-                        const taskRef = doc(firestore, `user/${task.creator}/tasks`, task.id);
-                        const newStatus = e.target.value as Task['status'];
-                        const completionTime = new Date().toISOString();
+                          const taskRef = doc(firestore, `user/${task.creator}/tasks`, task.id);
+                          const newStatus = e.target.value as Task['status'];
+                          const completionTime = new Date().toISOString();
 
-                        await updateDoc(taskRef, {
-                          status: newStatus,
-                          completionTime: newStatus === 'completed' ? completionTime : null
-                        });
+                          await updateDoc(taskRef, {
+                            status: newStatus,
+                            completionTime: newStatus === 'completed' ? completionTime : null
+                          });
 
-                        // Update local state
-                        setTasks(tasks.map(t => 
-                          t.id === task.id 
-                            ? { ...t, status: newStatus, completionTime }
-                            : t
-                        ));
+                          // Update local state
+                          setTasks(tasks.map(t => 
+                            t.id === task.id 
+                              ? { ...t, status: newStatus, completionTime }
+                              : t
+                          ));
 
-                        // Send detailed completion message if task is marked as completed
-                        if (newStatus === 'completed' && task.status !== 'completed') {
-                          const celebrationMessages = [
-                            "🎉 YEEP YEEP HURRAY! Task Completed! 🌟",
-                            "🎊 Amazing Achievement Unlocked! 🏆",
-                            "🌟 BOOM! Outstanding Performance! 💪",
-                            "🎯 Mission Accomplished in Style! 🚀",
-                            "🏆 Excellent Work! Time to Celebrate! 💃"
-                          ];
-                          const randomMessage = celebrationMessages[Math.floor(Math.random() * celebrationMessages.length)];
-                          
-                          const employeeData = employees.find(emp => emp.email === task.poc);
-                          const creatorData = employees.find(emp => emp.email === task.creator);
-                          
-                          // Calculate time statistics
-                          const startDate = new Date(task.dateCreated);
-                          const endDate = new Date();
-                          const timeToComplete = endDate.getTime() - startDate.getTime();
-                          const daysToComplete = Math.floor(timeToComplete / (1000 * 60 * 60 * 24));
-                          const hoursToComplete = Math.floor((timeToComplete % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-                          
-                          // Calculate if completed before or after deadline
-                          const deadlineDate = new Date(task.deadline);
-                          const deadlineDiff = endDate.getTime() - deadlineDate.getTime();
-                          const daysFromDeadline = Math.floor(deadlineDiff / (1000 * 60 * 60 * 24));
-                          
-                          // Calculate completion percentage of subtasks
-                          const totalSubtasks = task.tasks.split('\n').length;
-                          const completedSubtasks = Object.values(task.taskStatus || {}).filter(status => status).length;
-                          const completionPercentage = Math.round((completedSubtasks / totalSubtasks) * 100);
+                          // Send detailed completion message if task is marked as completed
+                          if (newStatus === 'completed' && task.status !== 'completed') {
+                            const celebrationMessages = [
+                              "🎉 YEEP YEEP HURRAY! Task Completed! 🌟",
+                              "🎊 Amazing Achievement Unlocked! 🏆",
+                              "🌟 BOOM! Outstanding Performance! 💪",
+                              "🎯 Mission Accomplished in Style! 🚀",
+                              "🏆 Excellent Work! Time to Celebrate! 💃"
+                            ];
+                            const randomMessage = celebrationMessages[Math.floor(Math.random() * celebrationMessages.length)];
+                            
+                            const employeeData = employees.find(emp => emp.email === task.poc);
+                            const creatorData = employees.find(emp => emp.email === task.creator);
+                            
+                            // Calculate time statistics
+                            const startDate = new Date(task.dateCreated);
+                            const endDate = new Date();
+                            const timeToComplete = endDate.getTime() - startDate.getTime();
+                            const daysToComplete = Math.floor(timeToComplete / (1000 * 60 * 60 * 24));
+                            const hoursToComplete = Math.floor((timeToComplete % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+                            
+                            // Calculate if completed before or after deadline
+                            const deadlineDate = new Date(task.deadline);
+                            const deadlineDiff = endDate.getTime() - deadlineDate.getTime();
+                            const daysFromDeadline = Math.floor(deadlineDiff / (1000 * 60 * 60 * 24));
+                            
+                            // Calculate completion percentage of subtasks
+                            const totalSubtasks = task.tasks.split('\n').length;
+                            const completedSubtasks = Object.values(task.taskStatus || {}).filter(status => status).length;
+                            const completionPercentage = Math.round((completedSubtasks / totalSubtasks) * 100);
 
-                          const message = `${randomMessage}
+                            const message = `${randomMessage}
 
 🎯 Task Completed: ${task.title}
 👤 Completed by: ${employeeData?.name || task.poc}
@@ -597,68 +598,69 @@ ${daysFromDeadline > 0
 👥 Assigned by: ${creatorData?.name || task.creator}
 
 Great work team! 🌟`;
-                          
-                          await sendTaskNotification(task.poc, { ...task, title: message }, false);
+                            
+                           // await sendTaskNotification(task.poc, { ...task, title: message }, false);
+                          }
+                        } catch (error) {
+                          console.error('Error updating task status:', error);
                         }
-                      } catch (error) {
-                        console.error('Error updating task status:', error);
-                      }
-                    }}
-                    className={`px-3 py-1 rounded-full text-white text-sm font-medium ${getStatusColor(task.status)}`}
-                  >
-                    <option value="open">Open</option>
-                    <option value="in-progress">In Progress</option>
-                    <option value="doing-now">Doing Now</option>
-                    <option value="completed">Completed</option>
-                    <option value="blocked">Blocked</option>
-                  </select>
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap">
-                  <span className={`px-3 py-1 rounded-full text-white text-sm font-medium ${getPriorityColor(task.priority)}`}>
-                    {task.priority}
-                  </span>
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap text-gray-900 dark:text-gray-300">{task.estimatedHours}</td>
-                <td className="px-4 py-3">
-                  <div className="max-h-20 overflow-y-auto">
-                    {task.comments?.map((comment, index) => (
-                      <div key={index} className="text-sm text-gray-500 mb-1">
-                        <div className="font-medium text-gray-900 dark:text-gray-300">{comment.text}</div>
-                        <div className="text-xs">
-                          {comment.author} - {new Date(comment.timestamp).toLocaleString()}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-gray-300">
-                  {format(new Date(task.dateCreated), 'dd/MM/yyyy HH:mm')}
-                </td>
-                <td className="px-4 py-3 whitespace-nowrap">
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => {
-                        setCurrentTask(task);
-                        setIsTaskFormOpen(true);
                       }}
-                      className="inline-flex items-center px-3 py-1 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 transition-colors"
+                      className={`px-3 py-1 rounded-full text-white text-sm font-medium ${getStatusColor(task.status)}`}
                     >
-                      <Lucide icon="Pencil" className="w-4 h-4 mr-1" />
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => sendTaskNotification(task.poc, task, false)}
-                      className="inline-flex items-center px-3 py-1 text-sm font-medium text-white bg-yellow-500 rounded-md hover:bg-yellow-600 transition-colors"
-                    >
-                      <Lucide icon="Bell" className="w-4 h-4 mr-1" />
-                      Remind
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                      <option value="open">Open</option>
+                      <option value="in-progress">In Progress</option>
+                      <option value="doing-now">Doing Now</option>
+                      <option value="completed">Completed</option>
+                      <option value="blocked">Blocked</option>
+                    </select>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <span className={`px-3 py-1 rounded-full text-white text-sm font-medium ${getPriorityColor(task.priority)}`}>
+                      {task.priority}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-gray-900 dark:text-gray-300">{task.estimatedHours}</td>
+                  <td className="px-4 py-3">
+                    <div className="max-h-20 overflow-y-auto">
+                      {task.comments?.map((comment, index) => (
+                        <div key={index} className="text-sm text-gray-500 mb-1">
+                          <div className="font-medium text-gray-900 dark:text-gray-300">{comment.text}</div>
+                          <div className="text-xs">
+                            {comment.author} - {new Date(comment.timestamp).toLocaleString()}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-gray-300">
+                    {format(new Date(task.dateCreated), 'dd/MM/yyyy HH:mm')}
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setCurrentTask(task);
+                          setIsTaskFormOpen(true);
+                        }}
+                        className="inline-flex items-center px-3 py-1 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 transition-colors"
+                      >
+                        <Lucide icon="Pencil" className="w-4 h-4 mr-1" />
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => sendTaskNotification(task.poc, task, false)}
+                        className="inline-flex items-center px-3 py-1 text-sm font-medium text-white bg-yellow-500 rounded-md hover:bg-yellow-600 transition-colors"
+                      >
+                        <Lucide icon="Bell" className="w-4 h-4 mr-1" />
+                        Remind
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <TaskFormModal
