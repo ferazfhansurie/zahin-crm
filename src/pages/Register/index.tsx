@@ -11,6 +11,7 @@ import { useState, useEffect } from "react";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import axios from "axios";
+import { getCountries, getCountryCallingCode, parsePhoneNumber, AsYouType, CountryCode } from 'libphonenumber-js'
 
 // Firebase configuration
 const firebaseConfig = {
@@ -40,6 +41,7 @@ function Main() {
   const [isVerificationSent, setIsVerificationSent] = useState(false);
   const [verificationStep, setVerificationStep] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const [selectedCountry, setSelectedCountry] = useState<CountryCode>('MY');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -57,24 +59,15 @@ function Main() {
   };
 
   const formatPhoneNumber = (number: string) => {
-    // Remove any non-digit characters
-    let cleaned = number.replace(/\D/g, '');
-    
-    // If number starts with '0', replace it with '60'
-    if (cleaned.startsWith('0')) {
-      cleaned = '60' + cleaned.substring(1);
+    try {
+      const phoneNumber = parsePhoneNumber(number, selectedCountry);
+      return phoneNumber ? phoneNumber.format('E.164') : number;
+    } catch (error) {
+      // If parsing fails, return the original format with country code
+      const countryCode = getCountryCallingCode(selectedCountry);
+      const cleaned = number.replace(/[^\d]/g, '');
+      return `+${countryCode}${cleaned}`;
     }
-    // If number starts with '+60', remove the '+'
-    else if (cleaned.startsWith('60')) {
-      cleaned = cleaned;
-    }
-    // If number doesn't start with '60', add it
-    else {
-      cleaned = '60' + cleaned;
-    }
-    
-    // Add '+' for Firebase storage, but not for the WhatsApp API
-    return '+' + cleaned;
   };
 
   const sendVerificationCode = async () => {
@@ -274,11 +267,9 @@ function Main() {
   };
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    // Only allow digits
-    if (/^\d*$/.test(value)) {
-      setPhoneNumber(value);
-    }
+    const formatter = new AsYouType(selectedCountry);
+    const formatted = formatter.input(e.target.value);
+    setPhoneNumber(formatted);
   };
 
   return (
@@ -330,14 +321,27 @@ function Main() {
                     onChange={(e) => setCompanyName(e.target.value)}
                     onKeyDown={handleKeyDown}
                   />
-                      <FormInput
-                    type="tel"
-                    className="block px-4 py-3 mt-4 intro-x min-w-full xl:min-w-[350px]"
-                    placeholder="Phone Number (e.g., 0123456789)"
-                    value={phoneNumber}
-                    onChange={handlePhoneChange}
-                    onKeyDown={handleKeyDown}
-                  />
+                  <div className="flex gap-2">
+                    <select
+                      className="block px-4 py-3 mt-4 intro-x bg-white border rounded dark:bg-darkmode-600 dark:border-darkmode-400"
+                      value={selectedCountry}
+                      onChange={(e) => setSelectedCountry(e.target.value as CountryCode)}
+                    >
+                      {getCountries().map((country) => (
+                        <option key={country} value={country}>
+                          {new Intl.DisplayNames(['en'], { type: 'region' }).of(country)} (+{getCountryCallingCode(country)})
+                        </option>
+                      ))}
+                    </select>
+                    <FormInput
+                      type="tel"
+                      className="block px-4 py-3 mt-4 intro-x min-w-full xl:min-w-[350px]"
+                      placeholder={`Phone Number (e.g., ${getCountryCallingCode(selectedCountry)}123456789)`}
+                      value={phoneNumber}
+                      onChange={handlePhoneChange}
+                      onKeyDown={handleKeyDown}
+                    />
+                  </div>
                   {!isVerificationSent ? (
                     <Button
                       variant="primary"

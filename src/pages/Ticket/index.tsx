@@ -43,6 +43,7 @@ interface Task {
     timestamp: string;
   }>;
   images?: string[];
+  completionTime?: string;
 }
 
 interface Employee {
@@ -59,6 +60,35 @@ interface Client {
   name: string;
 }
 
+interface LeaderboardStats {
+  email: string;
+  name: string;
+  color: string;
+  completedTasks: number;
+  completionRate: number;
+  avgCompletionTime: number;
+  criticalTasksCompleted: number;
+  onTimeCompletions: number;
+  totalPoints: number;
+}
+// Add this interface with your other interfaces at the top
+interface EmployeeStats {
+  totalTasks: number;
+  completedTasks: number;
+  overdueTasks: number;
+  avgCompletionTime: number;
+  tasksByPriority: {
+    low: number;
+    medium: number;
+    high: number;
+    critical: number;
+  };
+  tasksByStatus: {
+    [key: string]: number;
+  };
+}
+
+
 const Ticket = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isTaskFormOpen, setIsTaskFormOpen] = useState(false);
@@ -74,12 +104,22 @@ const Ticket = () => {
   const [filterPOC, setFilterPOC] = useState<string>('all');
   const [sortField, setSortField] = useState<keyof Task>('deadline');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
-
+  const [isLeaderboardOpen, setIsLeaderboardOpen] = useState(false);
+  const [leaderboardStats, setLeaderboardStats] = useState<LeaderboardStats[]>([]);
+// Add this state in your Ticket component with your other useState declarations
+const [employeeStats, setEmployeeStats] = useState<{ [email: string]: EmployeeStats }>({});
   useEffect(() => {
     fetchTasks();
     fetchEmployees();
     fetchClients();
   }, []);
+
+  useEffect(() => {
+    if (tasks.length > 0 && employees.length > 0) {
+      calculateEmployeeStats();
+      calculateLeaderboardStats();
+    }
+  }, [tasks, employees]);
 
   const fetchTasks = async () => {
     try {
@@ -424,6 +464,117 @@ const Ticket = () => {
     }
   };
 
+  const calculateLeaderboardStats = () => {
+    const stats: LeaderboardStats[] = employees.map(employee => {
+      const employeeTasks = tasks.filter(task => task.poc === employee.email);
+      const completedTasks = employeeTasks.filter(task => task.status === 'completed');
+      
+      // Calculate completion rate
+      const completionRate = employeeTasks.length > 0
+        ? (completedTasks.length / employeeTasks.length) * 100
+        : 0;
+
+      // Calculate average completion time
+      const completionTimes = completedTasks.map(task => {
+        const start = new Date(task.dateCreated);
+        const end = new Date(task.completionTime || new Date());
+        return end.getTime() - start.getTime();
+      });
+      const avgCompletionTime = completionTimes.length > 0
+        ? completionTimes.reduce((a, b) => a + b, 0) / completionTimes.length
+        : 0;
+
+      // Count critical tasks completed
+      const criticalTasksCompleted = completedTasks.filter(
+        task => task.priority === 'critical'
+      ).length;
+
+      // Count on-time completions
+      const onTimeCompletions = completedTasks.filter(task => 
+        new Date(task.completionTime || '') <= new Date(task.deadline)
+      ).length;
+
+      // Calculate total points
+      // Points system:
+      // - 10 points per completed task
+      // - 20 extra points per critical task completed
+      // - 15 extra points per on-time completion
+      // - Up to 50 points based on completion rate (0.5 point per %)
+      // - Up to 50 points for faster completion times
+      const totalPoints = 
+        (completedTasks.length * 10) +
+        (criticalTasksCompleted * 20) +
+        (onTimeCompletions * 15) +
+        (completionRate * 0.5) +
+        (avgCompletionTime ? Math.max(50 - Math.floor(avgCompletionTime / (1000 * 60 * 60 * 24)), 0) : 0);
+
+      return {
+        email: employee.email,
+        name: employee.name,
+        color: employee.color,
+        completedTasks: completedTasks.length,
+        completionRate,
+        avgCompletionTime,
+        criticalTasksCompleted,
+        onTimeCompletions,
+        totalPoints: Math.round(totalPoints)
+      };
+    });
+
+    // Sort by total points in descending order
+    stats.sort((a, b) => b.totalPoints - a.totalPoints);
+    setLeaderboardStats(stats);
+  };
+
+  const calculateEmployeeStats = () => {
+    const stats: { [email: string]: EmployeeStats } = {};
+
+    employees.forEach((employee: Employee) => {
+      const employeeTasks = tasks.filter(task => task.poc === employee.email);
+      const completedTasks = employeeTasks.filter(task => task.status === 'completed');
+      const now = new Date();
+      const overdueTasks = employeeTasks.filter(task => 
+        new Date(task.deadline) < now && task.status !== 'completed'
+      );
+
+      // Calculate average completion time
+      const completionTimes = completedTasks.map(task => {
+        const start = new Date(task.dateCreated);
+        const end = new Date(task.completionTime || new Date());
+        return end.getTime() - start.getTime();
+      });
+
+      const avgCompletionTime = completionTimes.length > 0
+        ? completionTimes.reduce((a, b) => a + b, 0) / completionTimes.length
+        : 0;
+
+      // Count tasks by priority
+      const tasksByPriority = {
+        low: employeeTasks.filter(task => task.priority === 'low').length,
+        medium: employeeTasks.filter(task => task.priority === 'medium').length,
+        high: employeeTasks.filter(task => task.priority === 'high').length,
+        critical: employeeTasks.filter(task => task.priority === 'critical').length,
+      };
+
+      // Count tasks by status
+      const tasksByStatus = employeeTasks.reduce((acc, task) => {
+        acc[task.status] = (acc[task.status] || 0) + 1;
+        return acc;
+      }, {} as { [key: string]: number });
+
+      stats[employee.email] = {
+        totalTasks: employeeTasks.length,
+        completedTasks: completedTasks.length,
+        overdueTasks: overdueTasks.length,
+        avgCompletionTime,
+        tasksByPriority,
+        tasksByStatus,
+      };
+    });
+
+    setEmployeeStats(stats);
+  };
+
   return (
     <div className="p-5">
       <div className="mb-4 flex justify-between items-center">
@@ -445,6 +596,13 @@ const Ticket = () => {
           >
             <Lucide icon="Plus" className="w-4 h-4 mr-2 inline-block" />
             New Task
+          </button>
+          <button
+            onClick={() => setIsLeaderboardOpen(true)}
+            className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700"
+          >
+            <Lucide icon="Trophy" className="w-4 h-4 mr-2 inline-block" />
+            Leaderboard
           </button>
         </div>
       </div>
@@ -660,7 +818,7 @@ const Ticket = () => {
                               "🎊 Amazing Achievement Unlocked! 🏆",
                               "🌟 BOOM! Outstanding Performance! 💪",
                               "🎯 Mission Accomplished in Style! 🚀",
-                              "🏆 Excellent Work! Time to Celebrate! 💃"
+                              "🎉 Excellent Work! Time to Celebrate! 💃"
                             ];
                             const randomMessage = celebrationMessages[Math.floor(Math.random() * celebrationMessages.length)];
                             
@@ -700,7 +858,7 @@ ${daysFromDeadline > 0
 
 Great work team! 🌟`;
                             
-                           // await sendTaskNotification(task.poc, { ...task, title: message }, false);
+                       await sendTaskNotification(task.poc, { ...task, title: message }, false);
                           }
                         } catch (error) {
                           console.error('Error updating task status:', error);
@@ -865,14 +1023,9 @@ Great work team! 🌟`;
             const userData = docUserSnapshot.data();
             const companyId = userData.companyId;
 
-            // Add/update client at company level
-            const clientsRef = collection(firestore, `companies/${companyId}/clients`);
-            
-            if (editingClient) {
-              await updateDoc(doc(clientsRef, editingClient.id), { name: clientName });
-            } else {
-              await addDoc(clientsRef, { name: clientName });
-            }
+            // Add client to user's clients collection
+            const clientsRef = collection(firestore, `user/${user.email}/clients`);
+            await addDoc(clientsRef, { name: clientName.trim() });
 
             fetchClients();
             setEditingClient(null);
@@ -900,6 +1053,12 @@ Great work team! 🌟`;
             console.error('Error deleting client:', error);
           }
         }}
+      />
+
+      <LeaderboardModal
+        isOpen={isLeaderboardOpen}
+        onClose={() => setIsLeaderboardOpen(false)}
+        stats={leaderboardStats}
       />
     </div>
   );
@@ -1445,6 +1604,110 @@ const ClientFormModal = ({
             >
               Close
             </button>
+          </div>
+        </Dialog.Panel>
+      </div>
+    </Dialog>
+  );
+};
+
+interface LeaderboardModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  stats: LeaderboardStats[];
+}
+
+const LeaderboardModal = ({ isOpen, onClose, stats }: LeaderboardModalProps) => {
+  return (
+    <Dialog open={isOpen} onClose={onClose}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+        <Dialog.Panel className="w-full max-w-3xl p-6 bg-white rounded-md dark:bg-gray-800 max-h-[90vh] overflow-y-auto">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-2xl font-bold dark:text-white">🏆 Employee Leaderboard</h2>
+            <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+              <Lucide icon="X" className="w-6 h-6" />
+            </button>
+          </div>
+
+          <div className="space-y-4">
+            {stats.map((employee, index) => (
+              <div 
+                key={employee.email}
+                className="relative p-4 border rounded-lg dark:border-gray-700 transition-transform hover:scale-[1.02]"
+                style={{ 
+                  borderLeft: `4px solid ${employee.color}`,
+                  backgroundColor: index < 3 ? `${employee.color}10` : undefined
+                }}
+              >
+                {/* Position Medal */}
+                <div className="absolute -left-2 -top-2 w-8 h-8 flex items-center justify-center rounded-full text-white text-sm font-bold"
+                  style={{
+                    backgroundColor: index === 0 ? '#FFD700' : // Gold
+                                   index === 1 ? '#C0C0C0' : // Silver
+                                   index === 2 ? '#CD7F32' : // Bronze
+                                   '#718096'    // Gray for others
+                  }}>
+                  {index + 1}
+                </div>
+
+                <div className="ml-6">
+                  <div className="flex justify-between items-center mb-3">
+                    <h3 className="text-lg font-semibold dark:text-white">{employee.name}</h3>
+                    <div className="text-2xl font-bold text-primary">
+                      {employee.totalPoints} pts
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="text-center">
+                      <div className="text-sm text-gray-500 dark:text-gray-400">Completed Tasks</div>
+                      <div className="text-lg font-semibold dark:text-white">{employee.completedTasks}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-sm text-gray-500 dark:text-gray-400">Completion Rate</div>
+                      <div className="text-lg font-semibold dark:text-white">
+                        {employee.completionRate.toFixed(1)}%
+                      </div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-sm text-gray-500 dark:text-gray-400">Critical Completed</div>
+                      <div className="text-lg font-semibold dark:text-white">{employee.criticalTasksCompleted}</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-sm text-gray-500 dark:text-gray-400">On-time Rate</div>
+                      <div className="text-lg font-semibold dark:text-white">
+                        {employee.completedTasks ? 
+                          ((employee.onTimeCompletions / employee.completedTasks) * 100).toFixed(1) : 
+                          0}%
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Progress bar showing relative points */}
+                  <div className="mt-3 h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-primary transition-all duration-500"
+                      style={{ 
+                        width: `${(employee.totalPoints / stats[0].totalPoints) * 100}%`,
+                        backgroundColor: employee.color
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Points System Legend */}
+          <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+            <h3 className="text-lg font-semibold mb-2 dark:text-white">Points System</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+              <div>• 10 points per completed task</div>
+              <div>• 20 extra points per critical task</div>
+              <div>• 15 extra points per on-time completion</div>
+              <div>• Up to 50 points based on completion rate</div>
+              <div>• Up to 50 points for faster completion times</div>
+            </div>
           </div>
         </Dialog.Panel>
       </div>
