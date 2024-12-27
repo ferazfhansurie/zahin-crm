@@ -2425,8 +2425,21 @@ useEffect(() => {
     setLoading(true);
     setSelectedIcon('ws');
 
+    const loadCachedMessages = (chatId: string) => {
+      try {
+        const cachedData = localStorage.getItem('messagesCache');
+        if (!cachedData) return null;
+        
+        const messagesCache = JSON.parse(LZString.decompress(cachedData));
+        return messagesCache[chatId] || null;
+      } catch (error) {
+        console.error('Error loading cached messages:', error);
+        return null;
+      }
+    };
+
     // Try to get messages from localStorage first
-    const cachedMessages = getMessagesFromLocalStorage(selectedChatId);
+    const cachedMessages = loadCachedMessages(selectedChatId);
     
     if (cachedMessages) {
       console.log('Using cached messages');
@@ -3713,6 +3726,10 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
         console.log(`Employee tag updated to ${tagName} for contact ${contact.id}`);
         toast.success(`Contact reassigned to ${tagName}`);
 
+        // Update employee assigned contacts and quota leads
+        console.log('Updating employee assignments and quota...');
+        await updateEmployeeAssignedContacts();
+
         // Send assignment notification for the new employee
         await sendAssignmentNotification(tagName, contact);
         return;
@@ -3808,6 +3825,8 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
         // Check if the tag is an employee's name and send assignment notification
         const employee = employeeList.find(emp => emp.name === tagName);
         if (employee) {
+          console.log('Employee tag detected, updating assignments and quota...');
+          await updateEmployeeAssignedContacts();
           await sendAssignmentNotification(tagName, contact);
         }
       }
@@ -6197,9 +6216,16 @@ console.log(prompt);
       const employeeSnapshot = await getDocs(employeeRef);
       const employeeList = employeeSnapshot.docs.map(doc => ({ 
         id: doc.id, 
-        name: doc.data().name, 
-        quotaLeads: doc.data().quotaLeads || 0 
+        name: doc.data().name,
+        quotaLeads: doc.data().quotaLeads || 0,
+        assignedContacts: doc.data().assignedContacts || 0
       }));
+  
+      console.log('Current employee status:', employeeList.map(emp => ({
+        name: emp.name,
+        currentQuota: emp.quotaLeads,
+        currentAssigned: emp.assignedContacts
+      })));
   
       // Count assignments
       contactsSnapshot.forEach((doc) => {
@@ -6208,46 +6234,61 @@ console.log(prompt);
           contact.tags.forEach((tag: string) => {
             const employee = employeeList.find(emp => emp.name.toLowerCase() === tag.toLowerCase());
             if (employee) {
-              employeeAssignments[employee.quotaLeads] = (employeeAssignments[employee.quotaLeads] || 0) + 1;
+              employeeAssignments[employee.id] = (employeeAssignments[employee.id] || 0) + 1;
+              console.log(`Found assignment for ${employee.name}: Current count = ${employeeAssignments[employee.id]}`);
             }
           });
         }
       });
   
-      console.log('Employee assignments before update:', employeeAssignments);
+      console.log('New assignment counts:', Object.entries(employeeAssignments).map(([id, count]) => ({
+        name: employeeList.find(emp => emp.id === id)?.name,
+        newAssignmentCount: count
+      })));
   
       // Update employee documents
-      const employeeUpdates = Object.entries(employeeAssignments).map(async ([employeeId, count]) => {
-        const employeeDocRef = doc(firestore, `companies/${companyId}/employee`, employeeId);
-        const employeeDoc = await getDoc(employeeDocRef);
+      const employeeUpdates = employeeList.map(async (employee) => {
+        const newAssignedCount = employeeAssignments[employee.id] || 0;
+        const employeeDocRef = doc(firestore, `companies/${companyId}/employee`, employee.id);
+        
+        // If assigned contacts increased, decrease quota leads
+        const assignedDiff = newAssignedCount - employee.assignedContacts;
+        const newQuotaLeads = Math.max(0, employee.quotaLeads - (assignedDiff > 0 ? assignedDiff : 0));
+        
+        console.log(`
+  === Update for ${employee.name} ===
+  Current assigned contacts: ${employee.assignedContacts}
+  New assigned contacts: ${newAssignedCount}
+  Difference: ${assignedDiff}
+  Current quota leads: ${employee.quotaLeads}
+  New quota leads: ${newQuotaLeads}
+  Quota decreased by: ${employee.quotaLeads - newQuotaLeads}
+        `);
   
-        if (employeeDoc.exists()) {
-          const currentData = employeeDoc.data();
-          const currentQuotaLeads = currentData.quotaLeads || 0;
-          const currentAssignedContacts = currentData.assignedContacts || 0;
-          
-          // Calculate the difference in assigned contacts
-          const assignedContactsDiff = count - currentAssignedContacts;
-          
-          // Calculate new quotaLeads
-          const newQuotaLeads = Math.max(0, currentQuotaLeads - assignedContactsDiff);
-          
-          // Update assigned contacts and quotaLeads
-          await updateDoc(employeeDocRef, {
-            assignedContacts: count,
-            quotaLeads: newQuotaLeads
-          });
-          console.log(`Updated ${currentData.name}: Assigned contacts from ${currentAssignedContacts} to ${count}, Quota leads from ${currentQuotaLeads} to ${newQuotaLeads}`);
-        } else {
-          console.error(`Employee document for ID ${employeeId} not found`);
+        if (assignedDiff > 0) {
+          console.log(`⚠️ ${employee.name}'s quota will decrease because they were assigned ${assignedDiff} new contact(s)`);
         }
+  
+        await updateDoc(employeeDocRef, {
+          assignedContacts: newAssignedCount,
+          quotaLeads: newQuotaLeads
+        });
+        
+        // Verify the update
+        const updatedDoc = await getDoc(employeeDocRef);
+        const updatedData = updatedDoc.data();
+        console.log(`
+  ✅ Update confirmed for ${employee.name}:
+  Final assigned contacts: ${updatedData?.assignedContacts}
+  Final quota leads: ${updatedData?.quotaLeads}
+        `);
       });
   
       await Promise.all(employeeUpdates);
-  
-      console.log('Employee assigned contacts and quota leads updated successfully');
+      console.log('🎉 Employee assigned contacts and quota leads update completed');
+      
     } catch (error) {
-      console.error('Error updating employee assigned contacts and quota leads:', error);
+      console.error('❌ Error updating employee assigned contacts and quota leads:', error);
       toast.error('Failed to update employee assigned contacts and quota leads.');
     }
   };

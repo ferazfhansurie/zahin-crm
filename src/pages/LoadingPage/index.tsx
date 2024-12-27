@@ -435,7 +435,6 @@ function LoadingPage() {
           : new Date(0);
       return dateB.getTime() - dateA.getTime();
     });
-
     // Cache the contacts
     setLoadingPhase('caching');
     localStorage.setItem('contacts', LZString.compress(JSON.stringify(allContacts)));
@@ -444,6 +443,10 @@ function LoadingPage() {
 
     setContacts(allContacts);
     setContactsFetched(true);
+
+    // Cache messages for first 100 contacts
+    await fetchAndCacheMessages(allContacts, companyId, user);
+    
     setLoadingPhase('complete');
 
     // After contacts are loaded, fetch chats
@@ -466,6 +469,7 @@ const getLoadingMessage = () => {
     case 'caching': return 'Caching data...';
     case 'complete': return 'Loading complete!';
     case 'error': return 'Error loading contacts';
+    case 'caching_messages': return 'Caching recent messages...';
     default: return 'Loading...';
   }
 };
@@ -609,6 +613,95 @@ useEffect(() => {
       navigate('/chat');
     }
   }, [botStatus, navigate]);
+
+  const fetchAndCacheMessages = async (contacts: Contact[], companyId: string, user: any) => {
+    setLoadingPhase('caching_messages');
+    console.log('Starting message caching process...');
+    try {
+      // Sort contacts by last message timestamp and take the 100 most recent
+      const mostRecentContacts = contacts
+        .sort((a, b) => {
+          const getTimestamp = (contact: Contact) => {
+            if (!contact.last_message) return 0;
+            return contact.last_message.createdAt
+              ? new Date(contact.last_message.createdAt).getTime()
+              : contact.last_message.timestamp
+                ? contact.last_message.timestamp * 1000
+                : 0;
+          };
+          return getTimestamp(b) - getTimestamp(a);
+        })
+        .slice(0, 100);
+
+      console.log(`Processing ${mostRecentContacts.length} most recent contacts`);
+      let processedContacts = 0;
+      
+      // Get company config for API URL
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        throw new Error("Company document does not exist");
+      }
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+
+      console.log('Starting parallel message fetching...');
+      // Fetch messages in parallel with rate limiting
+      const messagePromises = mostRecentContacts.map(async (contact) => {
+        if (!contact.chat_id) {
+          console.log(`Skipping contact - no chat_id found`);
+          return null;
+        }
+        
+        try {
+          console.log(`Fetching messages for chat ${contact.chat_id}`);
+          const response = await axios.get(
+            `${baseUrl}/api/messages/${contact.chat_id}/${companyData.whapiToken}?limit=10`,
+            {
+              headers: {
+                'Authorization': `Bearer ${await user.getIdToken()}`
+              }
+            }
+          );
+
+          processedContacts++;
+          const progress = (processedContacts / mostRecentContacts.length) * 100;
+          console.log(`Progress: ${Math.round(progress)}% (${processedContacts}/${mostRecentContacts.length})`);
+          setLoadingProgress(progress);
+
+          return {
+            chatId: contact.chat_id,
+            messages: response.data.messages
+          };
+        } catch (error) {
+          console.error(`Error fetching messages for chat ${contact.chat_id}:`, error);
+          return null;
+        }
+      });
+
+      const results = await Promise.all(messagePromises);
+      const successfulResults = results.filter(result => result !== null);
+      console.log(`Successfully cached messages for ${successfulResults.length} chats`);
+
+      const messagesCache = results.reduce((acc: { [key: string]: any }, result) => {
+        if (result) {
+          acc[result.chatId] = result.messages;
+        }
+        return acc;
+      }, {});
+
+      // Store in localStorage with compression
+      const compressedData = LZString.compress(JSON.stringify(messagesCache));
+      console.log(`Compressed cache size: ${compressedData.length} characters`);
+      localStorage.setItem('messagesCache', compressedData);
+      localStorage.setItem('messagesCacheTimestamp', Date.now().toString());
+      console.log('Message caching complete!');
+
+    } catch (error) {
+      console.error('Error in message caching process:', error);
+      setError('Failed to cache messages, but continuing...');
+    }
+  };
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-white dark:bg-gray-900 py-8">
