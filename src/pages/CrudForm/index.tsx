@@ -93,8 +93,12 @@ function Main() {
     quotaLeads: number;
     invoiceNumber: string | null;
     phone: number;
+    phone2?: number;
+    phone3?: number;
     imageUrl: string;
     weightage: number;
+    weightage2?: number;
+    weightage3?: number;
   }>({
     name: "",
     phoneNumber: "",
@@ -127,13 +131,22 @@ function Main() {
         quotaLeads: contact.quotaLeads || 0,
         invoiceNumber: contact.invoiceNumber || null,
         phone: contact.phone || -1,
+        ...(Object.keys(phoneNames).reduce((acc, index) => {
+          const phoneField = index === '0' ? 'phone' : `phone${parseInt(index) + 1}`;
+          const weightageField = index === '0' ? 'weightage' : `weightage${parseInt(index) + 1}`;
+          if (contact[phoneField as keyof typeof contact] !== undefined) {
+            acc[phoneField] = contact[phoneField as keyof typeof contact];
+            acc[weightageField] = contact[weightageField as keyof typeof contact] || 0;
+          }
+          return acc;
+        }, {} as Record<string, any>)),
         imageUrl: contact.imageUrl || "",
         weightage: contact.weightage || 0,
       });
       setCategories([contact.role]);
     }
     fetchGroups();
-  }, [contact, companyId]);
+  }, [contact, companyId, phoneNames]);
 
   const fetchGroups = async () => {
     if (!companyId) {
@@ -333,8 +346,18 @@ function Main() {
           quotaLeads: userData.quotaLeads || 0,
           invoiceNumber: userData.invoiceNumber || null,
           phone: userData.phone || -1,
+          // Convert weightage values to numbers
+          ...(Object.keys(phoneNames).reduce((acc, index) => {
+            const phoneField = index === '0' ? 'phone' : `phone${parseInt(index) + 1}` as keyof typeof userData;
+            const weightageField = index === '0' ? 'weightage' : `weightage${parseInt(index) + 1}` as keyof typeof userData;
+            if (userData[phoneField] !== undefined) {
+              acc[phoneField] = userData[phoneField];
+              acc[weightageField] = Number(userData[weightageField]) || 0; // Convert to number
+            }
+            return acc;
+          }, {} as Record<string, any>)),
           imageUrl: imageUrl || "",
-          weightage: userData.weightage || 0,
+          weightage: Number(userData.weightage) || 0, // Convert main weightage to number
         };
 
         if (contactId) {
@@ -720,6 +743,49 @@ function Main() {
             />
           </div>
         </div>
+        {currentUserRole === "1" && phoneOptions.length > 0 && (
+          <>
+            {Array.from({ length: phoneOptions.length }).map((_, index) => {
+              const phoneField = index === 0 ? 'phone' : `phone${index + 1}`;
+              const weightageField = index === 0 ? 'weightage' : `weightage${index + 1}`;
+              
+              return (
+                <div key={index} className="grid grid-cols-2 gap-4">
+                  <div>
+                    <FormLabel htmlFor={phoneField}>{`Phone ${index + 1}`}</FormLabel>
+                    <select
+                      id={phoneField}
+                      name={phoneField}
+                      value={userData[phoneField as keyof typeof userData] || ''}
+                      onChange={handleChange}
+                      className="text-black dark:text-white border-primary dark:border-primary-dark bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 focus:ring-2 focus:ring-blue-300 dark:focus:ring-blue-700 rounded-lg text-sm w-full"
+                      disabled={isFieldDisabled("phone") || (currentUserRole !== "1" && userData.role !== "2")}
+                    >
+                      <option value="">Select a phone</option>
+                      {Object.entries(phoneNames).map(([idx, phoneName]) => (
+                        <option key={idx} value={parseInt(idx) - 1}>
+                          {phoneName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <FormLabel htmlFor={weightageField}>Weightage for {phoneNames[index]}</FormLabel>
+                    <FormInput
+                      id={weightageField}
+                      name={weightageField}
+                      type="number"
+                      value={userData[weightageField as keyof typeof userData] || 0}
+                      onChange={handleChange}
+                      placeholder="Weightage"
+                      min="0"
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </>
+        )}
         {errorMessage && <div className="text-red-500 mt-4">{errorMessage}</div>}
         {successMessage && <div className="text-green-500 mt-4">{successMessage}</div>}
       </div>
