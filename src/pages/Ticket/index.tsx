@@ -664,8 +664,8 @@ const [employeeStats, setEmployeeStats] = useState<{ [email: string]: EmployeeSt
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700 shadow">
-        <div className="max-h-[calc(100vh-150px)] overflow-y-auto">
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+        <div className="min-w-full w-max max-h-[calc(100vh-200px)] overflow-y-auto">
+          <table className="w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0 z-10">
               <tr>
                 {[

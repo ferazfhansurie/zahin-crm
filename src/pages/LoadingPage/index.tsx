@@ -88,7 +88,7 @@ function LoadingPage() {
   
   const fetchQRCode = async () => {
     if (!isAuthReady) {
-      return; // Don't proceed if auth isn't ready
+      return;
     }
 
     const user = auth.currentUser;
@@ -146,13 +146,20 @@ function LoadingPage() {
       }
 
       // Only proceed with QR code and bot status if v2 exists
+      const headers = companyData.apiUrl 
+        ? {
+            'Authorization': `Bearer ${await user?.getIdToken()}`
+          }
+        : {
+            'Authorization': `Bearer ${await user?.getIdToken()}`,
+            'Content-Type': 'application/json'
+          };
+
       const botStatusResponse = await axios.get(
         `${baseUrl}/api/bot-status/${companyId}`,
         {
-          withCredentials: true,
-          headers: {
-            'Authorization': `Bearer ${await user.getIdToken()}`,
-          }
+          headers,
+          withCredentials: companyData.apiUrl ? true : false
         }
       );
 
@@ -217,7 +224,7 @@ function LoadingPage() {
         if (error.code === 'ERR_NETWORK') {
           setError('Network error. Please check your internet connection and try again.');
         } else {
-          setError(error.response?.data || 'Failed to fetch QR code. Please try again.');
+          setError(error.response?.data?.message || 'Failed to fetch QR code. Please try again.');
         }
       } else if (error instanceof Error) {
         setError(error.message);
@@ -565,7 +572,7 @@ useEffect(() => {
     try {
       const user = getAuth().currentUser;
       if (!user) {
-        console.error("User not authenticated");
+        throw new Error("User not authenticated");
       }
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
@@ -583,9 +590,23 @@ useEffect(() => {
       }
       const data2 = docSnapshot.data();
       const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
-      const response = await axios.post(`${baseUrl}/api/request-pairing-code/${companyId}`, {
-        phoneNumber
-      });
+      const headers = data2.apiUrl 
+        ? {
+            'Authorization': `Bearer ${await user.getIdToken()}`
+          }
+        : {
+            'Authorization': `Bearer ${await user.getIdToken()}`,
+            'Content-Type': 'application/json'
+          };
+
+      const response = await axios.post(
+        `${baseUrl}/api/request-pairing-code/${companyId}`,
+        { phoneNumber },
+        { 
+          headers,
+          withCredentials: false
+        }
+      );
       setPairingCode(response.data.pairingCode);
     } catch (error) {
       console.error('Error requesting pairing code:', error);
