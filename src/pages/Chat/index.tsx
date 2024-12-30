@@ -2076,89 +2076,90 @@ async function fetchConfigFromDatabase() {
 
   const selectChat = useCallback(async (chatId: string, contactId?: string, contactSelect?: Contact) => {
     console.log('Attempting to select chat:', { chatId, userRole, userName: userData?.name });
+    setLoading(true);
     
     try {
-      // Only check permissions for role '3', allow role '2' full access
+      // Permission check
       if (userRole === "3" && contactSelect && contactSelect.assignedTo?.toLowerCase() !== userData?.name.toLowerCase()) {
         console.log('Permission denied for role 3 user');
         toast.error("You don't have permission to view this chat.");
         return;
       }
   
-      // Find contact - prioritize contactSelect if provided
+      // Find contact
       let contact = contactSelect || contacts.find(c => c.chat_id === chatId || c.id === contactId);
       if (!contact) {
         console.error('Contact not found');
         return;
       }
-
-      // Debug logging
-      console.log('Selected contact:', contact);
-      console.log('User role:', userRole);
   
-      // Update local state first for immediate UI response
+      // Try to get cached messages first
+      const cachedData = localStorage.getItem('messagesCache');
+      if (cachedData) {
+        try {
+          const cache = JSON.parse(LZString.decompress(cachedData));
+          if (cache.expiry > Date.now() && cache.messages[chatId]) {
+            setMessages(cache.messages[chatId]);
+            setLoading(false);
+          }
+        } catch (error) {
+          console.error('Error reading cache:', error);
+        }
+      }
+  
+      // Update contacts state
       setContacts(prevContacts => {
         const updatedContacts = prevContacts.map(c =>
           c.chat_id === chatId ? { ...c, unreadCount: 0 } : c
         ).sort((a, b) => {
           if (a.pinned && !b.pinned) return -1;
           if (!a.pinned && b.pinned) return 1;
-          
-          const timestampA = getTimestamp(a.last_message?.timestamp || a.last_message?.createdAt);
-          const timestampB = getTimestamp(b.last_message?.timestamp || b.last_message?.createdAt);
-          
-          return timestampB - timestampA;
+          return getTimestamp(b.last_message?.timestamp || b.last_message?.createdAt) - 
+                 getTimestamp(a.last_message?.timestamp || a.last_message?.createdAt);
         });
   
-        // Update localStorage with new contacts
         localStorage.setItem('contacts', LZString.compress(JSON.stringify(updatedContacts)));
         return updatedContacts;
       });
   
-      // Update Firebase in parallel
-      const updateFirebasePromise = (async () => {
-        const user = auth.currentUser;
-        if (!user?.email) return;
-  
-        const docUserRef = doc(firestore, 'user', user.email);
-        const docUserSnapshot = await getDoc(docUserRef);
-        
-        if (docUserSnapshot.exists()) {
-          const userData = docUserSnapshot.data();
-          const contactRef = doc(firestore, `companies/${userData.companyId}/contacts`, contact.id!);
-          await updateDoc(contactRef, { unreadCount: 0 });
-          console.log('Updated unreadCount in Firebase for contact:', contact.id);
-        }
-      })();
-  
-      // Delete notifications in parallel
-      const deleteNotificationsPromise = (async () => {
-        const user = auth.currentUser;
-        if (!user?.email) return;
-
-        console.log('Deleted notifications for chat:', chatId);
-      })();
-  
-      // Update UI state
+      // Update UI state immediately
       setSelectedContact(contact);
       setSelectedChatId(chatId);
       setIsChatActive(true);
   
-      // Wait for background operations to complete
+      // Run background tasks in parallel
       await Promise.all([
-        updateFirebasePromise,
-        deleteNotificationsPromise
+        // Update Firebase
+        (async () => {
+          const user = auth.currentUser;
+          if (!user?.email) return;
+          
+          const docUserRef = doc(firestore, 'user', user.email);
+          const docUserSnapshot = await getDoc(docUserRef);
+          
+          if (docUserSnapshot.exists()) {
+            const userData = docUserSnapshot.data();
+            const contactRef = doc(firestore, `companies/${userData.companyId}/contacts`, contact.id!);
+            await updateDoc(contactRef, { unreadCount: 0 });
+          }
+        })(),
+        // Delete notifications
+        deleteNotifications(chatId),
+        // Fetch fresh messages in background
+        fetchMessagesBackground(chatId, whapiToken!)
       ]);
   
-      // Update URL without triggering a page reload
+      // Update URL
       const newUrl = `/chat?chatId=${chatId.replace('@c.us', '')}`;
       window.history.pushState({ path: newUrl }, '', newUrl);
   
     } catch (error) {
       console.error('Error in selectChat:', error);
       toast.error('An error occurred while loading the chat. Please try again.');
+    } finally {
+      setLoading(false);
     }
-  }, [contacts, userRole, userData?.name]);
+  }, [contacts, userRole, userData?.name, whapiToken]);
 
   const getTimestamp = (timestamp: any): number => {
     // If timestamp is missing, return 0 to put it at the bottom
@@ -2364,28 +2365,139 @@ useEffect(() => {
     }
   }, [selectedChatId]);
 
+  useEffect(() => {
+    const cleanupStorage = () => {
+      const MAX_CACHE_SIZE = 5 * 1024 * 1024; // 5MB limit
+      let totalSize = 0;
+      
+      // Calculate total size and remove expired caches
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith('messages_') || key === 'messagesCache') {
+          const item = localStorage.getItem(key);
+          if (item) {
+            totalSize += item.length;
+            
+            // Remove expired caches
+            try {
+              const cache = JSON.parse(LZString.decompress(item));
+              if (cache.expiry && cache.expiry < Date.now()) {
+                localStorage.removeItem(key);
+              }
+            } catch (error) {
+              localStorage.removeItem(key); // Remove invalid cache
+            }
+          }
+        }
+      }
+      
+      // If total size exceeds limit, clear all message caches
+      if (totalSize > MAX_CACHE_SIZE) {
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const key = localStorage.key(i);
+          if (key?.startsWith('messages_') || key === 'messagesCache') {
+            localStorage.removeItem(key);
+          }
+        }
+      }
+    };
+
+    cleanupStorage();
+    window.addEventListener('beforeunload', cleanupStorage);
+    return () => window.removeEventListener('beforeunload', cleanupStorage);
+  }, []);
+
   const storeMessagesInLocalStorage = (chatId: string, messages: any[]) => {
     try {
       console.log(`Attempting to store ${messages.length} messages for chat ${chatId}`);
       const storageKey = `messages_${chatId}`;
       
-      // Compress and store messages
-      const compressedMessages = LZString.compress(JSON.stringify(messages));
-      localStorage.setItem(storageKey, compressedMessages);
+      // Limit messages to most recent 100
+      const limitedMessages = messages.slice(-100);
       
-      // Store timestamp
-      const timestamp = Date.now().toString();
-      localStorage.setItem(`${storageKey}_timestamp`, timestamp);
+      // Try to compress and store
+      try {
+        const compressedMessages = LZString.compress(JSON.stringify({
+          messages: limitedMessages,
+          timestamp: Date.now(),
+          expiry: Date.now() + (30 * 60 * 1000) // 30 min expiry
+        }));
+        
+        // Check available space
+        const MAX_ITEM_SIZE = 2 * 1024 * 1024; // 2MB per chat
+        if (compressedMessages.length > MAX_ITEM_SIZE) {
+          // If too large, store even fewer messages
+          const veryLimitedMessages = messages.slice(-50);
+          const smallerCompressedMessages = LZString.compress(JSON.stringify({
+            messages: veryLimitedMessages,
+            timestamp: Date.now(),
+            expiry: Date.now() + (30 * 60 * 1000)
+          }));
+          localStorage.setItem(storageKey, smallerCompressedMessages);
+        } else {
+          localStorage.setItem(storageKey, compressedMessages);
+        }
+        
+      } catch (quotaError) {
+        // If still getting quota error, clear old caches
+        console.log('Storage quota reached, clearing old caches');
+        clearOldCaches();
+        
+        // Try one more time with very limited messages
+        const minimalMessages = messages.slice(-25);
+        const minimalCompressed = LZString.compress(JSON.stringify({
+          messages: minimalMessages,
+          timestamp: Date.now(),
+          expiry: Date.now() + (30 * 60 * 1000)
+        }));
+        localStorage.setItem(storageKey, minimalCompressed);
+      }
       
-      console.log('Messages stored successfully:', {
-        chatId,
-        messageCount: messages.length,
-        timestamp: new Date(parseInt(timestamp)).toISOString()
-      });
     } catch (error) {
       console.error('Error storing messages in localStorage:', error);
     }
   };
+  
+  const clearOldCaches = () => {
+    const currentTime = Date.now();
+    const keys = Object.keys(localStorage);
+    
+    // Sort keys by timestamp (oldest first)
+    const messageCacheKeys = keys
+      .filter(key => key.startsWith('messages_'))
+      .sort((a, b) => {
+        const timeA = localStorage.getItem(a) ? JSON.parse(LZString.decompress(localStorage.getItem(a)!)).timestamp : 0;
+        const timeB = localStorage.getItem(b) ? JSON.parse(LZString.decompress(localStorage.getItem(b)!)).timestamp : 0;
+        return timeA - timeB;
+      });
+  
+    // Remove oldest 50% of caches
+    const removeCount = Math.ceil(messageCacheKeys.length / 2);
+    messageCacheKeys.slice(0, removeCount).forEach(key => {
+      localStorage.removeItem(key);
+    });
+  };
+  
+  // Add this to your existing cleanup useEffect
+  useEffect(() => {
+    const cleanup = () => {
+      try {
+        clearOldCaches();
+      } catch (error) {
+        console.error('Error during cleanup:', error);
+      }
+    };
+  
+    // Run cleanup every 5 minutes
+    const interval = setInterval(cleanup, 5 * 60 * 1000);
+    
+    // Run cleanup on mount
+    cleanup();
+    
+    return () => {
+      clearInterval(interval);
+    };
+  }, []);
 
   const getMessagesFromLocalStorage = (chatId: string): any[] | null => {
     try {
@@ -7529,7 +7641,7 @@ console.log(prompt);
           backgroundRepeat: 'no-repeat',
         }}
         ref={messageListRef}>
-        {isLoading2 && (
+        {/* {isLoading2 && (
           <div className="fixed top-0 left-0 right-0 bottom-0 flex justify-center items-center bg-opacity-50">
             <div className="items-center absolute top-1/2 left-2/2 transform -translate-x-1/3 -translate-y-1/2 bg-white dark:bg-gray-800 p-4 rounded-md shadow-lg">
               <div role="status">
@@ -7540,7 +7652,7 @@ console.log(prompt);
               </div>
             </div>
           </div>
-        )}
+        )} */}
         {selectedChatId && (
           <>
             {messages

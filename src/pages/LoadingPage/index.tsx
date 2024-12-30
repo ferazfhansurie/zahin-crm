@@ -51,7 +51,9 @@ interface Contact {
 const app = initializeApp(firebaseConfig);
 const firestore = getFirestore(app);
 
-
+interface MessageCache {
+  [chatId: string]: any[]; // or specify more detailed message type if available
+}
 
 function LoadingPage() {
   const [progress, setProgress] = useState(0);
@@ -639,92 +641,93 @@ useEffect(() => {
 
   const fetchAndCacheMessages = async (contacts: Contact[], companyId: string, user: any) => {
     setLoadingPhase('caching_messages');
-    console.log('Starting message caching process...');
-    try {
-      // Sort contacts by last message timestamp and take the 100 most recent
-      const mostRecentContacts = contacts
-        .sort((a, b) => {
-          const getTimestamp = (contact: Contact) => {
-            if (!contact.last_message) return 0;
-            return contact.last_message.createdAt
-              ? new Date(contact.last_message.createdAt).getTime()
-              : contact.last_message.timestamp
-                ? contact.last_message.timestamp * 1000
-                : 0;
-          };
-          return getTimestamp(b) - getTimestamp(a);
-        })
-        .slice(0, 100);
+    
+    // Reduce number of cached contacts
+    const mostRecentContacts = contacts
+      .sort((a, b) => {
+        const getTimestamp = (contact: Contact) => {
+          if (!contact.last_message) return 0;
+          return contact.last_message.createdAt
+            ? new Date(contact.last_message.createdAt).getTime()
+            : contact.last_message.timestamp
+              ? contact.last_message.timestamp * 1000
+              : 0;
+        };
+        return getTimestamp(b) - getTimestamp(a);
+      })
+      .slice(0, 20); // Reduce from 100 to 20 most recent contacts
 
-      console.log(`Processing ${mostRecentContacts.length} most recent contacts`);
-      let processedContacts = 0;
-      
-      // Get company config for API URL
-      const docRef = doc(firestore, 'companies', companyId);
-      const docSnapshot = await getDoc(docRef);
-      if (!docSnapshot.exists()) {
-        throw new Error("Company document does not exist");
-      }
-      const companyData = docSnapshot.data();
-      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
-
-      console.log('Starting parallel message fetching...');
-      // Fetch messages in parallel with rate limiting
-      const messagePromises = mostRecentContacts.map(async (contact) => {
-        if (!contact.chat_id) {
-          console.log(`Skipping contact - no chat_id found`);
+    // Only cache last 50 messages per contact
+    const messagePromises = mostRecentContacts.map(async (contact) => {
+      try {
+        // Get company data to access baseUrl
+        const docRef = doc(firestore, 'companies', companyId);
+        const docSnapshot = await getDoc(docRef);
+        const companyData = docSnapshot.data();
+        if (!docSnapshot.exists() || !companyData) {
+          console.error('Company data not found');
           return null;
         }
-        
-        try {
-          console.log(`Fetching messages for chat ${contact.chat_id}`);
-          const response = await axios.get(
-            `${baseUrl}/api/messages/${contact.chat_id}/${companyData.whapiToken}?limit=10`,
-            {
-              headers: {
-                'Authorization': `Bearer ${await user.getIdToken()}`
-              }
+
+        const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+        const response = await axios.get(
+          `${baseUrl}/api/messages/${contact.chat_id}/${companyData.whapiToken}?limit=50`,
+          {
+            headers: {
+              'Authorization': `Bearer ${await user.getIdToken()}`
             }
-          );
+          }
+        );
 
-          processedContacts++;
-          const progress = (processedContacts / mostRecentContacts.length) * 100;
-          console.log(`Progress: ${Math.round(progress)}% (${processedContacts}/${mostRecentContacts.length})`);
-          setLoadingProgress(progress);
+        return {
+          chatId: contact.chat_id,
+          messages: response.data.messages
+        };
+      } catch (error) {
+        console.error(`Error fetching messages for chat ${contact.chat_id}:`, error);
+        return null;
+      }
+    });
 
-          return {
-            chatId: contact.chat_id,
-            messages: response.data.messages
-          };
-        } catch (error) {
-          console.error(`Error fetching messages for chat ${contact.chat_id}:`, error);
-          return null;
-        }
-      });
+    // Wait for all message fetching promises to complete
+    const results = await Promise.all(messagePromises);
 
-      const results = await Promise.all(messagePromises);
-      const successfulResults = results.filter(result => result !== null);
-      console.log(`Successfully cached messages for ${successfulResults.length} chats`);
+    // Create messages cache object from results
+    const messagesCache = results.reduce<MessageCache>((acc, result) => {
+      if (result) {
+        acc[result.chatId] = result.messages;
+      }
+      return acc;
+    }, {});
 
-      const messagesCache = results.reduce((acc: { [key: string]: any }, result) => {
-        if (result) {
-          acc[result.chatId] = result.messages;
-        }
-        return acc;
-      }, {});
+    const cacheData = {
+      messages: messagesCache,
+      timestamp: Date.now(),
+      expiry: Date.now() + (30 * 60 * 1000)
+    };
 
-      // Store in localStorage with compression
-      const compressedData = LZString.compress(JSON.stringify(messagesCache));
-      console.log(`Compressed cache size: ${compressedData.length} characters`);
-      localStorage.setItem('messagesCache', compressedData);
-      localStorage.setItem('messagesCacheTimestamp', Date.now().toString());
-      console.log('Message caching complete!');
-
-    } catch (error) {
-      console.error('Error in message caching process:', error);
-      setError('Failed to cache messages, but continuing...');
-    }
+    const compressedData = LZString.compress(JSON.stringify(cacheData));
+    localStorage.setItem('messagesCache', compressedData);
   };
+
+  // Add storage cleanup on page load/refresh
+  useEffect(() => {
+    const cleanupStorage = () => {
+      // Clear old message caches
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith('messages_') || key?.startsWith('messagesCache')) {
+          localStorage.removeItem(key);
+        }
+      }
+    };
+
+    cleanupStorage();
+    
+    // Also clean up on page unload
+    window.addEventListener('beforeunload', cleanupStorage);
+    return () => window.removeEventListener('beforeunload', cleanupStorage);
+  }, []);
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-white dark:bg-gray-900 py-8">
