@@ -6329,10 +6329,13 @@ console.log(prompt);
 
       const updateData: { [key: string]: any } = {};
       const fieldsToUpdate = [
-        'contactName', 'email', 'lastName', 'phone', 'address1', 'city', 
-        'state', 'postalCode', 'website', 'dnd', 'dndSettings', 'tags', 
-        'customFields', 'source', 'country', 'companyName', 'branch', 
+        'contactName', 'email', 'lastName', 'phone', 'address1', 'city',
+        'state', 'postalCode', 'website', 'dnd', 'dndSettings', 'tags',
+        'customFields', 'source', 'country', 'companyName', 'branch',
         'expiryDate', 'vehicleNumber', 'points', 'IC', 'assistantId', 'threadid',
+        // Add the new fields:
+        'nationality', 'highestEducation', 'programOfStudy', 
+        'intakePreference', 'englishProficiency', 'passport'
       ];
 
       fieldsToUpdate.forEach(field => {

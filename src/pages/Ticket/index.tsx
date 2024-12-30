@@ -70,6 +70,8 @@ interface LeaderboardStats {
   criticalTasksCompleted: number;
   onTimeCompletions: number;
   totalPoints: number;
+  completedSubtasks: number;
+  totalSubtasks: number;
 }
 // Add this interface with your other interfaces at the top
 interface EmployeeStats {
@@ -469,10 +471,29 @@ const [employeeStats, setEmployeeStats] = useState<{ [email: string]: EmployeeSt
       const employeeTasks = tasks.filter(task => task.poc === employee.email);
       const completedTasks = employeeTasks.filter(task => task.status === 'completed');
       
-      // Calculate completion rate
-      const completionRate = employeeTasks.length > 0
-        ? (completedTasks.length / employeeTasks.length) * 100
+      // Only consider tasks that are either completed or past their deadline
+      const now = new Date();
+      const tasksForCompletionRate = employeeTasks.filter(task => 
+        task.status === 'completed' || new Date(task.deadline) < now
+      );
+      
+      // Calculate completion rate only for relevant tasks
+      const completionRate = tasksForCompletionRate.length > 0
+        ? (completedTasks.length / tasksForCompletionRate.length) * 100
         : 0;
+
+      // Calculate subtask statistics
+      let completedSubtasks = 0;
+      let totalSubtasks = 0;
+      
+      employeeTasks.forEach(task => {
+        const subtasks = task.tasks.split('\n').filter(t => t.trim());
+        totalSubtasks += subtasks.length;
+        
+        if (task.taskStatus) {
+          completedSubtasks += Object.values(task.taskStatus).filter(status => status).length;
+        }
+      });
 
       // Calculate average completion time
       const completionTimes = completedTasks.map(task => {
@@ -489,24 +510,36 @@ const [employeeStats, setEmployeeStats] = useState<{ [email: string]: EmployeeSt
         task => task.priority === 'critical'
       ).length;
 
-      // Count on-time completions
-      const onTimeCompletions = completedTasks.filter(task => 
-        new Date(task.completionTime || '') <= new Date(task.deadline)
-      ).length;
+      // Update on-time completions calculation to include same-day completions
+      const onTimeCompletions = completedTasks.filter(task => {
+        if (!task.completionTime) return false;
+        
+        const completionDate = new Date(task.completionTime);
+        const deadlineDate = new Date(task.deadline);
+        
+        // Set both dates to start of day for fair comparison
+        completionDate.setHours(0, 0, 0, 0);
+        deadlineDate.setHours(0, 0, 0, 0);
+        
+        // Consider it on time if completed on or before the deadline
+        return completionDate <= deadlineDate;
+      }).length;
 
-      // Calculate total points
+      // Update points calculation to include subtask completion
       // Points system:
       // - 10 points per completed task
       // - 20 extra points per critical task completed
       // - 15 extra points per on-time completion
       // - Up to 50 points based on completion rate (0.5 point per %)
       // - Up to 50 points for faster completion times
+      // - 5 points per completed subtask
       const totalPoints = 
         (completedTasks.length * 10) +
         (criticalTasksCompleted * 20) +
         (onTimeCompletions * 15) +
         (completionRate * 0.5) +
-        (avgCompletionTime ? Math.max(50 - Math.floor(avgCompletionTime / (1000 * 60 * 60 * 24)), 0) : 0);
+        (avgCompletionTime ? Math.max(50 - Math.floor(avgCompletionTime / (1000 * 60 * 60 * 24)), 0) : 0) +
+        (completedSubtasks * 5);
 
       return {
         email: employee.email,
@@ -517,7 +550,9 @@ const [employeeStats, setEmployeeStats] = useState<{ [email: string]: EmployeeSt
         avgCompletionTime,
         criticalTasksCompleted,
         onTimeCompletions,
-        totalPoints: Math.round(totalPoints)
+        totalPoints: Math.round(totalPoints),
+        completedSubtasks,
+        totalSubtasks
       };
     });
 
@@ -1681,6 +1716,12 @@ const LeaderboardModal = ({ isOpen, onClose, stats }: LeaderboardModalProps) => 
                           0}%
                       </div>
                     </div>
+                    <div className="text-center">
+                      <div className="text-sm text-gray-500 dark:text-gray-400">Subtasks</div>
+                      <div className="text-lg font-semibold dark:text-white">
+                        {employee.completedSubtasks}/{employee.totalSubtasks}
+                      </div>
+                    </div>
                   </div>
 
                   {/* Progress bar showing relative points */}
@@ -1707,6 +1748,7 @@ const LeaderboardModal = ({ isOpen, onClose, stats }: LeaderboardModalProps) => 
               <div>• 15 extra points per on-time completion</div>
               <div>• Up to 50 points based on completion rate</div>
               <div>• Up to 50 points for faster completion times</div>
+              <div>• 5 points per completed subtask</div>
             </div>
           </div>
         </Dialog.Panel>
