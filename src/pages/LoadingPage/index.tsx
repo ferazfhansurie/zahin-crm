@@ -147,9 +147,11 @@ function LoadingPage() {
 
       // Only proceed with QR code and bot status if v2 exists
       const headers = companyData.apiUrl 
-        ? {
-            'Authorization': `Bearer ${await user?.getIdToken()}`
-          }
+        ?  {
+          'Authorization': `Bearer ${await user?.getIdToken()}`,
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',  // Add this for ngrok
+        }
         : {
             'Authorization': `Bearer ${await user?.getIdToken()}`,
             'Content-Type': 'application/json'
@@ -159,7 +161,7 @@ function LoadingPage() {
         `${baseUrl}/api/bot-status/${companyId}`,
         {
           headers,
-          withCredentials: companyData.apiUrl ? true : false
+          withCredentials:false
         }
       );
 
