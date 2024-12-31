@@ -770,7 +770,7 @@ function Main() {
                     </select>
                   </div>
                   <div>
-                    <FormLabel htmlFor={weightageField}>Weightage for {phoneNames[index]}</FormLabel>
+                    <FormLabel htmlFor={weightageField}>Weightage for Phone {index+1}</FormLabel>
                     <FormInput
                       id={weightageField}
                       name={weightageField}
