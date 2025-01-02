@@ -289,7 +289,7 @@ function Main() {
 
   const saveUser = async () => {
     if (!validateForm()) {
-      toast.error("Please fill in all required fields");
+      // Don't return here, let the validation errors show in the form
       return;
     }
 
@@ -297,21 +297,37 @@ function Main() {
       setIsLoading(true);
       const userOri = auth.currentUser;
       if (!userOri || !userOri.email) {
-        throw new Error("No authenticated user found");
+        setErrorMessage("No authenticated user found. Please log in again.");
+        return;
       }
 
       // Check if the user is updating their own profile
       const isUpdatingSelf = userOri.email === userData.email;
 
       if (isUpdatingSelf && userData.password) {
-        // User is updating their own password
-        await updatePassword(userOri, userData.password);
-        toast.success("Password updated successfully");
+        try {
+          await updatePassword(userOri, userData.password);
+        } catch (error: any) {
+          // Handle specific Firebase password update errors
+          if (error.code === 'auth/requires-recent-login') {
+            setErrorMessage("For security reasons, please log out and log in again to change your password.");
+          } else {
+            setErrorMessage(`Password update failed: ${error.message}`);
+          }
+          setIsLoading(false);
+          return;
+        }
       }
 
       let imageUrl = userData.imageUrl;
       if (imageFile) {
-        imageUrl = await uploadImage() || "";
+        try {
+          imageUrl = await uploadImage() || "";
+        } catch (error: any) {
+          setErrorMessage(`Failed to upload image: ${error.message}`);
+          setIsLoading(false);
+          return;
+        }
       }
 
       // Continue with the rest of the user update logic
@@ -374,6 +390,18 @@ function Main() {
               'Content-Type': 'application/json'
             },
           });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            // Handle specific API error messages
+            if (errorData.error === 'auth/phone-number-already-exists') {
+              throw new Error('This phone number is already registered. Please use a different phone number.');
+            } else if (errorData.error.includes('phone-number')) {
+              throw new Error(`Phone number error: ${errorData.error}`);
+            }
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+          }
+
           const responseData = await response.json();
           
           if (responseData.message === 'User created successfully') {
@@ -444,7 +472,7 @@ function Main() {
               throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
             }
           } else {
-            throw new Error(responseData.error);
+            throw new Error(responseData.error || 'Unknown error occurred while creating user');
           }
         }
       
@@ -455,9 +483,32 @@ function Main() {
       setErrorMessage('');
       setIsLoading(false);
       navigate('/users-layout-2');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving user:", error);
-      setErrorMessage('An error occurred while saving the user');
+      // Enhanced error message handling
+      if (error.code === 'auth/email-already-in-use') {
+        setErrorMessage('This email is already registered. Please use a different email.');
+      } else if (error.code === 'auth/invalid-email') {
+        setErrorMessage('The email address is not valid.');
+      } else if (error.code === 'auth/weak-password') {
+        setErrorMessage('The password is too weak. Please use at least 6 characters.');
+      } else if (error.code === 'auth/phone-number-already-exists' || error.message.includes('phone number is already registered')) {
+        setErrorMessage('This phone number is already registered. Please use a different phone number.');
+      } else if (error.message.includes('Firebase')) {
+        setErrorMessage(`Authentication error: ${error.message.replace('Firebase: ', '')}`);
+      } else if (error.message.includes('Network')) {
+        setErrorMessage('Network error. Please check your internet connection.');
+      } else {
+        // Clean up the error message by removing any technical prefixes
+        const cleanErrorMessage = error.message
+          .replace('Error: ', '')
+          .replace('auth/', '')
+          .replace(/-/g, ' ')
+          .trim();
+        setErrorMessage(`Error: ${cleanErrorMessage}`);
+      }
+      setIsLoading(false);
+    } finally {
       setIsLoading(false);
     }
   };
@@ -786,7 +837,12 @@ function Main() {
             })}
           </>
         )}
-        {errorMessage && <div className="text-red-500 mt-4">{errorMessage}</div>}
+        {errorMessage && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mt-4" role="alert">
+            <strong className="font-bold">Error: </strong>
+            <span className="block sm:inline">{errorMessage}</span>
+          </div>
+        )}
         {successMessage && <div className="text-green-500 mt-4">{successMessage}</div>}
       </div>
       <div className="mt-4 flex justify-end">

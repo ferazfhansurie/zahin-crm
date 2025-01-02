@@ -72,6 +72,7 @@ function Main() {
   const [groups, setGroups] = useState<string[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string>('');
   const [phoneNames, setPhoneNames] = useState<{ [key: number]: string }>({});
+  const [phoneData, setPhoneData] = useState<{ [key: number]: { name: string; number: string } }>({});
 
   const toggleModal = (id?:string) => {
     setIsModalOpen(!isModalOpen);
@@ -138,11 +139,16 @@ function Main() {
           if (companySnapshot.exists()) {
             const companyData = companySnapshot.data();
             const phoneCount = companyData.phoneCount || 0;
-            const newPhoneNames: { [key: number]: string } = {};
+            const newPhoneData: { [key: number]: { name: string; number: string } } = {};
+            
             for (let i = 1; i <= phoneCount; i++) {
-              newPhoneNames[i] = companyData[`phone${i}`] || `Phone ${i}`;
+              newPhoneData[i] = {
+                name: companyData[`phone${i}`] || `Phone ${i}`,
+                number: companyData[`phoneNumber${i}`] || 'Not Set'
+              };
             }
-            setPhoneNames(newPhoneNames);
+            
+            setPhoneData(newPhoneData);
             setPhoneCount(phoneCount);
           }
         }
@@ -382,14 +388,19 @@ const paginatedEmployees = filteredEmployees
                 <Menu.Button as={Button} variant="outline-secondary" className="bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
                   Phone Numbers <Lucide icon="ChevronDown" className="w-4 h-4 ml-2" />
                 </Menu.Button>
-                <Menu.Items className="w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg rounded-lg mt-2">
-                  {Object.entries(phoneNames).map(([index, phoneName]) => (
+                <Menu.Items className="w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg rounded-lg mt-2">
+                  {Object.entries(phoneData).map(([index, data]) => (
                     <Menu.Item key={index} className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
                       <div className="flex items-center justify-between w-full">
-                        <span>{phoneNames[parseInt(index)]}</span>
+                        <div className="flex flex-col">
+                          <span className="font-medium">{data.name}</span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                            {data.number}
+                          </span>
+                        </div>
                         <button
                           onClick={() => {
-                            const newName = prompt(`Enter new name for ${phoneName}`, phoneName);
+                            const newName = prompt(`Enter new name for ${data.name}`, data.name);
                             if (newName) updatePhoneName(parseInt(index), newName);
                           }}
                           className="text-blue-500 hover:text-blue-700"
