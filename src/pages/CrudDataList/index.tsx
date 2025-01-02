@@ -92,6 +92,7 @@ function Main() {
     englishProficiency?:string | null;
     passport?:string | null;
     customFields?: { [key: string]: string };
+    notes?: string | null;  // Add this line to the Contact interface
 
   }
   
@@ -194,6 +195,7 @@ function Main() {
   const [excludedTags, setExcludedTags] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [showColumnsModal, setShowColumnsModal] = useState(false);
   const [exportModalContent, setExportModalContent] = useState<React.ReactNode | null>(null);
   const [newContact, setNewContact] = useState({
       contactName: '',
@@ -208,6 +210,7 @@ function Main() {
       expiryDate:'',
       vehicleNumber:'',
       ic:'',
+      notes: '',  // Add this line
   });
   const [total, setTotal] = useState(0);
   const [fetched, setFetched] = useState(0);
@@ -258,7 +261,15 @@ function Main() {
   const [sleepAfterMessages, setSleepAfterMessages] = useState(20);
   const [sleepDuration, setSleepDuration] = useState(5);
   const [showScheduledMessages, setShowScheduledMessages] = useState<boolean>(true);
- 
+  // First, add a state to track visible columns
+  const [visibleColumns, setVisibleColumns] = useState<{ [key: string]: boolean }>({
+    contact: true,
+    phone: true,
+    tags: true,
+    points: false,
+    notes: true,
+    actions: true,
+  });
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -804,6 +815,7 @@ const handleSaveNewContact = async () => {
       expiryDate: '',
       vehicleNumber: '',
       ic: '',
+      notes: '',  // Add this line
     });
 
     await fetchContacts();
@@ -2023,6 +2035,7 @@ const chatId = tempphone + "@c.us"
           'state', 'postalCode', 'website', 'dnd', 'dndSettings', 'tags', 
           'source', 'country', 'companyName', 'branch', 
           'expiryDate', 'vehicleNumber', 'points', 'IC', 'assistantId', 'threadid',
+          'notes',  // Add this line
         ];
   
         fieldsToUpdate.forEach(field => {
@@ -3083,9 +3096,9 @@ const sendBlastMessage = async () => {
   };
 
   const handleDownloadSampleCsv = () => {
-    const sampleCsvContent = `contactName,lastName,phone,email,companyName,address1,branch,expiryDate,vehicleNumber,ic,points
-John,Doe,60123456789,john@example.com,ABC Company,123 Main St,Branch A,2023-12-31,ABC1234,123456-78-9012,100
-Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,XYZ5678,987654-32-1098,200`;
+    const sampleCsvContent = `contactName,lastName,phone,email,companyName,address1,branch,expiryDate,vehicleNumber,ic,points,notes
+John,Doe,60123456789,john@example.com,ABC Company,123 Main St,Branch A,2023-12-31,ABC1234,123456-78-9012,100,Notes for John
+Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,XYZ5678,987654-32-1098,200,Notes for Jane`;
 
     const blob = new Blob([sampleCsvContent], { type: 'text/csv;charset=utf-8' });
     saveAs(blob, 'sample_contacts.csv');
@@ -3126,6 +3139,7 @@ const getFilteredScheduledMessages = () => {
                 {/* Add Contact Button */}
                 <div className="w-full">
                   {/* Desktop view */}
+                 
                   <div className="hidden sm:flex sm:w-full sm:space-x-2">
                     <button 
                       className={`flex items-center justify-start p-2 !box bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 ${userRole === "3" ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -3933,7 +3947,70 @@ const getFilteredScheduledMessages = () => {
                         </button>
                       </span>
                     ))}
+                    
                   </div>
+                         {/* Add this Menu component */}
+                         <button 
+  onClick={() => setShowColumnsModal(true)}
+  className="inline-flex items-center p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg cursor-pointer transition-colors duration-200"
+>
+  <Lucide icon="Grid2x2" className="w-4 h-4 mr-1 text-gray-600 dark:text-gray-300" />
+  <span className="text-xs text-gray-700 dark:text-gray-300 whitespace-nowrap font-medium">
+    Show/Hide Columns
+  </span>
+</button>
+<Dialog open={showColumnsModal} onClose={() => setShowColumnsModal(false)}>
+  <div className="fixed inset-0 flex items-center justify-center p-4 bg-black bg-opacity-50">
+    <Dialog.Panel className="w-full max-w-sm p-6 bg-white dark:bg-gray-800 rounded-lg shadow-xl">
+      <Dialog.Title className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+        Show/Hide Columns
+      </Dialog.Title>
+      
+      <div className="space-y-3">
+        {Object.entries(visibleColumns).map(([column, isVisible]) => (
+          <div key={column} className="flex items-center px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
+            <input
+              type="checkbox"
+              checked={isVisible}
+              onChange={() => setVisibleColumns(prev => ({
+                ...prev,
+                [column]: !prev[column]
+              }))}
+              className="mr-2 rounded border-gray-300"
+              id={`column-${column}`}
+            />
+            <label 
+              htmlFor={`column-${column}`}
+              className="text-sm capitalize text-gray-700 dark:text-gray-300 cursor-pointer flex-grow"
+            >
+              {column}
+            </label>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-6 flex justify-end space-x-3">
+        <button
+          onClick={() => setShowColumnsModal(false)}
+          className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-gray-500"
+        >
+          Close
+        </button>
+        <button
+          onClick={() => {
+            setVisibleColumns(Object.keys(visibleColumns).reduce((acc, key) => ({
+              ...acc,
+              [key]: true
+            }), {}));
+          }}
+          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500"
+        >
+          Show All
+        </button>
+      </div>
+    </Dialog.Panel>
+  </div>
+</Dialog>
                 </div>
               </div>
               {showMassDeleteModal && (
@@ -3985,6 +4062,7 @@ const getFilteredScheduledMessages = () => {
               </div>
             </div>
           </div>
+          
           <div className="w-full flex-wrap">
             <div className="h-[calc(150vh-200px)] overflow-y-auto mb-4" ref={contactListRef}>
               <table className="w-full border-collapse hidden sm:table">
@@ -4000,13 +4078,27 @@ const getFilteredScheduledMessages = () => {
                         className="rounded border-gray-300"
                       />
                     </th>
-                    <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Contact</th>
-                    <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Phone</th>
-                    <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Tags</th>
-                    <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Points</th>
-                    <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Actions</th>
+                    {visibleColumns.contact && (
+                      <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Contact</th>
+                    )}
+                    {visibleColumns.phone && (
+                      <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Phone</th>
+                    )}
+                    {visibleColumns.tags && (
+                      <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Tags</th>
+                    )}
+                    {visibleColumns.points && (
+                      <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Points</th>
+                    )}
+                    {visibleColumns.notes && (
+                      <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Notes</th>
+                    )}
+                    {visibleColumns.actions && (
+                      <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Actions</th>
+                    )}
                   </tr>
                 </thead>
+                
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                   {currentContacts.map((contact, index) => {
                     const isSelected = selectedContacts.some((c) => c.phone === contact.phone);
@@ -4025,98 +4117,113 @@ const getFilteredScheduledMessages = () => {
                             className="rounded border-gray-300"
                           />
                         </td>
-                        <td className="p-4">
-                          <div className="flex items-center">
-                            {contact.profilePicUrl ? (
-                              <img 
-                                src={contact.profilePicUrl} 
-                                alt={contact.contactName || "Profile"} 
-                                className="w-8 h-8 rounded-full object-cover mr-3" 
-                              />
-                            ) : (
-                              <div className="w-8 h-8 mr-3 border-2 border-gray-500 dark:border-gray-400 rounded-full flex items-center justify-center">
-                                {contact.chat_id && contact.chat_id.includes('@g.us') ? (
-                                  <Lucide icon="Users" className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                                ) : (
-                                  <Lucide icon="User" className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                                )}
-                              </div>
-                            )}
-                            <span className="font-medium text-gray-900 dark:text-white">
-                              {contact.contactName ? (contact.lastName ? `${contact.contactName} ${contact.lastName}` : contact.contactName) : contact.phone}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="p-4 text-gray-600 dark:text-gray-400">
-                          {contact.phone ?? contact.source}
-                        </td>
-                        <td className="p-4">
-                          <div className="flex flex-wrap gap-2">
-                            {contact.tags && contact.tags.length > 0 ? (
-                              contact.tags.map((tag, index) => (
-                                <div key={index} className="relative group">
-                                  <span className={`px-2 py-1 text-xs font-semibold rounded-full inline-flex justify-center items-center ${
-                                    employeeNames.includes(tag.toLowerCase())
-                                      ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
-                                      : 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
-                                  }`}>
-                                    {tag.charAt(0).toUpperCase() + tag.slice(1)}
-                                  </span>
-                                  <button
-                                    className="absolute right-0 top-0 transform translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-red-500 hover:text-red-700"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleRemoveTag(contact.id!, tag);
-                                    }}
-                                  >
-                                    <div className="w-4 h-4 bg-red-600 hover:bg-red-800 dark:bg-red-600 dark:hover:bg-red-800 rounded-full flex items-center justify-center">
-                                      <Lucide 
-                                        icon="X" 
-                                        className="w-3 h-3 text-white" 
-                                      />
-                                    </div>
-                                  </button>
+                        {visibleColumns.contact && (
+                          <td className="p-4">
+                            <div className="flex items-center">
+                              {contact.profilePicUrl ? (
+                                <img 
+                                  src={contact.profilePicUrl} 
+                                  alt={contact.contactName || "Profile"} 
+                                  className="w-8 h-8 rounded-full object-cover mr-3" 
+                                />
+                              ) : (
+                                <div className="w-8 h-8 mr-3 border-2 border-gray-500 dark:border-gray-400 rounded-full flex items-center justify-center">
+                                  {contact.chat_id && contact.chat_id.includes('@g.us') ? (
+                                    <Lucide icon="Users" className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                                  ) : (
+                                    <Lucide icon="User" className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                                  )}
                                 </div>
-                              ))
-                            ) : (
-                              <span className="text-sm text-gray-500 dark:text-gray-400">No tags</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-4 text-gray-600 dark:text-gray-400">
-                          {contact.points || 0}
-                        </td>
-                        <td className="p-4">
-                          <div className="flex space-x-2">
-                            <button
-                              onClick={() => {
-                                setCurrentContact(contact);
-                                setEditContactModal(true);
-                              }}
-                              className="p-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                              title="View/Edit"
-                            >
-                              <Lucide icon="Eye" className="w-5 h-5" />
-                            </button>
-                            <button
-                              onClick={() => handleClick(contact.phone)}
-                              className="p-2 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300"
-                              title="Chat"
-                            >
-                              <Lucide icon="MessageSquare" className="w-5 h-5" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                setCurrentContact(contact);
-                                setDeleteConfirmationModal(true);
-                              }}
-                              className="p-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                              title="Delete"
-                            >
-                              <Lucide icon="Trash" className="w-5 h-5" />
-                            </button>
-                          </div>
-                        </td>
+                              )}
+                              <span className="font-medium text-gray-900 dark:text-white">
+                                {contact.contactName ? (contact.lastName ? `${contact.contactName} ${contact.lastName}` : contact.contactName) : contact.phone}
+                              </span>
+                            </div>
+                          </td>
+                        )}
+                        {visibleColumns.phone && (
+                          <td className="p-4 text-gray-600 dark:text-gray-400">
+                            {contact.phone ?? contact.source}
+                          </td>
+                        )}
+                        {visibleColumns.tags && (
+                          <td className="p-4">
+                            <div className="flex flex-wrap gap-2">
+                              {contact.tags && contact.tags.length > 0 ? (
+                                contact.tags.map((tag, index) => (
+                                  <div key={index} className="relative group">
+                                    <span className={`px-2 py-1 text-xs font-semibold rounded-full inline-flex justify-center items-center ${
+                                      employeeNames.includes(tag.toLowerCase())
+                                        ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
+                                        : 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
+                                    }`}>
+                                      {tag.charAt(0).toUpperCase() + tag.slice(1)}
+                                    </span>
+                                    <button
+                                      className="absolute right-0 top-0 transform translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-red-500 hover:text-red-700"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRemoveTag(contact.id!, tag);
+                                      }}
+                                    >
+                                      <div className="w-4 h-4 bg-red-600 hover:bg-red-800 dark:bg-red-600 dark:hover:bg-red-800 rounded-full flex items-center justify-center">
+                                        <Lucide 
+                                          icon="X" 
+                                          className="w-3 h-3 text-white" 
+                                        />
+                                      </div>
+                                    </button>
+                                  </div>
+                                ))
+                              ) : (
+                                <span className="text-sm text-gray-500 dark:text-gray-400">No tags</span>
+                              )}
+                            </div>
+                          </td>
+                        )}
+                        {visibleColumns.points && (
+                          <td className="p-4 text-gray-600 dark:text-gray-400">
+                            {contact.points || 0}
+                          </td>
+                        )}
+                        {visibleColumns.notes && (
+                          <td className="p-4 text-gray-600 dark:text-gray-400">
+                            {contact.notes || '-'}
+                          </td>
+                        )}
+                        {visibleColumns.actions && (
+                          <td className="p-4">
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => {
+                                  setCurrentContact(contact);
+                                  setEditContactModal(true);
+                                }}
+                                className="p-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                                title="View/Edit"
+                              >
+                                <Lucide icon="Eye" className="w-5 h-5" />
+                              </button>
+                              <button
+                                onClick={() => handleClick(contact.phone)}
+                                className="p-2 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300"
+                                title="Chat"
+                              >
+                                <Lucide icon="MessageSquare" className="w-5 h-5" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setCurrentContact(contact);
+                                  setDeleteConfirmationModal(true);
+                                }}
+                                className="p-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                                title="Delete"
+                              >
+                                <Lucide icon="Trash" className="w-5 h-5" />
+                              </button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -4643,6 +4750,19 @@ const getFilteredScheduledMessages = () => {
         >
           Add New Field
         </button>
+        <div className="mt-4">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            Notes
+          </label>
+          <textarea
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600"
+            rows={3}
+            value={currentContact?.notes || ''}
+            onChange={(e) =>
+              setCurrentContact((prev) => ({ ...prev!, notes: e.target.value }))
+            }
+          />
+        </div>
       </div>
       <div className="flex justify-end mt-6">
         <button
