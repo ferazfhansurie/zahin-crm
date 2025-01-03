@@ -3790,65 +3790,124 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
     }
     const userData = docUserSnapshot.data();
     const companyId = userData.companyId;
+
+    // Check if the tag is an employee name
+    const employee = employeeList.find(emp => emp.name === tagName);
+    
+    if (employee) {
+      // Handle employee assignment
+      const employeeRef = doc(firestore, `companies/${companyId}/employee/${employee.id}`);
+      const employeeDoc = await getDoc(employeeRef);
+      
+      if (!employeeDoc.exists()) {
+        toast.error(`Employee document not found for ${tagName}`);
+        return;
+      }
+
+      const employeeData = employeeDoc.data();
+      const currentQuota = employeeData.quotaLeads || 0;
+      
+      // Check quota availability
+      if (currentQuota <= 0) {
+        toast.error(`${tagName} has no available quota leads`);
+        return;
+      }
+
+      const contactRef = doc(firestore, `companies/${companyId}/contacts/${contact.id}`);
+      const contactDoc = await getDoc(contactRef);
+
+      if (!contactDoc.exists()) {
+        toast.error('Contact not found');
+        return;
+      }
+      const currentTags = contactDoc.data().tags || [];
+      const oldEmployeeTag = currentTags.find((tag: string) => 
+        employeeList.some(emp => emp.name === tag)
+      );
+      // If contact was assigned to another employee, update their quota first
+      if (oldEmployeeTag) {
+        const oldEmployee = employeeList.find(emp => emp.name === oldEmployeeTag);
+        if (oldEmployee) {
+          const oldEmployeeRef = doc(firestore, `companies/${companyId}/employee/${oldEmployee.id}`);
+          const oldEmployeeDoc = await getDoc(oldEmployeeRef);
+          
+          if (oldEmployeeDoc.exists()) {
+            const oldEmployeeData = oldEmployeeDoc.data();
+            await updateDoc(oldEmployeeRef, {
+              assignedContacts: (oldEmployeeData.assignedContacts || 1) - 1,
+              quotaLeads: (oldEmployeeData.quotaLeads || 0) + 1
+            });
+          }
+        }
+      }
+
+      // Remove any existing employee tags and add new one
+      const updatedTags = [
+        ...currentTags.filter((tag: string) => !employeeList.some(emp => emp.name === tag)),
+        tagName
+      ];
+
+      // Use batch write for atomic update
+      const batch = writeBatch(firestore);
+
+      // Update contact
+      batch.update(contactRef, {
+        tags: updatedTags,
+        assignedTo: tagName,
+        lastAssignedAt: serverTimestamp()
+      });
+
+      // Update new employee's quota
+      batch.update(employeeRef, {
+        quotaLeads: currentQuota - 1,
+        assignedContacts: (employeeData.assignedContacts || 0) + 1
+      });
+
+      await batch.commit();
+
+      // Update local states
+      setContacts(prevContacts =>
+        prevContacts.map(c =>
+          c.id === contact.id
+            ? { ...c, tags: updatedTags, assignedTo: tagName }
+            : c
+        )
+      );
+
+      setEmployeeList(prevList =>
+        prevList.map(emp =>
+          emp.id === employee.id
+            ? {
+                ...emp,
+                quotaLeads: currentQuota - 1,
+                assignedContacts: (emp.assignedContacts || 0) + 1
+              }
+            : oldEmployeeTag && emp.name === oldEmployeeTag
+              ? {
+                  ...emp,
+                  quotaLeads: (emp.quotaLeads || 0) + 1,
+                  assignedContacts: (emp.assignedContacts || 1) - 1
+                }
+              : emp
+        )
+      );
+
+      toast.success(`Contact assigned to ${tagName}`);
+      await sendAssignmentNotification(tagName, contact);
+      return;
+    }
+
+    // Handle non-employee tags
     const docRef = doc(firestore, 'companies', companyId);
     const docSnapshot = await getDoc(docRef);
     if (!docSnapshot.exists()) {
-      console.log('No such document!');
+      console.log('Company document not found');
       return;
     }
     const data2 = docSnapshot.data();
     const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
 
-    // Special handling for company '0123'
-    if (companyId === '0123') {
-      // Check if the new tag is an employee name
-      const isNewTagEmployee = employeeList.some(emp => emp.name === tagName);
-      
-      if (isNewTagEmployee) {
-        const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id!);
-        const contactDoc = await getDoc(contactRef);
-
-        if (!contactDoc.exists()) {
-          console.error(`Contact document does not exist: ${contact.id}`);
-          toast.error(`Failed to add tag: Contact not found`);
-          return;
-        }
-
-        const currentTags = contactDoc.data().tags || [];
-        // Find and remove any existing employee tags
-        const updatedTags = currentTags.filter((tag: string) => !employeeList.some(emp => emp.name === tag));
-        
-        // Add the new employee tag
-        updatedTags.push(tagName);
-
-        // Update Firestore with the new tags
-        await updateDoc(contactRef, {
-          tags: updatedTags
-        });
-
-        // Update local state
-        setContacts(prevContacts =>
-          prevContacts.map(c =>
-            c.id === contact.id
-              ? { ...c, tags: updatedTags }
-              : c
-          )
-        );
-
-        console.log(`Employee tag updated to ${tagName} for contact ${contact.id}`);
-        toast.success(`Contact reassigned to ${tagName}`);
-
-        // Update employee assigned contacts and quota leads
-        console.log('Updating employee assignments and quota...');
-        await updateEmployeeAssignedContacts();
-
-        // Send assignment notification for the new employee
-        await sendAssignmentNotification(tagName, contact);
-        return;
-      }
-    }
-
-    // Check if tag is a trigger tag by looking up follow-up templates
+    // Check for trigger tags
     const templatesRef = collection(firestore, 'companies', companyId, 'followUpTemplates');
     const templatesSnapshot = await getDocs(templatesRef);
     
@@ -3856,20 +3915,16 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
     templatesSnapshot.forEach(doc => {
       const template = doc.data();
       if (template.triggerTags?.includes(tagName) && template.status === 'active') {
-        matchingTemplate = { 
-          id: doc.id, 
-          ...template 
-        };
+        matchingTemplate = { id: doc.id, ...template };
       }
     });
 
     // Update contact's tags
-    const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id!);
+    const contactRef = doc(firestore, `companies/${companyId}/contacts/${contact.id}`);
     const contactDoc = await getDoc(contactRef);
 
     if (!contactDoc.exists()) {
-      console.error(`Contact document does not exist: ${contact.id}`);
-      toast.error(`Failed to add tag: Contact not found`);
+      toast.error('Contact not found');
       return;
     }
 
@@ -3880,7 +3935,6 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
         tags: arrayUnion(tagName)
       });
 
-      // Update local state
       setContacts(prevContacts =>
         prevContacts.map(c =>
           c.id === contact.id
@@ -3889,17 +3943,12 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
         )
       );
 
-      console.log(`Tag ${tagName} added to contact ${contact.id}`);
-      toast.success(`Tag "${tagName}" added to contact`);
-
-      // If this is a trigger tag, call the follow-up API
+      // Handle trigger tags
       if (matchingTemplate) {
         try {
           const response = await fetch(`${baseUrl}/api/tag/followup`, {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               requestType: 'startTemplate',
               phone: contact.phone,
@@ -3914,7 +3963,6 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
             throw new Error(`Follow-up API error: ${response.statusText}`);
           }
 
-          console.log('Follow-up template started successfully');
           toast.success('Follow-up sequence started');
         } catch (error) {
           console.error('Error starting follow-up sequence:', error);
@@ -3923,28 +3971,26 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
       }
 
       // Handle specific tags
-      if (tagName === 'Before Quote Follow Up') {
-        addTagBeforeQuote(contact);
-      } else if (tagName === 'Before Quote Follow Up EN') {
-        addTagBeforeQuoteEnglish(contact);
-      } else if (tagName === 'Before Quote Follow Up BM') {
-        addTagBeforeQuoteMalay(contact);
-      } else if (tagName === 'Before Quote Follow Up CN') {
-        addTagBeforeQuoteChinese(contact);
-      } else if (tagName === 'Pause Follow Up') {
-        pauseFiveDaysFollowUp(contact);
-      } else {
-        // Check if the tag is an employee's name and send assignment notification
-        const employee = employeeList.find(emp => emp.name === tagName);
-        if (employee) {
-          console.log('Employee tag detected, updating assignments and quota...');
-          await updateEmployeeAssignedContacts();
-          await sendAssignmentNotification(tagName, contact);
-        }
+      switch (tagName) {
+        case 'Before Quote Follow Up':
+          await addTagBeforeQuote(contact);
+          break;
+        case 'Before Quote Follow Up EN':
+          await addTagBeforeQuoteEnglish(contact);
+          break;
+        case 'Before Quote Follow Up BM':
+          await addTagBeforeQuoteMalay(contact);
+          break;
+        case 'Before Quote Follow Up CN':
+          await addTagBeforeQuoteChinese(contact);
+          break;
+        case 'Pause Follow Up':
+          await pauseFiveDaysFollowUp(contact);
+          break;
       }
 
+      toast.success(`Tag "${tagName}" added to contact`);
     } else {
-      console.log(`Tag ${tagName} already exists for contact ${contact.id}`);
       toast.info(`Tag "${tagName}" already exists for this contact`);
     }
 
