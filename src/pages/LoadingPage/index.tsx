@@ -51,7 +51,9 @@ interface Contact {
 const app = initializeApp(firebaseConfig);
 const firestore = getFirestore(app);
 
-
+interface MessageCache {
+  [chatId: string]: any[]; // or specify more detailed message type if available
+}
 
 function LoadingPage() {
   const [progress, setProgress] = useState(0);
@@ -94,18 +96,21 @@ function LoadingPage() {
       const auth = getAuth(app);
       const user = auth.currentUser;
       
-      if (!user || !user.email) {
-        setError("No authenticated user found");
-        navigate('/login');
-        return;
+      // Wait for user authentication
+      if (!user) {
+        console.log('Waiting for user authentication...');
+        return; // Exit early and let the auth state listener handle redirect
       }
 
       // Get company ID first
-      const docUserRef = doc(firestore, 'user', user.email);
+      const docUserRef = doc(firestore, 'user', user.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       
       if (!docUserSnapshot.exists()) {
-        throw new Error("User document not found");
+        console.log('User document not found, redirecting to login...');
+        await signOut(auth); // Sign out the user
+        navigate('/login');
+        return;
       }
 
       const dataUser = docUserSnapshot.data();
@@ -170,23 +175,25 @@ function LoadingPage() {
 
         if (!user?.email) {
           if (retries > 0) {
-            console.log(`Retrying WebSocket connection... (${retries} attempts left)`);
+            console.log(`Waiting for user authentication... (${retries} attempts left)`);
             setTimeout(() => initWebSocket(retries - 1), 2000);
             return;
           }
           throw new Error("No authenticated user found");
         }
 
-        // Get company ID
+        // Add delay before accessing Firestore
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
         const docUserRef = doc(firestore, 'user', user.email);
         const docUserSnapshot = await getDoc(docUserRef);
         
         if (!docUserSnapshot.exists()) {
-          throw new Error("User document does not exist");
+          console.log('User document not found, redirecting...');
+          await signOut(auth);
+          navigate('/login');
+          return;
         }
-
-        const dataUser = docUserSnapshot.data();
-        const companyId = dataUser.companyId;
 
         // Close existing connection if any
         if (ws.current) {
@@ -350,7 +357,6 @@ function LoadingPage() {
           : new Date(0);
       return dateB.getTime() - dateA.getTime();
     });
-
     // Cache the contacts
     setLoadingPhase('caching');
     localStorage.setItem('contacts', LZString.compress(JSON.stringify(allContacts)));
@@ -359,6 +365,10 @@ function LoadingPage() {
 
     setContacts(allContacts);
     setContactsFetched(true);
+
+    // Cache messages for first 100 contacts
+    await fetchAndCacheMessages(allContacts, companyId, user);
+    
     setLoadingPhase('complete');
 
     // After contacts are loaded, fetch chats
@@ -381,6 +391,7 @@ const getLoadingMessage = () => {
     case 'caching': return 'Caching data...';
     case 'complete': return 'Loading complete!';
     case 'error': return 'Error loading contacts';
+    case 'caching_messages': return 'Caching recent messages...';
     default: return 'Loading...';
   }
 };
@@ -474,9 +485,43 @@ useEffect(() => {
     setIsPairingCodeLoading(true);
     setError(null);
     try {
-      const response = await axios.post(`https://mighty-dane-newly.ngrok-free.app/api/request-pairing-code/${companyId}`, {
-        phoneNumber
-      });
+      const user = getAuth().currentUser;
+      if (!user) {
+        throw new Error("User not authenticated");
+      }
+      const docUserRef = doc(firestore, 'user', user?.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      const headers = data2.apiUrl 
+        ? {
+            'Authorization': `Bearer ${await user.getIdToken()}`
+          }
+        : {
+            'Authorization': `Bearer ${await user.getIdToken()}`,
+            'Content-Type': 'application/json'
+          };
+
+      const response = await axios.post(
+        `${baseUrl}/api/request-pairing-code/${companyId}`,
+        { phoneNumber },
+        { 
+          headers,
+          withCredentials: false
+        }
+      );
       setPairingCode(response.data.pairingCode);
     } catch (error) {
       console.error('Error requesting pairing code:', error);
@@ -488,10 +533,26 @@ useEffect(() => {
 
   useEffect(() => {
     const auth = getAuth(app);
-    const unsubscribe = auth.onAuthStateChanged((user) => {
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
       if (!user) {
+        console.log('No authenticated user, redirecting to login...');
         navigate('/login');
+        return;
       }
+
+      // Check if user document exists
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      
+      if (!docUserSnapshot.exists()) {
+        console.log('User document not found, signing out...');
+        await signOut(auth);
+        navigate('/login');
+        return;
+      }
+
+      // Proceed with normal flow
+      fetchQRCode();
     });
 
     return () => unsubscribe();
@@ -514,6 +575,96 @@ useEffect(() => {
       }
     }
   }, [botStatus, contactsFetched, processingComplete]);
+
+  const fetchAndCacheMessages = async (contacts: Contact[], companyId: string, user: any) => {
+    setLoadingPhase('caching_messages');
+    
+    // Reduce number of cached contacts
+    const mostRecentContacts = contacts
+      .sort((a, b) => {
+        const getTimestamp = (contact: Contact) => {
+          if (!contact.last_message) return 0;
+          return contact.last_message.createdAt
+            ? new Date(contact.last_message.createdAt).getTime()
+            : contact.last_message.timestamp
+              ? contact.last_message.timestamp * 1000
+              : 0;
+        };
+        return getTimestamp(b) - getTimestamp(a);
+      })
+      .slice(0, 20); // Reduce from 100 to 20 most recent contacts
+
+    // Only cache last 50 messages per contact
+    const messagePromises = mostRecentContacts.map(async (contact) => {
+      try {
+        // Get company data to access baseUrl
+        const docRef = doc(firestore, 'companies', companyId);
+        const docSnapshot = await getDoc(docRef);
+        const companyData = docSnapshot.data();
+        if (!docSnapshot.exists() || !companyData) {
+          console.error('Company data not found');
+          return null;
+        }
+
+        const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+        const response = await axios.get(
+          `${baseUrl}/api/messages/${contact.chat_id}/${companyData.whapiToken}?limit=50`,
+          {
+            headers: {
+              'Authorization': `Bearer ${await user.getIdToken()}`
+            }
+          }
+        );
+
+        return {
+          chatId: contact.chat_id,
+          messages: response.data.messages
+        };
+      } catch (error) {
+        console.error(`Error fetching messages for chat ${contact.chat_id}:`, error);
+        return null;
+      }
+    });
+
+    // Wait for all message fetching promises to complete
+    const results = await Promise.all(messagePromises);
+
+    // Create messages cache object from results
+    const messagesCache = results.reduce<MessageCache>((acc, result) => {
+      if (result) {
+        acc[result.chatId] = result.messages;
+      }
+      return acc;
+    }, {});
+
+    const cacheData = {
+      messages: messagesCache,
+      timestamp: Date.now(),
+      expiry: Date.now() + (30 * 60 * 1000)
+    };
+
+    const compressedData = LZString.compress(JSON.stringify(cacheData));
+    localStorage.setItem('messagesCache', compressedData);
+  };
+
+  // Add storage cleanup on page load/refresh
+  useEffect(() => {
+    const cleanupStorage = () => {
+      // Clear old message caches
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith('messages_') || key?.startsWith('messagesCache')) {
+          localStorage.removeItem(key);
+        }
+      }
+    };
+
+    cleanupStorage();
+    
+    // Also clean up on page unload
+    window.addEventListener('beforeunload', cleanupStorage);
+    return () => window.removeEventListener('beforeunload', cleanupStorage);
+  }, []);
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-white dark:bg-gray-900 py-8">

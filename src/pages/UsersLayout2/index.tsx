@@ -37,7 +37,13 @@ let ghlConfig ={
 const app = initializeApp(firebaseConfig);
 const firestore = getFirestore(app);
 
-
+// Add these types
+interface Bot {
+  botName: string;
+  phoneCount: number | string;
+  name: string;
+  clientPhones: (string | null)[];
+}
 
 interface Employee {
   id: string;
@@ -72,6 +78,7 @@ function Main() {
   const [groups, setGroups] = useState<string[]>([]);
   const [selectedGroup, setSelectedGroup] = useState<string>('');
   const [phoneNames, setPhoneNames] = useState<{ [key: number]: string }>({});
+  const [companyData, setCompanyData] = useState<any>(null);
 
   const toggleModal = (id?:string) => {
     setIsModalOpen(!isModalOpen);
@@ -127,23 +134,71 @@ function Main() {
     const fetchCompanyData = async () => {
       const auth = getAuth(app);
       const user = auth.currentUser;
+      
       if (user) {
         const docUserRef = doc(firestore, 'user', user.email!);
         const docUserSnapshot = await getDoc(docUserRef);
+        
         if (docUserSnapshot.exists()) {
           const userData = docUserSnapshot.data();
           companyId = userData.companyId;
+          
           const companyRef = doc(firestore, 'companies', companyId);
           const companySnapshot = await getDoc(companyRef);
+          
           if (companySnapshot.exists()) {
-            const companyData = companySnapshot.data();
-            const phoneCount = companyData.phoneCount || 0;
-            const newPhoneNames: { [key: number]: string } = {};
-            for (let i = 1; i <= phoneCount; i++) {
-              newPhoneNames[i] = companyData[`phone${i}`] || `Phone ${i}`;
+            const data = companySnapshot.data();
+            setCompanyData(data);
+            const phoneCount = data.phoneCount || 0;
+            
+            // Fetch bot data from API
+            try {
+              const baseUrl = data.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+              const response = await axios.get(`${baseUrl}/api/bots`);
+              const bots: Bot[] = response.data;
+              
+              // Match bot using companyId (which should match botName)
+              const matchingBot = bots.find(bot => bot.botName === companyId);
+              
+              const newPhoneNames: { [key: number]: string } = {};
+              if (matchingBot) {
+                // Use clientPhones from API if available
+                matchingBot.clientPhones.forEach((phone, index) => {
+                  if (phone) {
+                    newPhoneNames[index + 1] = phone;
+                  } else {
+                    newPhoneNames[index + 1] = data[`phone${index + 1}`] || `Phone ${index + 1}`;
+                  }
+                });
+                
+                // Update phoneCount based on API data if different
+                const apiPhoneCount = typeof matchingBot.phoneCount === 'string' 
+                  ? parseInt(matchingBot.phoneCount) 
+                  : matchingBot.phoneCount;
+                  
+                setPhoneCount(apiPhoneCount);
+              } else {
+                // Fallback to existing data if no matching bot found
+                for (let i = 1; i <= phoneCount; i++) {
+                  newPhoneNames[i] = data[`phone${i}`] || `Phone ${i}`;
+                }
+                setPhoneCount(phoneCount);
+              }
+              
+              setPhoneNames(newPhoneNames);
+              console.log('Matched bot:', matchingBot);
+              console.log('Set phone names:', newPhoneNames);
+              
+            } catch (error) {
+              console.error('Error fetching bot data:', error);
+              // Fallback to existing phone names
+              const newPhoneNames: { [key: number]: string } = {};
+              for (let i = 1; i <= phoneCount; i++) {
+                newPhoneNames[i] = data[`phone${i}`] || `Phone ${i}`;
+              }
+              setPhoneNames(newPhoneNames);
+              setPhoneCount(phoneCount);
             }
-            setPhoneNames(newPhoneNames);
-            setPhoneCount(phoneCount);
           }
         }
       }
@@ -250,6 +305,26 @@ function Main() {
 const handleDeleteEmployee = async (employeeId: string, companyId: any) => {
   try {
     // Get the employee's email before deleting
+    const user = getAuth().currentUser;
+    if (!user) {
+      console.error("User not authenticated");
+    }
+    const docUserRef = doc(firestore, 'user', user?.email!);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const dataUser = docUserSnapshot.data();
+    const companyId = dataUser.companyId;
+    const docRef = doc(firestore, 'companies', companyId);
+    const docSnapshot = await getDoc(docRef);
+    if (!docSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const data2 = docSnapshot.data();
+    const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
     const employeeRef = doc(firestore, `companies/${companyId}/employee/${employeeId}`);
     const employeeDoc = await getDoc(employeeRef);
     const employeeEmail = employeeDoc.data()?.email;
@@ -266,7 +341,7 @@ const handleDeleteEmployee = async (employeeId: string, companyId: any) => {
     
     // Delete from Firebase Auth via your API endpoint
     console.log('Sending delete request to API for email:', employeeEmail);
-    const response = await axios.delete(`https://mighty-dane-newly.ngrok-free.app/api/auth/user`, {
+    const response = await axios.delete(`${baseUrl}/api/auth/user`, {
       data: { email: employeeEmail }
     });
     console.log('API Response:', response.data);
@@ -347,49 +422,15 @@ const paginatedEmployees = filteredEmployees
       <div className="flex-grow p-5">
         <div className="sticky top-0 bg-gray-100 dark:bg-gray-900 z-10 py-2">
           <div className="flex flex-wrap items-center mt-2 intro-y sm:flex-nowrap">
-            <Link to="crud-form">
-              {showAddUserButton && role !== "3" && (
-                <Button variant="primary" className="mr-2 shadow-md">
-                  Add New User
-                </Button>
-              )}
-            </Link>
-            <Link to="loading2">
-              {showAddUserButton && phoneCount >= 2 && (
-                <Button variant="primary" className="mr-2 shadow-md">
-                  Add Number
-                </Button>
-              )}
-            </Link>
-          
-            <Link to="quick-replies">
-            <Button variant="primary" className="mr-2 shadow-md">
-                  Quick Replies
-                </Button>
-            </Link>
-            <Link to="a-i-responses">
-              <Button variant="primary" className="mr-2 shadow-md">
-                AI Responses
-              </Button>
-            </Link>
-            <Link to="a-i-generative-responses">
-              <Button variant="primary" className="mr-2 shadow-md">
-                AI Generative Responses
-              </Button>
-            </Link>
-            <Link to="follow-ups-select">
-            <Button variant="primary" className="mr-2 shadow-md">
-                  Follow Ups
-                </Button>
-            </Link>
+          <Link to="settings">
+  <Button variant="primary" className="mr-2 shadow-md">
+    <Lucide icon="Settings" className="w-4 h-4 mr-2" />
+    Settings
+  </Button>
+</Link>
+           
+           
          
-            {companyId === "0123" && (
-              <Link to="storage-pricing">
-                <Button variant="primary" className="mr-2 shadow-md">
-                  Storage Pricing
-                </Button>
-              </Link>
-            )}
             {/* Add a dropdown to show phone names */}
             {phoneCount >= 2 && (
               <Menu className="mr-2">
@@ -400,10 +441,15 @@ const paginatedEmployees = filteredEmployees
                   {Object.entries(phoneNames).map(([index, phoneName]) => (
                     <Menu.Item key={index} className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
                       <div className="flex items-center justify-between w-full">
-                        <span>{phoneNames[parseInt(index)]}</span>
+                        <div className="flex flex-col">
+                          <span className="font-medium">
+                            {companyData?.[`phone${index}`] || `Phone ${index}`}
+                          </span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400">{phoneName || `Phone ${index}`}</span>
+                        </div>
                         <button
                           onClick={() => {
-                            const newName = prompt(`Enter new name for ${phoneName}`, phoneName);
+                            const newName = prompt(`Enter new name for ${phoneName || `Phone ${index}`}`, phoneName);
                             if (newName) updatePhoneName(parseInt(index), newName);
                           }}
                           className="text-blue-500 hover:text-blue-700"

@@ -793,6 +793,28 @@ const handleVideoUpload = async (caption: string = '') => {
 const sendVoiceMessage = async () => {
   if (audioBlob && selectedChatId && userData) {
     try {
+      const user = getAuth().currentUser;
+      if (!user) {
+        console.error("User not authenticated");
+        setError("User not authenticated");
+        return;
+      }
+      const docUserRef = doc(firestore, 'user', user?.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       // Convert the audio Blob to a File
       const audioFile = new File([audioBlob], `voice_message_${Date.now()}.webm`, { type: "audio/webm" });
 
@@ -807,7 +829,7 @@ const sendVoiceMessage = async () => {
       };
 
       const response = await axios.post(
-        `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/audio/${userData.companyId}/${selectedChatId}`,
+        `${baseUrl}/api/v2/messages/audio/${userData.companyId}/${selectedChatId}`,
         requestBody
       );
 
@@ -830,6 +852,28 @@ const sendVoiceMessage = async () => {
 
 const handleReaction = async (message: any, emoji: string) => {
   try {
+    const user = getAuth().currentUser;
+    if (!user) {
+      console.error("User not authenticated");
+      setError("User not authenticated");
+      return;
+    }
+    const docUserRef = doc(firestore, 'user', user?.email!);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const dataUser = docUserSnapshot.data();
+    const companyId = dataUser.companyId;
+    const docRef = doc(firestore, 'companies', companyId);
+    const docSnapshot = await getDoc(docRef);
+    if (!docSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const data2 = docSnapshot.data();
+    const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
     // Ensure we have all required data
     if (!userData?.companyId || !message.id) {
       throw new Error('Missing required data: companyId or messageId');
@@ -846,7 +890,7 @@ const handleReaction = async (message: any, emoji: string) => {
     });
     
     // Construct the endpoint with the full message ID
-    const endpoint = `https://mighty-dane-newly.ngrok-free.app/api/messages/react/${userData.companyId}/${messageId}`;
+    const endpoint = `${baseUrl}/api/messages/react/${userData.companyId}/${messageId}`;
     
     const payload = {
       reaction: emoji,
@@ -1375,6 +1419,7 @@ const sendWhatsAppAlert = async (employeeName: string, chatId: string) => {
 
     const companyData = docSnapshot.data();
 
+    const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
     // Fetch employee's WhatsApp number
     const employeesRef = collection(firestore, 'companies', companyId, 'employee');
     const q = query(employeesRef, where("name", "==", employeeName));
@@ -1394,7 +1439,7 @@ const sendWhatsAppAlert = async (employeeName: string, chatId: string) => {
     console.log(selectedChatId);
 
     // Send WhatsApp alert using the ngrok URL
-    const response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${employeeId}`, {
+    const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${employeeId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1454,7 +1499,14 @@ const closePDFModal = () => {
       }
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-  
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       let successCount = 0;
       let failureCount = 0;
   
@@ -1464,7 +1516,7 @@ const closePDFModal = () => {
         try {
           console.log(`Attempting to delete message: ${message.id}`);
           const response = await axios.delete(
-            `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/${companyId}/${selectedChatId}/${message.id}`,
+            `${baseUrl}/api/v2/messages/${companyId}/${selectedChatId}/${message.id}`,
             {
               data: { 
                 deleteForEveryone: true, 
@@ -2077,89 +2129,90 @@ async function fetchConfigFromDatabase() {
 
   const selectChat = useCallback(async (chatId: string, contactId?: string, contactSelect?: Contact) => {
     console.log('Attempting to select chat:', { chatId, userRole, userName: userData?.name });
+    setLoading(true);
     
     try {
-      // Only check permissions for role '3', allow role '2' full access
+      // Permission check
       if (userRole === "3" && contactSelect && contactSelect.assignedTo?.toLowerCase() !== userData?.name.toLowerCase()) {
         console.log('Permission denied for role 3 user');
         toast.error("You don't have permission to view this chat.");
         return;
       }
   
-      // Find contact - prioritize contactSelect if provided
+      // Find contact
       let contact = contactSelect || contacts.find(c => c.chat_id === chatId || c.id === contactId);
       if (!contact) {
         console.error('Contact not found');
         return;
       }
-
-      // Debug logging
-      console.log('Selected contact:', contact);
-      console.log('User role:', userRole);
   
-      // Update local state first for immediate UI response
+      // Try to get cached messages first
+      const cachedData = localStorage.getItem('messagesCache');
+      if (cachedData) {
+        try {
+          const cache = JSON.parse(LZString.decompress(cachedData));
+          if (cache.expiry > Date.now() && cache.messages[chatId]) {
+            setMessages(cache.messages[chatId]);
+            setLoading(false);
+          }
+        } catch (error) {
+          console.error('Error reading cache:', error);
+        }
+      }
+  
+      // Update contacts state
       setContacts(prevContacts => {
         const updatedContacts = prevContacts.map(c =>
           c.chat_id === chatId ? { ...c, unreadCount: 0 } : c
         ).sort((a, b) => {
           if (a.pinned && !b.pinned) return -1;
           if (!a.pinned && b.pinned) return 1;
-          
-          const timestampA = getTimestamp(a.last_message?.timestamp || a.last_message?.createdAt);
-          const timestampB = getTimestamp(b.last_message?.timestamp || b.last_message?.createdAt);
-          
-          return timestampB - timestampA;
+          return getTimestamp(b.last_message?.timestamp || b.last_message?.createdAt) - 
+                 getTimestamp(a.last_message?.timestamp || a.last_message?.createdAt);
         });
   
-        // Update localStorage with new contacts
         localStorage.setItem('contacts', LZString.compress(JSON.stringify(updatedContacts)));
         return updatedContacts;
       });
   
-      // Update Firebase in parallel
-      const updateFirebasePromise = (async () => {
-        const user = auth.currentUser;
-        if (!user?.email) return;
-  
-        const docUserRef = doc(firestore, 'user', user.email);
-        const docUserSnapshot = await getDoc(docUserRef);
-        
-        if (docUserSnapshot.exists()) {
-          const userData = docUserSnapshot.data();
-          const contactRef = doc(firestore, `companies/${userData.companyId}/contacts`, contact.id!);
-          await updateDoc(contactRef, { unreadCount: 0 });
-          console.log('Updated unreadCount in Firebase for contact:', contact.id);
-        }
-      })();
-  
-      // Delete notifications in parallel
-      const deleteNotificationsPromise = (async () => {
-        const user = auth.currentUser;
-        if (!user?.email) return;
-
-        console.log('Deleted notifications for chat:', chatId);
-      })();
-  
-      // Update UI state
+      // Update UI state immediately
       setSelectedContact(contact);
       setSelectedChatId(chatId);
       setIsChatActive(true);
   
-      // Wait for background operations to complete
+      // Run background tasks in parallel
       await Promise.all([
-        updateFirebasePromise,
-        deleteNotificationsPromise
+        // Update Firebase
+        (async () => {
+          const user = auth.currentUser;
+          if (!user?.email) return;
+          
+          const docUserRef = doc(firestore, 'user', user.email);
+          const docUserSnapshot = await getDoc(docUserRef);
+          
+          if (docUserSnapshot.exists()) {
+            const userData = docUserSnapshot.data();
+            const contactRef = doc(firestore, `companies/${userData.companyId}/contacts`, contact.id!);
+            await updateDoc(contactRef, { unreadCount: 0 });
+          }
+        })(),
+        // Delete notifications
+        deleteNotifications(chatId),
+        // Fetch fresh messages in background
+        fetchMessagesBackground(chatId, whapiToken!)
       ]);
   
-      // Update URL without triggering a page reload
+      // Update URL
       const newUrl = `/chat?chatId=${chatId.replace('@c.us', '')}`;
       window.history.pushState({ path: newUrl }, '', newUrl);
   
     } catch (error) {
       console.error('Error in selectChat:', error);
       toast.error('An error occurred while loading the chat. Please try again.');
+    } finally {
+      setLoading(false);
     }
-  }, [contacts, userRole, userData?.name]);
+  }, [contacts, userRole, userData?.name, whapiToken]);
 
   const getTimestamp = (timestamp: any): number => {
     // If timestamp is missing, return 0 to put it at the bottom
@@ -2364,9 +2417,205 @@ useEffect(() => {
       fetchMessages(selectedChatId, whapiToken!);
     }
   }, [selectedChatId]);
+
+  useEffect(() => {
+    const cleanupStorage = () => {
+      const MAX_CACHE_SIZE = 5 * 1024 * 1024; // 5MB limit
+      let totalSize = 0;
+      
+      // Calculate total size and remove expired caches
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith('messages_') || key === 'messagesCache') {
+          const item = localStorage.getItem(key);
+          if (item) {
+            totalSize += item.length;
+            
+            // Remove expired caches
+            try {
+              const cache = JSON.parse(LZString.decompress(item));
+              if (cache.expiry && cache.expiry < Date.now()) {
+                localStorage.removeItem(key);
+              }
+            } catch (error) {
+              localStorage.removeItem(key); // Remove invalid cache
+            }
+          }
+        }
+      }
+      
+      // If total size exceeds limit, clear all message caches
+      if (totalSize > MAX_CACHE_SIZE) {
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const key = localStorage.key(i);
+          if (key?.startsWith('messages_') || key === 'messagesCache') {
+            localStorage.removeItem(key);
+          }
+        }
+      }
+    };
+
+    cleanupStorage();
+    window.addEventListener('beforeunload', cleanupStorage);
+    return () => window.removeEventListener('beforeunload', cleanupStorage);
+  }, []);
+
+  const storeMessagesInLocalStorage = (chatId: string, messages: any[]) => {
+    try {
+      console.log(`Attempting to store ${messages.length} messages for chat ${chatId}`);
+      const storageKey = `messages_${chatId}`;
+      
+      // Limit messages to most recent 100
+      const limitedMessages = messages.slice(-100);
+      
+      // Try to compress and store
+      try {
+        const compressedMessages = LZString.compress(JSON.stringify({
+          messages: limitedMessages,
+          timestamp: Date.now(),
+          expiry: Date.now() + (30 * 60 * 1000) // 30 min expiry
+        }));
+        
+        // Check available space
+        const MAX_ITEM_SIZE = 2 * 1024 * 1024; // 2MB per chat
+        if (compressedMessages.length > MAX_ITEM_SIZE) {
+          // If too large, store even fewer messages
+          const veryLimitedMessages = messages.slice(-50);
+          const smallerCompressedMessages = LZString.compress(JSON.stringify({
+            messages: veryLimitedMessages,
+            timestamp: Date.now(),
+            expiry: Date.now() + (30 * 60 * 1000)
+          }));
+          localStorage.setItem(storageKey, smallerCompressedMessages);
+        } else {
+          localStorage.setItem(storageKey, compressedMessages);
+        }
+        
+      } catch (quotaError) {
+        // If still getting quota error, clear old caches
+        console.log('Storage quota reached, clearing old caches');
+        clearOldCaches();
+        
+        // Try one more time with very limited messages
+        const minimalMessages = messages.slice(-25);
+        const minimalCompressed = LZString.compress(JSON.stringify({
+          messages: minimalMessages,
+          timestamp: Date.now(),
+          expiry: Date.now() + (30 * 60 * 1000)
+        }));
+        localStorage.setItem(storageKey, minimalCompressed);
+      }
+      
+    } catch (error) {
+      console.error('Error storing messages in localStorage:', error);
+    }
+  };
+  
+  const clearOldCaches = () => {
+    const currentTime = Date.now();
+    const keys = Object.keys(localStorage);
+    
+    // Sort keys by timestamp (oldest first)
+    const messageCacheKeys = keys
+      .filter(key => key.startsWith('messages_'))
+      .sort((a, b) => {
+        const timeA = localStorage.getItem(a) ? JSON.parse(LZString.decompress(localStorage.getItem(a)!)).timestamp : 0;
+        const timeB = localStorage.getItem(b) ? JSON.parse(LZString.decompress(localStorage.getItem(b)!)).timestamp : 0;
+        return timeA - timeB;
+      });
+  
+    // Remove oldest 50% of caches
+    const removeCount = Math.ceil(messageCacheKeys.length / 2);
+    messageCacheKeys.slice(0, removeCount).forEach(key => {
+      localStorage.removeItem(key);
+    });
+  };
+  
+  // Add this to your existing cleanup useEffect
+  useEffect(() => {
+    const cleanup = () => {
+      try {
+        clearOldCaches();
+      } catch (error) {
+        console.error('Error during cleanup:', error);
+      }
+    };
+  
+    // Run cleanup every 5 minutes
+    const interval = setInterval(cleanup, 5 * 60 * 1000);
+    
+    // Run cleanup on mount
+    cleanup();
+    
+    return () => {
+      clearInterval(interval);
+    };
+  }, []);
+
+  const getMessagesFromLocalStorage = (chatId: string): any[] | null => {
+    try {
+      console.log(`Attempting to retrieve messages for chat ${chatId}`);
+      const storageKey = `messages_${chatId}`;
+      const compressedMessages = localStorage.getItem(storageKey);
+      const timestamp = localStorage.getItem(`${storageKey}_timestamp`);
+      
+      if (!compressedMessages || !timestamp) {
+        console.log('No cached messages found');
+        return null;
+      }
+      
+      if (Date.now() - parseInt(timestamp) > 3600000) {
+        console.log('Cache expired:', {
+          storedAt: new Date(parseInt(timestamp)).toISOString(),
+          age: Math.floor((Date.now() - parseInt(timestamp)) / 1000 / 60) + ' minutes'
+        });
+        return null;
+      }
+      
+      const messages = JSON.parse(LZString.decompress(compressedMessages));
+      console.log('Retrieved messages from cache:', {
+        chatId,
+        messageCount: messages.length,
+        cacheAge: Math.floor((Date.now() - parseInt(timestamp)) / 1000 / 60) + ' minutes'
+      });
+      
+      return messages;
+    } catch (error) {
+      console.error('Error retrieving messages from localStorage:', error);
+      return null;
+    }
+  };
+
   async function fetchMessages(selectedChatId: string, whapiToken: string) {
     setLoading(true);
     setSelectedIcon('ws');
+
+    const loadCachedMessages = (chatId: string) => {
+      try {
+        const cachedData = localStorage.getItem('messagesCache');
+        if (!cachedData) return null;
+        
+        const messagesCache = JSON.parse(LZString.decompress(cachedData));
+        return messagesCache[chatId] || null;
+      } catch (error) {
+        console.error('Error loading cached messages:', error);
+        return null;
+      }
+    };
+
+    // Try to get messages from localStorage first
+    const cachedMessages = loadCachedMessages(selectedChatId);
+    
+    if (cachedMessages) {
+      console.log('Using cached messages');
+      setMessages(cachedMessages);
+      setLoading(false);
+      
+      // Fetch fresh messages in the background
+      fetchMessagesBackground(selectedChatId, whapiToken);
+      return;
+    }
+
     const auth = getAuth(app);
     const user = auth.currentUser;
     
@@ -2576,6 +2825,8 @@ useEffect(() => {
                 message.reactions = reactionsMap[message.id];
             }
         });
+
+        storeMessagesInLocalStorage(selectedChatId, formattedMessages);
         
         setMessages(formattedMessages);
         fetchContactsBackground(
@@ -2835,6 +3086,8 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
       a.timestamp - b.timestamp
     );
 
+    storeMessagesInLocalStorage(selectedChatId, allMessages);
+
     setMessages(allMessages);
     
     // Update private notes state
@@ -2953,138 +3206,179 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
 
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !selectedChatId) return;
-      
+    
+    // Store the message text before clearing input
+    const messageText = newMessage;
     setNewMessage('');
     setReplyToMessage(null);
-    const user = auth.currentUser;
-    const docUserRef = doc(firestore, 'user', user?.email!);
-    const docUserSnapshot = await getDoc(docUserRef);
-    if (!docUserSnapshot.exists()) {
-      console.log('No such document!');
-      return;
-    }
-    const dataUser = docUserSnapshot.data();
-    companyId = dataUser.companyId;
-  // Use contact's phoneIndex instead of user's phone
-  let phoneIndex = selectedContact?.phoneIndex ?? 0;
-    
-    const userName = dataUser.name || dataUser.email || ''; // Get the user's name
-    const docRef = doc(firestore, 'companies', companyId);
-    const docSnapshot = await getDoc(docRef);
-    if (!docSnapshot.exists()) {
-      console.log('No such document!');
-      return;
-    }
-    const data2 = docSnapshot.data();
   
-    if (messageMode === 'privateNote') {
-      handleAddPrivateNote(newMessage);
-    } else {
-      try {
-        let response;
-        console.log("v2 is true");
-        // Use the new API
-      
-        response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${selectedChatId}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            message: newMessage,
-            quotedMessageId: replyToMessage?.id || null,
-            phoneIndex: phoneIndex,
-            userName: userName
-          }),
-        });
+    // Create temporary message object for immediate display
+    const tempMessage = {
+      id: `temp_${Date.now()}`,
+      from_me: true,
+      text: { body: messageText },
+      createdAt: new Date().toISOString(),
+      type: 'text',
+      phoneIndex: selectedContact?.phoneIndex ?? 0,
+      chat_id: selectedChatId,
+      from_name: userData?.name || '',
+      timestamp: Math.floor(Date.now() / 1000)
+    };
+
+    console.log('Current messages in localStorage:', getMessagesFromLocalStorage(selectedChatId));
+  
+    const currentMessages = getMessagesFromLocalStorage(selectedChatId) || [];
+    console.log('Retrieved current messages from localStorage:', currentMessages.length, 'messages');
     
-        if (!response.ok) {
-          throw new Error('Failed to send message');
-        }
-        const now = new Date();
-        const data = await response.json();
-        console.log('response:', data);
+    const updatedMessages = [...currentMessages, tempMessage];
+    console.log('Adding new message to localStorage. Total messages:', updatedMessages.length);
+    
+    storeMessagesInLocalStorage(selectedChatId, updatedMessages);
+    console.log('Messages stored in localStorage successfully');
+
+    // Update UI immediately
+    setMessages(prevMessages => [
+      ...prevMessages, 
+      { 
+        ...tempMessage, 
+        createdAt: new Date(tempMessage.createdAt).getTime() 
+      } as unknown as Message
+    ]);
+  
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error('No authenticated user');
+  
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) throw new Error('No user document found');
+  
+      const dataUser = docUserSnapshot.data();
+      companyId = dataUser.companyId;
+      const phoneIndex = selectedContact?.phoneIndex ?? 0;
+      const userName = dataUser.name || dataUser.email || '';
+  
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) throw new Error('No company document found');
+  
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+  
+      if (messageMode === 'privateNote') {
+        handleAddPrivateNote(messageText);
+        return;
+      }
+  
+      // Send message to API
+      const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${selectedChatId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: messageText,
+          quotedMessageId: replyToMessage?.id || null,
+          phoneIndex,
+          userName
+        }),
+      });
+  
+      if (!response.ok) throw new Error('Failed to send message');
+  
+      const now = new Date();
+      const data = await response.json();
+      console.log('response:', data);
+  
+      // Update contacts list
+      setContacts(prevContacts => 
+        prevContacts.map(contact => 
+          contact.id === selectedContact?.id 
+            ? updateContactWithNewMessage(contact, messageText, now, phoneIndex)
+            : contact
+        )
+      );
+  
+      // Handle special case for company 0123
+      if (companyId === '0123' && selectedContact?.id) {
+        const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
+        const contactSnapshot = await getDoc(contactRef);
         
-        // Update the local state
-        setContacts(prevContacts => 
-          prevContacts.map(contact => 
-            contact.id === selectedContact.id 
-              ? updateContactWithNewMessage(contact, newMessage, now,phoneIndex)
-              : contact
-          )
-        );
-    
-        // Add "stop bot" tag for companyId 0123
-        if (companyId === '0123' && selectedContact?.id) {
-          const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
-          
-          // Get current contact data
-          const contactSnapshot = await getDoc(contactRef);
-          if (contactSnapshot.exists()) {
-            const currentTags = contactSnapshot.data().tags || [];
-            
-            // Only add "stop bot" if it's not already present
-            if (!currentTags.includes('stop bot')) {
-              await updateDoc(contactRef, {
-                tags: arrayUnion('stop bot'),
-                last_message: {
-                  text: { body: newMessage },
-                  chat_id: selectedContact.chat_id || '',
-                  timestamp: Math.floor(Date.now() / 1000),
-                  id: selectedContact.last_message?.id || `temp_${now.getTime()}`,
-                  from_me: true,
-                  type: 'text',
-                  phoneIndex: phoneIndex,
-                }
-              });
-              
-              // Update local state to reflect the new tag
-              setContacts(prevContacts =>
-                prevContacts.map(contact =>
-                  contact.id === selectedContact.id
-                    ? { ...contact, tags: [...(contact.tags || []), 'stop bot'] }
-                    : contact
-                )
-              );
-            } else {
-              // If "stop bot" tag already exists, just update the last message
-              await updateDoc(contactRef, {
-                last_message: {
-                  text: { body: newMessage },
-                  chat_id: selectedContact.chat_id || '',
-                  timestamp: Math.floor(Date.now() / 1000),
-                  id: selectedContact.last_message?.id || `temp_${now.getTime()}`,
-                  from_me: true,
-                  type: 'text',
-                  phoneIndex: phoneIndex,
-                }
-              });
-            }
-          }
-        } else {
-          // Original update for non-0123 companies
-          const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
-          const updatedLastMessage: Message = {
-            text: { body: newMessage },
+        if (contactSnapshot.exists()) {
+          const currentTags = contactSnapshot.data().tags || [];
+          const updatedLastMessage = {
+            text: { body: messageText },
             chat_id: selectedContact.chat_id || '',
-            timestamp: Math.floor(Date.now() / 1000),
+            timestamp: Math.floor(now.getTime() / 1000),
             id: selectedContact.last_message?.id || `temp_${now.getTime()}`,
             from_me: true,
             type: 'text',
-            phoneIndex: phoneIndex,
+            phoneIndex,
           };
-          
-          await updateDoc(contactRef, {
-            last_message: updatedLastMessage
-          });
+  
+          if (!currentTags.includes('stop bot')) {
+            await updateDoc(contactRef, {
+              tags: arrayUnion('stop bot'),
+              last_message: updatedLastMessage
+            });
+            
+            setContacts(prevContacts =>
+              prevContacts.map(contact =>
+                contact.id === selectedContact.id
+                  ? { ...contact, tags: [...(contact.tags || []), 'stop bot'] }
+                  : contact
+              )
+            );
+          } else {
+            await updateDoc(contactRef, { last_message: updatedLastMessage });
+          }
         }
-    
-        console.log('Message sent successfully:', data);
-        fetchMessagesBackground(selectedChatId!, data2.apiToken);
-      } catch (error) {
-        console.error('Error sending message:', error);
-        toast.error("Failed to send message");
+      } else {
+        // Update for non-0123 companies
+        const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact?.id);
+        const updatedLastMessage: Message = {
+          text: { body: messageText },
+          chat_id: selectedContact?.chat_id || '',
+          timestamp: Math.floor(now.getTime() / 1000),
+          id: selectedContact?.last_message?.id || `temp_${now.getTime()}`,
+          from_me: true,
+          type: 'text',
+          phoneIndex,
+        };
+        
+        await updateDoc(contactRef, { last_message: updatedLastMessage });
       }
-    }
+  
+      // Fetch updated messages and update local storage
+      fetchMessagesBackground(selectedChatId, data2.apiToken);
 
+      // After successful API call
+      console.log('Message sent successfully to API');
+
+      // Verify local storage was updated
+      const storedMessages = getMessagesFromLocalStorage(selectedChatId);
+      console.log('Current state of localStorage after API call:', {
+        messageCount: storedMessages?.length || 0,
+        lastMessage: storedMessages?.[storedMessages.length - 1]
+      });
+  
+    } catch (error) {
+      console.error('Error sending message:', error);
+      toast.error("Failed to send message");
+      
+      // Remove temporary message from local storage and UI if send failed
+      console.log('Message send failed, removing temporary message from localStorage');
+      const currentMessages = getMessagesFromLocalStorage(selectedChatId) || [];
+      const filteredMessages = currentMessages.filter(msg => msg.id !== tempMessage.id);
+      storeMessagesInLocalStorage(selectedChatId, filteredMessages);
+      
+      // Verify removal
+      const updatedStoredMessages = getMessagesFromLocalStorage(selectedChatId);
+      console.log('LocalStorage state after removing failed message:', {
+        messageCount: updatedStoredMessages?.length || 0,
+        tempMessageStillExists: updatedStoredMessages?.some(msg => msg.id === tempMessage.id)
+      });
+
+      setMessages(prevMessages => prevMessages.filter(msg => msg.id !== tempMessage.id));
+    }
   };
 
   
@@ -3326,9 +3620,31 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
 
   const handleBinaTag = async (requestType: string, phone: string, first_name: string, phoneIndex: number) => {
     console.log('Request Payload:', JSON.stringify({ requestType, phone, first_name, phoneIndex }));
-    
+    const user = getAuth().currentUser;
+    if (!user) {
+      console.error("User not authenticated");
+      setError("User not authenticated");
+      return;
+    }
+    const docUserRef = doc(firestore, 'user', user?.email!);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const dataUser = docUserSnapshot.data();
+    const companyId = dataUser.companyId;
+    const docRef = doc(firestore, 'companies', companyId);
+    const docSnapshot = await getDoc(docRef);
+    if (!docSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const data2 = docSnapshot.data();
+    const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+
     try {
-        const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/bina/tag', {
+        const response = await fetch(`${baseUrl}/api/bina/tag`, {
             method: 'POST', // Ensure this is set to POST
             headers: {
                 'Content-Type': 'application/json',
@@ -3354,9 +3670,30 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
 
 const handleEdwardTag = async (requestType: string, phone: string, first_name: string, phoneIndex: number) => {
   console.log('Request Payload:', JSON.stringify({ requestType, phone, first_name, phoneIndex }));
-  
+  const user = getAuth().currentUser;
+  if (!user) {
+    console.error("User not authenticated");
+    setError("User not authenticated");
+    return;
+  }
+  const docUserRef = doc(firestore, 'user', user?.email!);
+  const docUserSnapshot = await getDoc(docUserRef);
+  if (!docUserSnapshot.exists()) {
+    console.log('No such document!');
+    return;
+  }
+  const dataUser = docUserSnapshot.data();
+  const companyId = dataUser.companyId;
+  const docRef = doc(firestore, 'companies', companyId);
+  const docSnapshot = await getDoc(docRef);
+  if (!docSnapshot.exists()) {
+    console.log('No such document!');
+    return;
+  }
+  const data2 = docSnapshot.data();
+  const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
   try {
-      const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/edward/tag', {
+      const response = await fetch(`${baseUrl}/api/edward/tag`, {
           method: 'POST', // Ensure this is set to POST
           headers: {
               'Content-Type': 'application/json',
@@ -3566,6 +3903,14 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
     }
     const userData = docUserSnapshot.data();
     const companyId = userData.companyId;
+    const docRef = doc(firestore, 'companies', companyId);
+    const docSnapshot = await getDoc(docRef);
+    if (!docSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const data2 = docSnapshot.data();
+    const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
 
     // Special handling for company '0123'
     if (companyId === '0123') {
@@ -3605,6 +3950,10 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
 
         console.log(`Employee tag updated to ${tagName} for contact ${contact.id}`);
         toast.success(`Contact reassigned to ${tagName}`);
+
+        // Update employee assigned contacts and quota leads
+        console.log('Updating employee assignments and quota...');
+        await updateEmployeeAssignedContacts();
 
         // Send assignment notification for the new employee
         await sendAssignmentNotification(tagName, contact);
@@ -3659,7 +4008,7 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
       // If this is a trigger tag, call the follow-up API
       if (matchingTemplate) {
         try {
-          const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/tag/followup', {
+          const response = await fetch(`${baseUrl}/api/tag/followup`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -3701,6 +4050,8 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
         // Check if the tag is an employee's name and send assignment notification
         const employee = employeeList.find(emp => emp.name === tagName);
         if (employee) {
+          console.log('Employee tag detected, updating assignments and quota...');
+          await updateEmployeeAssignedContacts();
           await sendAssignmentNotification(tagName, contact);
         }
       }
@@ -3813,7 +4164,28 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
       const chatId = `${phoneNumber.replace(/[^\d]/g, '')}@c.us`;
       console.log('Employee Phone Number:', phoneNumber); // New log
       console.log('Formatted Chat ID:', chatId); // New log
-
+      const user = getAuth().currentUser;
+      if (!user) {
+        console.error("User not authenticated");
+        setError("User not authenticated");
+        return;
+      }
+      const docUserRef = doc(firestore, 'user', user?.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       let userPhoneIndex = userData?.phone >= 0 ? userData?.phone : 0;
       if (userPhoneIndex === -1) {
         userPhoneIndex = 0;
@@ -3821,14 +4193,14 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
       let url;
       let requestBody;
       if (companyData.v2 === true) {
-        url = `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${chatId}`;
+        url = `${baseUrl}/api/v2/messages/text/${companyId}/${chatId}`;
         requestBody = { 
           message,
           phoneIndex: userPhoneIndex,
           userName: userData.name || ''
         };
       } else {
-        url = `https://mighty-dane-newly.ngrok-free.app/api/messages/text/${chatId}/${companyData.whapiToken}`;
+        url = `${baseUrl}/api/messages/text/${chatId}/${companyData.whapiToken}`;
         requestBody = { message };
       }
       console.log('API URL:', url); // New log
@@ -3991,15 +4363,36 @@ const sendWhatsAppMessage = async (phoneNumber: string, message: string, company
     if (userPhoneIndex === -1) {
       userPhoneIndex = 0;
     }
-
+    const user = getAuth().currentUser;
+    if (!user) {
+      console.error("User not authenticated");
+      setError("User not authenticated");
+      return;
+    }
+    const docUserRef = doc(firestore, 'user', user?.email!);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const dataUser = docUserSnapshot.data();
+    const companyId = dataUser.companyId;
+    const docRef = doc(firestore, 'companies', companyId);
+    const docSnapshot = await getDoc(docRef);
+    if (!docSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const data2 = docSnapshot.data();
+    const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
     console.log('Sending WhatsApp message:', {
-      url: `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${chatId}`,
+      url: `${baseUrl}/api/v2/messages/text/${companyId}/${chatId}`,
       phoneIndex: userPhoneIndex, // Using adjusted phone index
       userName,
       chatId
     });
 
-    const response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${chatId}`, {
+    const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${chatId}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -4705,7 +5098,15 @@ const sortContacts = (contacts: Contact[]) => {
   
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-  
+
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       for (const contact of selectedContactsForForwarding) {
         for (const message of selectedMessages) {
           try {
@@ -4742,7 +5143,7 @@ const sortContacts = (contacts: Contact[]) => {
               );
             } else {
               // For text messages, use the existing API call
-              const response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${contact.chat_id}`, {
+              const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${contact.chat_id}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -4896,11 +5297,11 @@ const sortContacts = (contacts: Contact[]) => {
       if (!docSnapshot.exists()) throw new Error('No company document found');
   
       const companyData = docSnapshot.data();
-  
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       let response;
       try {
         console.log(`Attempting to send image via API. PhoneIndex: ${phoneIndex}`);
-        response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/image/${companyId}/${chatId}`, {
+        response = await fetch(`${baseUrl}/api/v2/messages/image/${companyId}/${chatId}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -4954,11 +5355,11 @@ const sortContacts = (contacts: Contact[]) => {
       if (!docSnapshot.exists()) throw new Error('No company document found');
   
       const companyData = docSnapshot.data();
-  
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       let response;
       try {
         console.log(`Attempting to send document via API. PhoneIndex: ${phoneIndex}`);
-        response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/document/${companyId}/${chatId}`, {
+        response = await fetch(`${baseUrl}/api/v2/messages/document/${companyId}/${chatId}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -5169,7 +5570,12 @@ interface Template {
       }
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) throw new Error('No company document found');
   
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       // Check if tag is a trigger tag
       const templatesRef = collection(firestore, 'companies', companyId, 'followUpTemplates');
       const templatesSnapshot = await getDocs(templatesRef);
@@ -5196,7 +5602,7 @@ interface Template {
       // If this was a trigger tag, call the follow-up API to remove the template
       if (matchingTemplate) {
         try {
-          const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/tag/followup', {
+          const response = await fetch(`${baseUrl}/api/tag/followup`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -5351,10 +5757,15 @@ interface Template {
 
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) throw new Error('No company document found');
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       const chatId = editingMessage.id.split('_')[1];
       console.log('editing this chat id', chatId);
       const response = await axios.put(
-        `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/${companyId}/${chatId}/${editingMessage.id}`,
+        `${baseUrl}/api/v2/messages/${companyId}/${chatId}/${editingMessage.id}`,
         { newMessage: editedMessageText,
           phoneIndex: userData.phoneIndex || 0
          }
@@ -5706,6 +6117,11 @@ const toggleBot = async () => {
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
       console.log(`Company ID: ${companyId}`);
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) throw new Error('No company document found');
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       const chatIds = [selectedChatId]; // Use selectedChatId directly
       const processedMessages = [selectedContact].map(contact => {
         let processedMessage = blastMessage;
@@ -5746,7 +6162,7 @@ const toggleBot = async () => {
       console.log('Sending scheduledMessageData:', JSON.stringify(scheduledMessageData, null, 2));
 
       // Make API call to schedule the message
-      const response = await axios.post(`https://mighty-dane-newly.ngrok-free.app/api/schedule-message/${companyId}`, scheduledMessageData);
+      const response = await axios.post(`${baseUrl}/api/schedule-message/${companyId}`, scheduledMessageData);
 
       console.log(`Scheduled message added. Document ID: ${response.data.id}`);
       toast.success(`Blast message scheduled successfully.`);
@@ -5813,7 +6229,7 @@ const toggleBot = async () => {
 
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-
+      
       const companyRef = doc(firestore, 'companies', companyId);
       const companySnapshot = await getDoc(companyRef);
       if (!companySnapshot.exists()) {
@@ -5822,6 +6238,7 @@ const toggleBot = async () => {
       }
 
       const companyData = companySnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       const isV2 = companyData.v2 || false;
       const whapiToken = companyData.whapiToken || '';
       const phone = userData.phoneNumber.split('+')[1];
@@ -5851,7 +6268,7 @@ const toggleBot = async () => {
       console.log('Sending scheduledMessageData:', JSON.stringify(scheduledMessageData, null, 2));
   
       // Make API call to schedule the message
-      const response = await axios.post(`https://mighty-dane-newly.ngrok-free.app/api/schedule-message/${companyId}`, scheduledMessageData);
+      const response = await axios.post(`${baseUrl}/api/schedule-message/${companyId}`, scheduledMessageData);
 
       console.log(`Reminder scheduled. Document ID: ${response.data.id}`);
 
@@ -5946,9 +6363,10 @@ console.log(prompt);
       }
   
       const companyData = companySnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       const assistantId = companyData.assistantId;
   
-      const res = await axios.get(`https://mighty-dane-newly.ngrok-free.app/api/assistant-test/`, {
+      const res = await axios.get(`${baseUrl}/api/assistant-test/`, {
         params: {
           message: messageText,
           email: user.email!,
@@ -6013,9 +6431,16 @@ console.log(prompt);
       const employeeSnapshot = await getDocs(employeeRef);
       const employeeList = employeeSnapshot.docs.map(doc => ({ 
         id: doc.id, 
-        name: doc.data().name, 
-        quotaLeads: doc.data().quotaLeads || 0 
+        name: doc.data().name,
+        quotaLeads: doc.data().quotaLeads || 0,
+        assignedContacts: doc.data().assignedContacts || 0
       }));
+  
+      console.log('Current employee status:', employeeList.map(emp => ({
+        name: emp.name,
+        currentQuota: emp.quotaLeads,
+        currentAssigned: emp.assignedContacts
+      })));
   
       // Count assignments
       contactsSnapshot.forEach((doc) => {
@@ -6024,46 +6449,61 @@ console.log(prompt);
           contact.tags.forEach((tag: string) => {
             const employee = employeeList.find(emp => emp.name.toLowerCase() === tag.toLowerCase());
             if (employee) {
-              employeeAssignments[employee.quotaLeads] = (employeeAssignments[employee.quotaLeads] || 0) + 1;
+              employeeAssignments[employee.id] = (employeeAssignments[employee.id] || 0) + 1;
+              console.log(`Found assignment for ${employee.name}: Current count = ${employeeAssignments[employee.id]}`);
             }
           });
         }
       });
   
-      console.log('Employee assignments before update:', employeeAssignments);
+      console.log('New assignment counts:', Object.entries(employeeAssignments).map(([id, count]) => ({
+        name: employeeList.find(emp => emp.id === id)?.name,
+        newAssignmentCount: count
+      })));
   
       // Update employee documents
-      const employeeUpdates = Object.entries(employeeAssignments).map(async ([employeeId, count]) => {
-        const employeeDocRef = doc(firestore, `companies/${companyId}/employee`, employeeId);
-        const employeeDoc = await getDoc(employeeDocRef);
+      const employeeUpdates = employeeList.map(async (employee) => {
+        const newAssignedCount = employeeAssignments[employee.id] || 0;
+        const employeeDocRef = doc(firestore, `companies/${companyId}/employee`, employee.id);
+        
+        // If assigned contacts increased, decrease quota leads
+        const assignedDiff = newAssignedCount - employee.assignedContacts;
+        const newQuotaLeads = Math.max(0, employee.quotaLeads - (assignedDiff > 0 ? assignedDiff : 0));
+        
+        console.log(`
+  === Update for ${employee.name} ===
+  Current assigned contacts: ${employee.assignedContacts}
+  New assigned contacts: ${newAssignedCount}
+  Difference: ${assignedDiff}
+  Current quota leads: ${employee.quotaLeads}
+  New quota leads: ${newQuotaLeads}
+  Quota decreased by: ${employee.quotaLeads - newQuotaLeads}
+        `);
   
-        if (employeeDoc.exists()) {
-          const currentData = employeeDoc.data();
-          const currentQuotaLeads = currentData.quotaLeads || 0;
-          const currentAssignedContacts = currentData.assignedContacts || 0;
-          
-          // Calculate the difference in assigned contacts
-          const assignedContactsDiff = count - currentAssignedContacts;
-          
-          // Calculate new quotaLeads
-          const newQuotaLeads = Math.max(0, currentQuotaLeads - assignedContactsDiff);
-          
-          // Update assigned contacts and quotaLeads
-          await updateDoc(employeeDocRef, {
-            assignedContacts: count,
-            quotaLeads: newQuotaLeads
-          });
-          console.log(`Updated ${currentData.name}: Assigned contacts from ${currentAssignedContacts} to ${count}, Quota leads from ${currentQuotaLeads} to ${newQuotaLeads}`);
-        } else {
-          console.error(`Employee document for ID ${employeeId} not found`);
+        if (assignedDiff > 0) {
+          console.log(`⚠️ ${employee.name}'s quota will decrease because they were assigned ${assignedDiff} new contact(s)`);
         }
+  
+        await updateDoc(employeeDocRef, {
+          assignedContacts: newAssignedCount,
+          quotaLeads: newQuotaLeads
+        });
+        
+        // Verify the update
+        const updatedDoc = await getDoc(employeeDocRef);
+        const updatedData = updatedDoc.data();
+        console.log(`
+  ✅ Update confirmed for ${employee.name}:
+  Final assigned contacts: ${updatedData?.assignedContacts}
+  Final quota leads: ${updatedData?.quotaLeads}
+        `);
       });
   
       await Promise.all(employeeUpdates);
-  
-      console.log('Employee assigned contacts and quota leads updated successfully');
+      console.log('🎉 Employee assigned contacts and quota leads update completed');
+      
     } catch (error) {
-      console.error('Error updating employee assigned contacts and quota leads:', error);
+      console.error('❌ Error updating employee assigned contacts and quota leads:', error);
       toast.error('Failed to update employee assigned contacts and quota leads.');
     }
   };

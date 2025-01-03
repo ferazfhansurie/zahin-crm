@@ -94,6 +94,7 @@ function Main() {
     englishProficiency?:string | null;
     passport?:string | null;
     customFields?: { [key: string]: string };
+    notes?: string | null;  // Add this line
   }
   
   interface Employee {
@@ -195,6 +196,7 @@ function Main() {
   const [excludedTags, setExcludedTags] = useState<string[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [showColumnsModal, setShowColumnsModal] = useState(false);
   const [exportModalContent, setExportModalContent] = useState<React.ReactNode | null>(null);
   const [newContact, setNewContact] = useState({
       contactName: '',
@@ -209,7 +211,8 @@ function Main() {
       expiryDate:'',
       vehicleNumber:'',
       ic:'',
-      status: 'New' as 'New' | 'Reach' | 'Qualified' | 'Disqualified' | 'Negotiating' | 'Won' | 'Lost',
+      status:'New',
+      notes:'',
   });
   const [total, setTotal] = useState(0);
   const [fetched, setFetched] = useState(0);
@@ -260,7 +263,15 @@ function Main() {
   const [sleepAfterMessages, setSleepAfterMessages] = useState(20);
   const [sleepDuration, setSleepDuration] = useState(5);
   const [showScheduledMessages, setShowScheduledMessages] = useState<boolean>(true);
- 
+  // First, add a state to track visible columns
+  const [visibleColumns, setVisibleColumns] = useState<{ [key: string]: boolean }>({
+    contact: true,
+    phone: true,
+    tags: true,
+    points: false,
+    notes: true,
+    actions: true,
+  });
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -355,8 +366,12 @@ function Main() {
   
       // Include empty tags in the tagsToRemove array
       const allTagsToRemove = [...tagsToRemove, ""];
-  
-      const response = await axios.post('https://mighty-dane-newly.ngrok-free.app/api/contacts/remove-tags', {
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) throw new Error('No company document found');
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      const response = await axios.post(`${baseUrl}/api/contacts/remove-tags`, {
         companyId,
         contactPhone: contact.phone,
         tagsToRemove: allTagsToRemove
@@ -781,7 +796,7 @@ const handleSaveNewContact = async () => {
       expiryDate: newContact.expiryDate,
       vehicleNumber: newContact.vehicleNumber,
       ic: newContact.ic,
-      status: newContact.status || 'New',
+      notes: '',  // Add this line
     };
 
     // Add new contact to Firebase
@@ -804,6 +819,7 @@ const handleSaveNewContact = async () => {
       vehicleNumber: '',
       ic: '',
       status: 'New',
+      notes: '',  // Add this line
     });
 
     await fetchContacts();
@@ -1191,7 +1207,11 @@ const handleConfirmDeleteTag = async () => {
       }
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-  
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) throw new Error('No company document found');
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       // Special handling for company '0123'
       if (companyId === '0123') {
         // Check if the new tag is an employee name
@@ -1299,7 +1319,7 @@ const handleConfirmDeleteTag = async () => {
   
       // If this is a trigger tag, call the follow-up API
       if (matchingTemplate) {
-        const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/tag/followup', {
+        const response = await fetch(`${baseUrl}/api/tag/followup`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1357,7 +1377,8 @@ const handleConfirmDeleteTag = async () => {
   
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-  
+ 
+   
       if (!companyId || typeof companyId !== 'string') {
         console.error('Invalid companyId:', companyId);
         throw new Error('Invalid companyId');
@@ -1403,7 +1424,7 @@ const handleConfirmDeleteTag = async () => {
         return;
       }
       const companyData = docSnapshot.data();
-  
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       let message = `Hi ${assignedEmployee.employeeId} ${assignedEmployee.name},\n\nA new contact has been assigned to you:\n\nName: ${contact.contactName || contact.firstName || 'N/A'}\nPhone: ${contact.phone}\n\nKindly login to https://www.zahintravel.chat/login to chat with the contact.\n\nThank you.`;
 
       let phoneIndex;
@@ -1427,12 +1448,12 @@ const handleConfirmDeleteTag = async () => {
       let requestBody;
       if (companyData.v2 === true) {
         console.log("v2 is true");
-        url = `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${employeePhone}`;
+        url = `${baseUrl}/api/v2/messages/text/${companyId}/${employeePhone}`;
         requestBody = { message, 
           phoneIndex  };
         } else {
         console.log("v2 is false");
-        url = `https://mighty-dane-newly.ngrok-free.app/api/messages/text/${employeePhone}/${companyData.whapiToken}`;
+        url = `${baseUrl}/api/messages/text/${employeePhone}/${companyData.whapiToken}`;
         requestBody = { message, 
           phoneIndex  };
       }
@@ -1528,6 +1549,11 @@ const handleConfirmDeleteTag = async () => {
 
       const userData = docUserSnapshot.data();
       const companyId = userData?.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) throw new Error('No company document found');
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       if (!companyId) {
         console.log('Company ID not found');
         setFetching(false);
@@ -1537,7 +1563,7 @@ const handleConfirmDeleteTag = async () => {
 
       console.log(`Initiating sync for company ID: ${companyId}`);
       // Call the new API endpoint
-      const response = await axios.post(`https://mighty-dane-newly.ngrok-free.app/api/sync-contacts/${companyId}`);
+      const response = await axios.post(`${baseUrl}/api/sync-contacts/${companyId}`);
 
       if (response.status === 200 && response.data.success) {
         console.log('Contact synchronization started successfully');
@@ -1573,7 +1599,11 @@ const handleConfirmDeleteTag = async () => {
   
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-  
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) throw new Error('No company document found');
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       const contactRef = doc(firestore, `companies/${companyId}/contacts`, contactId);
       const contactDoc = await getDoc(contactRef);
       const contactData = contactDoc.data();
@@ -1602,7 +1632,7 @@ const handleConfirmDeleteTag = async () => {
     for (const template of matchingTemplates) {
       try {
         const phoneNumber = contactId.replace(/\D/g, '');
-        const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/tag/followup', {
+        const response = await fetch(`${baseUrl}/api/tag/followup`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1826,6 +1856,54 @@ const chatId = tempphone + "@c.us"
         }
         const userData = docUserSnapshot.data();
         const companyId = userData.companyId;
+        const docRef = doc(firestore, 'companies', companyId);
+        const docSnapshot = await getDoc(docRef);
+        if (!docSnapshot.exists()) throw new Error('No company document found');
+        const companyData = docSnapshot.data();
+        const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+
+        // Format the contact's phone number for comparison with chatIds
+        const contactChatId = currentContact.phone?.replace(/\D/g, '') + "@s.whatsapp.net";
+  
+        // Check and delete scheduled messages containing this contact
+        const scheduledMessagesRef = collection(firestore, `companies/${companyId}/scheduledMessages`);
+        const scheduledSnapshot = await getDocs(scheduledMessagesRef);
+        
+        const deletePromises = scheduledSnapshot.docs.map(async (doc) => {
+          const messageData = doc.data();
+          if (messageData.chatIds?.includes(contactChatId)) {
+            if (messageData.chatIds.length === 1) {
+              // If this is the only recipient, delete the entire scheduled message
+              try {
+                await axios.delete(`https://mighty-dane-newly.ngrok-free.app/api/schedule-message/${companyId}/${doc.id}`);
+                console.log(`Deleted scheduled message ${doc.id}`);
+              } catch (error) {
+                console.error(`Error deleting scheduled message ${doc.id}:`, error);
+              }
+            } else {
+              // If there are other recipients, remove this contact from the recipients list
+              const updatedChatIds = messageData.chatIds.filter((id: string) => id !== contactChatId);
+              const updatedMessages = messageData.messages?.filter((msg: any) => msg.chatId !== contactChatId) || [];
+              
+              try {
+                await axios.put(
+                  `https://mighty-dane-newly.ngrok-free.app/api/schedule-message/${companyId}/${doc.id}`,
+                  {
+                    ...messageData,
+                    chatIds: updatedChatIds,
+                    messages: updatedMessages
+                  }
+                );
+                console.log(`Updated scheduled message ${doc.id}`);
+              } catch (error) {
+                console.error(`Error updating scheduled message ${doc.id}:`, error);
+              }
+            }
+          }
+        });
+
+        // Wait for all scheduled message updates/deletions to complete
+        await Promise.all(deletePromises);
   
         // Check for active templates
         const templatesRef = collection(firestore, `companies/${companyId}/followUpTemplates`);
@@ -1845,7 +1923,7 @@ const chatId = tempphone + "@c.us"
           
           for (const template of activeTemplates) {
             try {
-              const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/tag/followup', {
+              const response = await fetch(`${baseUrl}/api/tag/followup`, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -1878,10 +1956,13 @@ const chatId = tempphone + "@c.us"
   
         // Update local state
         setContacts(prevContacts => prevContacts.filter(contact => contact.id !== currentContact.id));
+        setScheduledMessages(prev => prev.filter(msg => !msg.chatIds.includes(contactChatId)));
         setDeleteConfirmationModal(false);
         setCurrentContact(null);
-        toast.success("Contact deleted successfully!");
+        
+        toast.success("Contact and associated scheduled messages deleted successfully!");
         await fetchContacts();
+        await fetchScheduledMessages(); // Refresh scheduled messages list
       } catch (error) {
         console.error('Error deleting contact:', error);
         toast.error("An error occurred while deleting the contact.");
@@ -1956,6 +2037,7 @@ const chatId = tempphone + "@c.us"
           'state', 'postalCode', 'website', 'dnd', 'dndSettings', 'tags', 
           'source', 'country', 'companyName', 'branch', 
           'expiryDate', 'vehicleNumber', 'points', 'IC', 'assistantId', 'threadid',
+          'notes',  // Add this line
         ];
   
         fieldsToUpdate.forEach(field => {
@@ -2187,6 +2269,7 @@ const sendBlastMessage = async () => {
       return;
     }
     const companyData = companySnapshot.data();
+    const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
     const isV2 = companyData.v2 || false;
     const whapiToken = companyData.whapiToken || '';
 
@@ -2245,7 +2328,7 @@ const sendBlastMessage = async () => {
     console.log('Sending scheduledMessageData:', JSON.stringify(scheduledMessageData, null, 2));
 
     // Make API call to schedule the messages
-    const response = await axios.post(`https://mighty-dane-newly.ngrok-free.app/api/schedule-message/${companyId}`, scheduledMessageData);
+    const response = await axios.post(`${baseUrl}/api/schedule-message/${companyId}`, scheduledMessageData);
 
     console.log(`Scheduled messages added. Document ID: ${response.data.id}`);
 
@@ -2307,7 +2390,8 @@ const sendBlastMessage = async () => {
       const phoneNumber = id.split('+')[1];
       const chat_id = phoneNumber+"@s.whatsapp.net"
       const companyData = docSnapshot.data();
-      const response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/messages/image/${companyData.whapiToken}`, {
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      const response = await fetch(`${baseUrl}/api/messages/image/${companyData.whapiToken}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2352,7 +2436,8 @@ const sendBlastMessage = async () => {
       const phoneNumber = id.split('+')[1];
       const chat_id = phoneNumber+"@s.whatsapp.net"
       const companyData = docSnapshot.data();
-      const response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/messages/document/${companyData.whapiToken}`, {
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      const response = await fetch(`${baseUrl}/api/messages/document/${companyData.whapiToken}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2581,6 +2666,7 @@ const sendBlastMessage = async () => {
       }
   
       const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       const accessToken = companyData.ghl_accessToken;
       const whapiToken = companyData.whapiToken;
       const phoneNumber = id.split('+')[1];
@@ -2603,7 +2689,7 @@ const sendBlastMessage = async () => {
       } else {
         // Handle non-v2 users
         const response = await axios.post(
-          `https://mighty-dane-newly.ngrok-free.app/api/messages/text/${chat_id}/${whapiToken}`,
+          `${baseUrl}/api/messages/text/${chat_id}/${whapiToken}`,
           {
             contactId: id,
             message: blastMessage,
@@ -2754,9 +2840,13 @@ const sendBlastMessage = async () => {
 
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) throw new Error('No company document found');
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       // Call the backend API to delete the scheduled message
-      const response = await axios.delete(`https://mighty-dane-newly.ngrok-free.app/api/schedule-message/${companyId}/${messageId}`);
+      const response = await axios.delete(`${baseUrl}/api/schedule-message/${companyId}/${messageId}`);
       if (response.status === 200) {
         setScheduledMessages(scheduledMessages.filter(msg => msg.id !== messageId));
         toast.success("Scheduled message deleted successfully!");
@@ -2794,7 +2884,11 @@ const sendBlastMessage = async () => {
 
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) throw new Error('No company document found');
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       // Upload new media/document files (existing code)
       let newMediaUrl = currentScheduledMessage.mediaUrl;
       if (editMediaFile) {
@@ -2866,7 +2960,7 @@ const sendBlastMessage = async () => {
 
       // Send PUT request to update the scheduled message
       const response = await axios.put(
-        `https://mighty-dane-newly.ngrok-free.app/api/schedule-message/${companyId}/${currentScheduledMessage.id}`,
+        `${baseUrl}/api/schedule-message/${companyId}/${currentScheduledMessage.id}`,
         updatedMessageData
       );
 
@@ -3004,9 +3098,9 @@ const sendBlastMessage = async () => {
   };
 
   const handleDownloadSampleCsv = () => {
-    const sampleCsvContent = `contactName,lastName,phone,email,companyName,address1,branch,expiryDate,vehicleNumber,ic,points
-John,Doe,60123456789,john@example.com,ABC Company,123 Main St,Branch A,2023-12-31,ABC1234,123456-78-9012,100
-Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,XYZ5678,987654-32-1098,200`;
+    const sampleCsvContent = `contactName,lastName,phone,email,companyName,address1,branch,expiryDate,vehicleNumber,ic,points,notes
+John,Doe,60123456789,john@example.com,ABC Company,123 Main St,Branch A,2023-12-31,ABC1234,123456-78-9012,100,Notes for John
+Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,XYZ5678,987654-32-1098,200,Notes for Jane`;
 
     const blob = new Blob([sampleCsvContent], { type: 'text/csv;charset=utf-8' });
     saveAs(blob, 'sample_contacts.csv');
@@ -3047,6 +3141,7 @@ const getFilteredScheduledMessages = () => {
                 {/* Add Contact Button */}
                 <div className="w-full">
                   {/* Desktop view */}
+                 
                   <div className="hidden sm:flex sm:w-full sm:space-x-2">
                     <button 
                       className={`flex items-center justify-start p-2 !box bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 ${userRole === "3" ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -3854,7 +3949,70 @@ const getFilteredScheduledMessages = () => {
                         </button>
                       </span>
                     ))}
+                    
                   </div>
+                         {/* Add this Menu component */}
+                         <button 
+  onClick={() => setShowColumnsModal(true)}
+  className="inline-flex items-center p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg cursor-pointer transition-colors duration-200"
+>
+  <Lucide icon="Grid2x2" className="w-4 h-4 mr-1 text-gray-600 dark:text-gray-300" />
+  <span className="text-xs text-gray-700 dark:text-gray-300 whitespace-nowrap font-medium">
+    Show/Hide Columns
+  </span>
+</button>
+<Dialog open={showColumnsModal} onClose={() => setShowColumnsModal(false)}>
+  <div className="fixed inset-0 flex items-center justify-center p-4 bg-black bg-opacity-50">
+    <Dialog.Panel className="w-full max-w-sm p-6 bg-white dark:bg-gray-800 rounded-lg shadow-xl">
+      <Dialog.Title className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+        Show/Hide Columns
+      </Dialog.Title>
+      
+      <div className="space-y-3">
+        {Object.entries(visibleColumns).map(([column, isVisible]) => (
+          <div key={column} className="flex items-center px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
+            <input
+              type="checkbox"
+              checked={isVisible}
+              onChange={() => setVisibleColumns(prev => ({
+                ...prev,
+                [column]: !prev[column]
+              }))}
+              className="mr-2 rounded border-gray-300"
+              id={`column-${column}`}
+            />
+            <label 
+              htmlFor={`column-${column}`}
+              className="text-sm capitalize text-gray-700 dark:text-gray-300 cursor-pointer flex-grow"
+            >
+              {column}
+            </label>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-6 flex justify-end space-x-3">
+        <button
+          onClick={() => setShowColumnsModal(false)}
+          className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-gray-500"
+        >
+          Close
+        </button>
+        <button
+          onClick={() => {
+            setVisibleColumns(Object.keys(visibleColumns).reduce((acc, key) => ({
+              ...acc,
+              [key]: true
+            }), {}));
+          }}
+          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500"
+        >
+          Show All
+        </button>
+      </div>
+    </Dialog.Panel>
+  </div>
+</Dialog>
                 </div>
               </div>
               {showMassDeleteModal && (
@@ -3906,6 +4064,7 @@ const getFilteredScheduledMessages = () => {
               </div>
             </div>
           </div>
+          
           <div className="w-full flex-wrap">
             <div className="h-[calc(150vh-200px)] overflow-y-auto mb-4" ref={contactListRef}>
               <table className="w-full border-collapse hidden sm:table">
@@ -3921,13 +4080,27 @@ const getFilteredScheduledMessages = () => {
                         className="rounded border-gray-300"
                       />
                     </th>
-                    <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Contact</th>
-                    <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Phone</th>
-                    <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Tags</th>
-                    <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Points</th>
-                    <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Actions</th>
+                    {visibleColumns.contact && (
+                      <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Contact</th>
+                    )}
+                    {visibleColumns.phone && (
+                      <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Phone</th>
+                    )}
+                    {visibleColumns.tags && (
+                      <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Tags</th>
+                    )}
+                    {visibleColumns.points && (
+                      <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Points</th>
+                    )}
+                    {visibleColumns.notes && (
+                      <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Notes</th>
+                    )}
+                    {visibleColumns.actions && (
+                      <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Actions</th>
+                    )}
                   </tr>
                 </thead>
+                
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                   {currentContacts.map((contact, index) => {
                     const isSelected = selectedContacts.some((c) => c.phone === contact.phone);
@@ -3946,98 +4119,113 @@ const getFilteredScheduledMessages = () => {
                             className="rounded border-gray-300"
                           />
                         </td>
-                        <td className="p-4">
-                          <div className="flex items-center">
-                            {contact.profilePicUrl ? (
-                              <img 
-                                src={contact.profilePicUrl} 
-                                alt={contact.contactName || "Profile"} 
-                                className="w-8 h-8 rounded-full object-cover mr-3" 
-                              />
-                            ) : (
-                              <div className="w-8 h-8 mr-3 border-2 border-gray-500 dark:border-gray-400 rounded-full flex items-center justify-center">
-                                {contact.chat_id && contact.chat_id.includes('@g.us') ? (
-                                  <Lucide icon="Users" className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                                ) : (
-                                  <Lucide icon="User" className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                                )}
-                              </div>
-                            )}
-                            <span className="font-medium text-gray-900 dark:text-white">
-                              {contact.contactName ? (contact.lastName ? `${contact.contactName} ${contact.lastName}` : contact.contactName) : contact.phone}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="p-4 text-gray-600 dark:text-gray-400">
-                          {contact.phone ?? contact.source}
-                        </td>
-                        <td className="p-4">
-                          <div className="flex flex-wrap gap-2">
-                            {contact.tags && contact.tags.length > 0 ? (
-                              contact.tags.map((tag, index) => (
-                                <div key={index} className="relative group">
-                                  <span className={`px-2 py-1 text-xs font-semibold rounded-full inline-flex justify-center items-center ${
-                                    employeeNames.includes(tag.toLowerCase())
-                                      ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
-                                      : 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
-                                  }`}>
-                                    {tag.charAt(0).toUpperCase() + tag.slice(1)}
-                                  </span>
-                                  <button
-                                    className="absolute right-0 top-0 transform translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-red-500 hover:text-red-700"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleRemoveTag(contact.id!, tag);
-                                    }}
-                                  >
-                                    <div className="w-4 h-4 bg-red-600 hover:bg-red-800 dark:bg-red-600 dark:hover:bg-red-800 rounded-full flex items-center justify-center">
-                                      <Lucide 
-                                        icon="X" 
-                                        className="w-3 h-3 text-white" 
-                                      />
-                                    </div>
-                                  </button>
+                        {visibleColumns.contact && (
+                          <td className="p-4">
+                            <div className="flex items-center">
+                              {contact.profilePicUrl ? (
+                                <img 
+                                  src={contact.profilePicUrl} 
+                                  alt={contact.contactName || "Profile"} 
+                                  className="w-8 h-8 rounded-full object-cover mr-3" 
+                                />
+                              ) : (
+                                <div className="w-8 h-8 mr-3 border-2 border-gray-500 dark:border-gray-400 rounded-full flex items-center justify-center">
+                                  {contact.chat_id && contact.chat_id.includes('@g.us') ? (
+                                    <Lucide icon="Users" className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                                  ) : (
+                                    <Lucide icon="User" className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                                  )}
                                 </div>
-                              ))
-                            ) : (
-                              <span className="text-sm text-gray-500 dark:text-gray-400">No tags</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-4 text-gray-600 dark:text-gray-400">
-                          {contact.points || 0}
-                        </td>
-                        <td className="p-4">
-                          <div className="flex space-x-2">
-                            <button
-                              onClick={() => {
-                                setCurrentContact(contact);
-                                setEditContactModal(true);
-                              }}
-                              className="p-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
-                              title="View/Edit"
-                            >
-                              <Lucide icon="Eye" className="w-5 h-5" />
-                            </button>
-                            <button
-                              onClick={() => handleClick(contact.phone)}
-                              className="p-2 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300"
-                              title="Chat"
-                            >
-                              <Lucide icon="MessageSquare" className="w-5 h-5" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                setCurrentContact(contact);
-                                setDeleteConfirmationModal(true);
-                              }}
-                              className="p-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                              title="Delete"
-                            >
-                              <Lucide icon="Trash" className="w-5 h-5" />
-                            </button>
-                          </div>
-                        </td>
+                              )}
+                              <span className="font-medium text-gray-900 dark:text-white">
+                                {contact.contactName ? (contact.lastName ? `${contact.contactName} ${contact.lastName}` : contact.contactName) : contact.phone}
+                              </span>
+                            </div>
+                          </td>
+                        )}
+                        {visibleColumns.phone && (
+                          <td className="p-4 text-gray-600 dark:text-gray-400">
+                            {contact.phone ?? contact.source}
+                          </td>
+                        )}
+                        {visibleColumns.tags && (
+                          <td className="p-4">
+                            <div className="flex flex-wrap gap-2">
+                              {contact.tags && contact.tags.length > 0 ? (
+                                contact.tags.map((tag, index) => (
+                                  <div key={index} className="relative group">
+                                    <span className={`px-2 py-1 text-xs font-semibold rounded-full inline-flex justify-center items-center ${
+                                      employeeNames.includes(tag.toLowerCase())
+                                        ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
+                                        : 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
+                                    }`}>
+                                      {tag.charAt(0).toUpperCase() + tag.slice(1)}
+                                    </span>
+                                    <button
+                                      className="absolute right-0 top-0 transform translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-red-500 hover:text-red-700"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleRemoveTag(contact.id!, tag);
+                                      }}
+                                    >
+                                      <div className="w-4 h-4 bg-red-600 hover:bg-red-800 dark:bg-red-600 dark:hover:bg-red-800 rounded-full flex items-center justify-center">
+                                        <Lucide 
+                                          icon="X" 
+                                          className="w-3 h-3 text-white" 
+                                        />
+                                      </div>
+                                    </button>
+                                  </div>
+                                ))
+                              ) : (
+                                <span className="text-sm text-gray-500 dark:text-gray-400">No tags</span>
+                              )}
+                            </div>
+                          </td>
+                        )}
+                        {visibleColumns.points && (
+                          <td className="p-4 text-gray-600 dark:text-gray-400">
+                            {contact.points || 0}
+                          </td>
+                        )}
+                        {visibleColumns.notes && (
+                          <td className="p-4 text-gray-600 dark:text-gray-400">
+                            {contact.notes || '-'}
+                          </td>
+                        )}
+                        {visibleColumns.actions && (
+                          <td className="p-4">
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => {
+                                  setCurrentContact(contact);
+                                  setEditContactModal(true);
+                                }}
+                                className="p-2 text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300"
+                                title="View/Edit"
+                              >
+                                <Lucide icon="Eye" className="w-5 h-5" />
+                              </button>
+                              <button
+                                onClick={() => handleClick(contact.phone)}
+                                className="p-2 text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300"
+                                title="Chat"
+                              >
+                                <Lucide icon="MessageSquare" className="w-5 h-5" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setCurrentContact(contact);
+                                  setDeleteConfirmationModal(true);
+                                }}
+                                className="p-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                                title="Delete"
+                              >
+                                <Lucide icon="Trash" className="w-5 h-5" />
+                              </button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -4580,6 +4768,19 @@ const getFilteredScheduledMessages = () => {
         >
           Add New Field
         </button>
+        <div className="mt-4">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+            Notes
+          </label>
+          <textarea
+            className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 dark:bg-gray-700 dark:border-gray-600"
+            rows={3}
+            value={currentContact?.notes || ''}
+            onChange={(e) =>
+              setCurrentContact((prev) => ({ ...prev!, notes: e.target.value }))
+            }
+          />
+        </div>
       </div>
       <div className="flex justify-end mt-6">
         <button

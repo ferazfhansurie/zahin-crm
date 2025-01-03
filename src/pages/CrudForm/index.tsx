@@ -93,8 +93,12 @@ function Main() {
     quotaLeads: number;
     invoiceNumber: string | null;
     phone: number;
+    phone2?: number;
+    phone3?: number;
     imageUrl: string;
     weightage: number;
+    weightage2?: number;
+    weightage3?: number;
   }>({
     name: "",
     phoneNumber: "",
@@ -127,13 +131,22 @@ function Main() {
         quotaLeads: contact.quotaLeads || 0,
         invoiceNumber: contact.invoiceNumber || null,
         phone: contact.phone || -1,
+        ...(Object.keys(phoneNames).reduce((acc, index) => {
+          const phoneField = index === '0' ? 'phone' : `phone${parseInt(index) + 1}`;
+          const weightageField = index === '0' ? 'weightage' : `weightage${parseInt(index) + 1}`;
+          if (contact[phoneField as keyof typeof contact] !== undefined) {
+            acc[phoneField] = contact[phoneField as keyof typeof contact];
+            acc[weightageField] = contact[weightageField as keyof typeof contact] || 0;
+          }
+          return acc;
+        }, {} as Record<string, any>)),
         imageUrl: contact.imageUrl || "",
         weightage: contact.weightage || 0,
       });
       setCategories([contact.role]);
     }
     fetchGroups();
-  }, [contact, companyId]);
+  }, [contact, companyId, phoneNames]);
 
   const fetchGroups = async () => {
     if (!companyId) {
@@ -276,7 +289,7 @@ function Main() {
 
   const saveUser = async () => {
     if (!validateForm()) {
-      toast.error("Please fill in all required fields");
+      // Don't return here, let the validation errors show in the form
       return;
     }
 
@@ -284,21 +297,37 @@ function Main() {
       setIsLoading(true);
       const userOri = auth.currentUser;
       if (!userOri || !userOri.email) {
-        throw new Error("No authenticated user found");
+        setErrorMessage("No authenticated user found. Please log in again.");
+        return;
       }
 
       // Check if the user is updating their own profile
       const isUpdatingSelf = userOri.email === userData.email;
 
       if (isUpdatingSelf && userData.password) {
-        // User is updating their own password
-        await updatePassword(userOri, userData.password);
-        toast.success("Password updated successfully");
+        try {
+          await updatePassword(userOri, userData.password);
+        } catch (error: any) {
+          // Handle specific Firebase password update errors
+          if (error.code === 'auth/requires-recent-login') {
+            setErrorMessage("For security reasons, please log out and log in again to change your password.");
+          } else {
+            setErrorMessage(`Password update failed: ${error.message}`);
+          }
+          setIsLoading(false);
+          return;
+        }
       }
 
       let imageUrl = userData.imageUrl;
       if (imageFile) {
-        imageUrl = await uploadImage() || "";
+        try {
+          imageUrl = await uploadImage() || "";
+        } catch (error: any) {
+          setErrorMessage(`Failed to upload image: ${error.message}`);
+          setIsLoading(false);
+          return;
+        }
       }
 
       // Continue with the rest of the user update logic
@@ -308,7 +337,14 @@ function Main() {
         const dataUser = docUserSnapshot.data();
         const companyId = dataUser!.companyId;
         const company = dataUser!.company;
-
+        const docRef = doc(firestore, 'companies', companyId);
+        const docSnapshot = await getDoc(docRef);
+        if (!docSnapshot.exists()) {
+          console.log('No such document!');
+          return;
+        }
+        const data2 = docSnapshot.data();
+        const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
         const formatPhoneNumber = (phoneNumber: string) => {
           return phoneNumber && !phoneNumber.startsWith('+') ? "+6" + phoneNumber : phoneNumber;
         };
@@ -326,8 +362,18 @@ function Main() {
           quotaLeads: userData.quotaLeads || 0,
           invoiceNumber: userData.invoiceNumber || null,
           phone: userData.phone || -1,
+          // Convert weightage values to numbers
+          ...(Object.keys(phoneNames).reduce((acc, index) => {
+            const phoneField = index === '0' ? 'phone' : `phone${parseInt(index) + 1}` as keyof typeof userData;
+            const weightageField = index === '0' ? 'weightage' : `weightage${parseInt(index) + 1}` as keyof typeof userData;
+            if (userData[phoneField] !== undefined) {
+              acc[phoneField] = userData[phoneField];
+              acc[weightageField] = Number(userData[weightageField]) || 0; // Convert to number
+            }
+            return acc;
+          }, {} as Record<string, any>)),
           imageUrl: imageUrl || "",
-          weightage: userData.weightage || 0,
+          weightage: Number(userData.weightage) || 0, // Convert main weightage to number
         };
 
         if (contactId) {
@@ -337,12 +383,25 @@ function Main() {
           toast.success("User updated successfully");
         } else {
           // Adding new user
-          const response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/create-user/${userData.email}/${formatPhoneNumber(userData.phoneNumber)}/${userData.password}`, {
+          
+          const response = await fetch(`${baseUrl}/api/create-user/${userData.email}/${formatPhoneNumber(userData.phoneNumber)}/${userData.password}`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
             },
           });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            // Handle specific API error messages
+            if (errorData.error === 'auth/phone-number-already-exists') {
+              throw new Error('This phone number is already registered. Please use a different phone number.');
+            } else if (errorData.error.includes('phone-number')) {
+              throw new Error(`Phone number error: ${errorData.error}`);
+            }
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+          }
+
           const responseData = await response.json();
           
           if (responseData.message === 'User created successfully') {
@@ -384,7 +443,7 @@ function Main() {
             }
             formattedPhone += '@c.us';
             console.log('Formatted user chat_id:', formattedPhone);
-              url = `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${formattedPhone}`;
+              url = `${baseUrl}/api/v2/messages/text/${companyId}/${formattedPhone}`;
               requestBody = { 
                 message,
                 phoneIndex: 0, // Include phoneIndex in the request body
@@ -413,7 +472,7 @@ function Main() {
               throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
             }
           } else {
-            throw new Error(responseData.error);
+            throw new Error(responseData.error || 'Unknown error occurred while creating user');
           }
         }
       
@@ -424,9 +483,32 @@ function Main() {
       setErrorMessage('');
       setIsLoading(false);
       navigate('/users-layout-2');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving user:", error);
-      setErrorMessage('An error occurred while saving the user');
+      // Enhanced error message handling
+      if (error.code === 'auth/email-already-in-use') {
+        setErrorMessage('This email is already registered. Please use a different email.');
+      } else if (error.code === 'auth/invalid-email') {
+        setErrorMessage('The email address is not valid.');
+      } else if (error.code === 'auth/weak-password') {
+        setErrorMessage('The password is too weak. Please use at least 6 characters.');
+      } else if (error.code === 'auth/phone-number-already-exists' || error.message.includes('phone number is already registered')) {
+        setErrorMessage('This phone number is already registered. Please use a different phone number.');
+      } else if (error.message.includes('Firebase')) {
+        setErrorMessage(`Authentication error: ${error.message.replace('Firebase: ', '')}`);
+      } else if (error.message.includes('Network')) {
+        setErrorMessage('Network error. Please check your internet connection.');
+      } else {
+        // Clean up the error message by removing any technical prefixes
+        const cleanErrorMessage = error.message
+          .replace('Error: ', '')
+          .replace('auth/', '')
+          .replace(/-/g, ' ')
+          .trim();
+        setErrorMessage(`Error: ${cleanErrorMessage}`);
+      }
+      setIsLoading(false);
+    } finally {
       setIsLoading(false);
     }
   };
@@ -712,7 +794,55 @@ function Main() {
             />
           </div>
         </div>
-        {errorMessage && <div className="text-red-500 mt-4">{errorMessage}</div>}
+        {currentUserRole === "1" && phoneOptions.length > 0 && (
+          <>
+            {Array.from({ length: phoneOptions.length }).map((_, index) => {
+              const phoneField = index === 0 ? 'phone' : `phone${index + 1}`;
+              const weightageField = index === 0 ? 'weightage' : `weightage${index + 1}`;
+              
+              return (
+                <div key={index} className="grid grid-cols-2 gap-4">
+                  <div>
+                    <FormLabel htmlFor={phoneField}>{`Phone ${index + 1}`}</FormLabel>
+                    <select
+                      id={phoneField}
+                      name={phoneField}
+                      value={userData[phoneField as keyof typeof userData] || ''}
+                      onChange={handleChange}
+                      className="text-black dark:text-white border-primary dark:border-primary-dark bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 focus:ring-2 focus:ring-blue-300 dark:focus:ring-blue-700 rounded-lg text-sm w-full"
+                      disabled={isFieldDisabled("phone") || (currentUserRole !== "1" && userData.role !== "2")}
+                    >
+                      <option value="">Select a phone</option>
+                      {Object.entries(phoneNames).map(([idx, phoneName]) => (
+                        <option key={idx} value={parseInt(idx) - 1}>
+                          {phoneName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <FormLabel htmlFor={weightageField}>Weightage for Phone {index+1}</FormLabel>
+                    <FormInput
+                      id={weightageField}
+                      name={weightageField}
+                      type="number"
+                      value={userData[weightageField as keyof typeof userData] || 0}
+                      onChange={handleChange}
+                      placeholder="Weightage"
+                      min="0"
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </>
+        )}
+        {errorMessage && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mt-4" role="alert">
+            <strong className="font-bold">Error: </strong>
+            <span className="block sm:inline">{errorMessage}</span>
+          </div>
+        )}
         {successMessage && <div className="text-green-500 mt-4">{successMessage}</div>}
       </div>
       <div className="mt-4 flex justify-end">
