@@ -147,7 +147,6 @@ function Main() {
           const companySnapshot = await getDoc(companyRef);
           
           if (companySnapshot.exists()) {
-<<<<<<< Updated upstream
             const data = companySnapshot.data();
             setCompanyData(data);
             const phoneCount = data.phoneCount || 0;
@@ -156,14 +155,6 @@ function Main() {
             try {
               const baseUrl = data.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
               const response = await axios.get(`${baseUrl}/api/bots`);
-=======
-            const companyData = companySnapshot.data();
-            const phoneCount = companyData.phoneCount || 0;
-            
-            // Fetch bot data from API
-            try {
-              const response = await axios.get('https://e8c11521c11e51ab.ngrok.app/api/bots');
->>>>>>> Stashed changes
               const bots: Bot[] = response.data;
               
               // Match bot using companyId (which should match botName)
@@ -176,11 +167,7 @@ function Main() {
                   if (phone) {
                     newPhoneNames[index + 1] = phone;
                   } else {
-<<<<<<< Updated upstream
                     newPhoneNames[index + 1] = data[`phone${index + 1}`] || `Phone ${index + 1}`;
-=======
-                    newPhoneNames[index + 1] = companyData[`phone${index + 1}`] || `Phone ${index + 1}`;
->>>>>>> Stashed changes
                   }
                 });
                 
@@ -193,11 +180,7 @@ function Main() {
               } else {
                 // Fallback to existing data if no matching bot found
                 for (let i = 1; i <= phoneCount; i++) {
-<<<<<<< Updated upstream
                   newPhoneNames[i] = data[`phone${i}`] || `Phone ${i}`;
-=======
-                  newPhoneNames[i] = companyData[`phone${i}`] || `Phone ${i}`;
->>>>>>> Stashed changes
                 }
                 setPhoneCount(phoneCount);
               }
@@ -211,11 +194,7 @@ function Main() {
               // Fallback to existing phone names
               const newPhoneNames: { [key: number]: string } = {};
               for (let i = 1; i <= phoneCount; i++) {
-<<<<<<< Updated upstream
                 newPhoneNames[i] = data[`phone${i}`] || `Phone ${i}`;
-=======
-                newPhoneNames[i] = companyData[`phone${i}`] || `Phone ${i}`;
->>>>>>> Stashed changes
               }
               setPhoneNames(newPhoneNames);
               setPhoneCount(phoneCount);
