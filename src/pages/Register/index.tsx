@@ -322,17 +322,7 @@ function Main() {
                     onKeyDown={handleKeyDown}
                   />
                   <div className="flex gap-2">
-                    <select
-                      className="block px-4 py-3 mt-4 intro-x bg-white border rounded dark:bg-darkmode-600 dark:border-darkmode-400"
-                      value={selectedCountry}
-                      onChange={(e) => setSelectedCountry(e.target.value as CountryCode)}
-                    >
-                      {getCountries().map((country) => (
-                        <option key={country} value={country}>
-                          {new Intl.DisplayNames(['en'], { type: 'region' }).of(country)} (+{getCountryCallingCode(country)})
-                        </option>
-                      ))}
-                    </select>
+                  
                     <FormInput
                       type="tel"
                       className="block px-4 py-3 mt-4 intro-x min-w-full xl:min-w-[350px]"
@@ -342,34 +332,7 @@ function Main() {
                       onKeyDown={handleKeyDown}
                     />
                   </div>
-                  {!isVerificationSent ? (
-                    <Button
-                      variant="primary"
-                      className="w-full px-4 py-3 mt-4 align-top xl:w-32 xl:mr-3"
-                      onClick={sendVerificationCode}
-                    >
-                      Verify Phone
-                    </Button>
-                  ) : (
-                    <div className="mt-4">
-                      <FormInput
-                        type="text"
-                        className="block px-4 py-3 intro-x min-w-full xl:min-w-[350px]"
-                        placeholder="Enter 6-digit verification code"
-                        value={verificationCode}
-                        onChange={(e) => setVerificationCode(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                      />
-                      <Button
-                        variant="secondary"
-                        className="mt-2 w-full xl:w-auto"
-                        onClick={sendVerificationCode}
-                        disabled={cooldown > 0}
-                      >
-                        {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend Code'}
-                      </Button>
-                    </div>
-                  )}
+                
                   <FormInput
                     type="text"
                     className="block px-4 py-3 mt-4 intro-x min-w-full xl:min-w-[350px]"
@@ -391,7 +354,7 @@ function Main() {
                   {/* New Plan Selection Section */}
                   <div className="grid grid-cols-1 gap-2 mt-4 md:grid-cols-2">
                     {[
-                      ['blaster', 'WhatsApp Blaster', '50'],
+                      ['blaster', 'Team Inbox', '50'],
                       ['enterprise', 'Standard AI', '168'],
                       ['unlimited', 'Unlimited', '688']
                     ].map(([id, name, price]) => (
@@ -404,7 +367,7 @@ function Main() {
                         onClick={() => setSelectedPlan(id as 'blaster' | 'enterprise')}
                       >
                         <div className="text-sm font-bold">{name}</div>
-                        <div className="text-xs">RM {price}/month</div>
+                
                       </div>
                     ))}
                   </div>

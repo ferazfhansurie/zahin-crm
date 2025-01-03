@@ -192,7 +192,16 @@ function LoadingPage() {
         const statusArray = Array.isArray(botStatusResponse.data) 
           ? botStatusResponse.data 
           : [botStatusResponse.data];
-
+    // Check if any phone is authenticated/ready
+    const anyPhoneReady = statusArray.some(phone => 
+      phone.status === 'authenticated' || phone.status === 'ready'
+    );
+    if (anyPhoneReady) {
+      console.log('At least one phone is authenticated/ready, navigating to chat');
+      setShouldFetchContacts(true);
+      navigate('/chat');
+      return;
+    }
         // Only check the first phone's status
         const firstPhone = statusArray[0];
         console.log('Checking first phone status:', firstPhone.status);

@@ -262,14 +262,22 @@ function Main() {
   const [activateSleep, setActivateSleep] = useState(false);
   const [sleepAfterMessages, setSleepAfterMessages] = useState(20);
   const [sleepDuration, setSleepDuration] = useState(5);
+  const [activeTimeStart, setActiveTimeStart] = useState('09:00');
+const [activeTimeEnd, setActiveTimeEnd] = useState('17:00');
+const [useMessageRotation, setUseMessageRotation] = useState(false);
+const [rotatingMessages, setRotatingMessages] = useState(['']);
   const [showScheduledMessages, setShowScheduledMessages] = useState<boolean>(true);
   // First, add a state to track visible columns
   const [visibleColumns, setVisibleColumns] = useState<{ [key: string]: boolean }>({
     contact: true,
     phone: true,
     tags: true,
-    points: false,
     notes: true,
+    ...contacts[0]?.customFields ? 
+    Object.keys(contacts[0].customFields).reduce((acc, field) => ({
+      ...acc,
+      [`customField_${field}`]: true
+    }), {}) : {},
     actions: true,
   });
 
@@ -2262,23 +2270,16 @@ useEffect(() => {
   console.log('Contacts:', contacts);
   console.log('Filtered Contacts:', filteredContactsSearch);
   console.log('Search Query:', searchQuery);
-}, [contacts, filteredContactsSearch, searchQuery]);
+  console.log('Scheduled Messages:', scheduledMessages);
+  console.log('Filtered Scheduled Messages:', getFilteredScheduledMessages());
+}, [contacts, filteredContactsSearch, searchQuery, scheduledMessages]);
 
 
 //faeez incompetent
-
 const sendBlastMessage = async () => {
   console.log('Starting sendBlastMessage function');
 
-  // Combine date and time
-  const combinedDateTime = new Date(
-    blastStartDate.getFullYear(),
-    blastStartDate.getMonth(),
-    blastStartDate.getDate(),
-    blastStartTime?.getHours() || 0,
-    blastStartTime?.getMinutes() || 0
-  );
-
+  // Validation checks
   if (selectedContacts.length === 0) {
     console.log('No contacts selected');
     toast.error("No contacts selected!");
@@ -2291,10 +2292,27 @@ const sendBlastMessage = async () => {
     return;
   }
 
+  if (useMessageRotation && rotatingMessages.every(msg => msg.trim() === '')) {
+    console.log('No rotating messages provided');
+    toast.error("Please add at least one message for rotation.");
+    return;
+  }
+
+  // Validate active hours
+  const [startHour, startMinute] = activeTimeStart.split(':').map(Number);
+  const [endHour, endMinute] = activeTimeEnd.split(':').map(Number);
+
+  // Combine date and time
+  const combinedDateTime = new Date(
+    blastStartDate.getFullYear(),
+    blastStartDate.getMonth(),
+    blastStartDate.getDate(),
+    blastStartTime?.getHours() || 0,
+    blastStartTime?.getMinutes() || 0
+  );
+
   const now = new Date();
   const scheduledTime = new Date(combinedDateTime);
-
-  
 
   if (scheduledTime <= now) {
     console.log('Selected time is in the past');
@@ -2352,22 +2370,48 @@ const sendBlastMessage = async () => {
       return;
     }
 
-    // Process message for each contact
-    const processedMessages = selectedContacts.map(contact => {
-      let processedMessage = blastMessage;
-      // Replace placeholders
-      processedMessage = processedMessage.replace(/@{contactName}/g, contact.contactName || '');
-      processedMessage = processedMessage.replace(/@{firstName}/g, contact.firstName || '');
-      processedMessage = processedMessage.replace(/@{lastName}/g, contact.lastName || '');
-      processedMessage = processedMessage.replace(/@{email}/g, contact.email || '');
-      processedMessage = processedMessage.replace(/@{phone}/g, contact.phone || '');
-      processedMessage = processedMessage.replace(/@{vehicleNumber}/g, contact.vehicleNumber || '');
-      processedMessage = processedMessage.replace(/@{branch}/g, contact.branch || '');
-      processedMessage = processedMessage.replace(/@{expiryDate}/g, contact.expiryDate || '');
-      processedMessage = processedMessage.replace(/@{ic}/g, contact.ic || '');
-      // Add more placeholders as needed
-      return { chatId: contact.phone?.replace(/\D/g, '') + "@s.whatsapp.net", message: processedMessage };
-    });
+    // Process messages based on rotation setting
+    const processMessages = (messageText: string, contact: any) => {
+      let processedMessage = messageText;
+      const placeholders = {
+        contactName: contact.contactName || '',
+        firstName: contact.firstName || '',
+        lastName: contact.lastName || '',
+        email: contact.email || '',
+        phone: contact.phone || '',
+        vehicleNumber: contact.vehicleNumber || '',
+        branch: contact.branch || '',
+        expiryDate: contact.expiryDate || '',
+        ic: contact.ic || ''
+      };
+
+      Object.entries(placeholders).forEach(([key, value]) => {
+        processedMessage = processedMessage.replace(
+          new RegExp(`@{${key}}`, 'g'),
+          value
+        );
+      });
+
+      return processedMessage;
+    };
+
+    let processedMessages;
+    if (useMessageRotation) {
+      const validRotatingMessages = rotatingMessages.filter(msg => msg.trim() !== '');
+      processedMessages = selectedContacts.map((contact, index) => {
+        const messageIndex = index % validRotatingMessages.length;
+        const messageText = validRotatingMessages[messageIndex];
+        return {
+          chatId: contact.phone?.replace(/\D/g, '') + "@s.whatsapp.net",
+          message: processMessages(messageText, contact)
+        };
+      });
+    } else {
+      processedMessages = selectedContacts.map(contact => ({
+        chatId: contact.phone?.replace(/\D/g, '') + "@s.whatsapp.net",
+        message: processMessages(blastMessage, contact)
+      }));
+    }
 
     const scheduledMessageData = {
       chatIds: chatIds,
@@ -2392,6 +2436,12 @@ const sendBlastMessage = async () => {
       activateSleep,
       sleepAfterMessages: activateSleep ? sleepAfterMessages : null,
       sleepDuration: activateSleep ? sleepDuration : null,
+      activeHours: {
+        start: activeTimeStart,
+        end: activeTimeEnd
+      },
+      useMessageRotation,
+      rotatingMessages: useMessageRotation ? rotatingMessages.filter(msg => msg.trim() !== '') : []
     };
 
     console.log('Sending scheduledMessageData:', JSON.stringify(scheduledMessageData, null, 2));
@@ -2417,6 +2467,10 @@ const sendBlastMessage = async () => {
     setRepeatUnit('days');
     setSelectedMedia(null);
     setSelectedDocument(null);
+    setActiveTimeStart('09:00');
+    setActiveTimeEnd('17:00');
+    setUseMessageRotation(false);
+    setRotatingMessages(['']);
 
   } catch (error) {
     console.error('Error scheduling blast messages:', error);
@@ -3135,7 +3189,17 @@ const sendBlastMessage = async () => {
       setSelectedContacts(prevSelected => [...prevSelected, ...currentPageContacts]);
     }
   };
-
+useEffect(() => {
+  if (contacts.length > 0 && contacts[0].customFields) {
+    setVisibleColumns(prev => ({
+      ...prev,
+      ...Object.keys(contacts[0].customFields || {}).reduce((acc, field) => ({
+        ...acc,
+        [`customField_${field}`]: prev[`customField_${field}`] ?? true
+      }), {})
+    }));
+  }
+}, [contacts]);
   const renderTags = (tags: string[] | undefined, contact: Contact) => {
     if (!tags || tags.length === 0) return null;
     return (
@@ -4037,27 +4101,35 @@ const getFilteredScheduledMessages = () => {
         Show/Hide Columns
       </Dialog.Title>
       
-      <div className="space-y-3">
-        {Object.entries(visibleColumns).map(([column, isVisible]) => (
-          <div key={column} className="flex items-center px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
-            <input
-              type="checkbox"
-              checked={isVisible}
-              onChange={() => setVisibleColumns(prev => ({
-                ...prev,
-                [column]: !prev[column]
-              }))}
-              className="mr-2 rounded border-gray-300"
-              id={`column-${column}`}
-            />
-            <label 
-              htmlFor={`column-${column}`}
-              className="text-sm capitalize text-gray-700 dark:text-gray-300 cursor-pointer flex-grow"
-            >
-              {column}
-            </label>
-          </div>
-        ))}
+     <div className="space-y-3">
+        {Object.entries(visibleColumns).map(([column, isVisible]) => {
+          // Check if this is a custom field
+          const isCustomField = column.startsWith('customField_');
+          const displayName = isCustomField ? 
+            column.replace('customField_', '') : 
+            column;
+
+          return (
+            <div key={column} className="flex items-center px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
+              <input
+                type="checkbox"
+                checked={isVisible}
+                onChange={() => setVisibleColumns(prev => ({
+                  ...prev,
+                  [column]: !prev[column]
+                }))}
+                className="mr-2 rounded border-gray-300"
+                id={`column-${column}`}
+              />
+              <label 
+                htmlFor={`column-${column}`}
+                className="text-sm capitalize text-gray-700 dark:text-gray-300 cursor-pointer flex-grow"
+              >
+                {isCustomField ? `${displayName} (Custom)` : displayName}
+              </label>
+            </div>
+          );
+        })}
       </div>
 
       <div className="mt-6 flex justify-end space-x-3">
@@ -4135,8 +4207,9 @@ const getFilteredScheduledMessages = () => {
           </div>
           
           <div className="w-full flex-wrap">
-            <div className="h-[calc(150vh-200px)] overflow-y-auto mb-4" ref={contactListRef}>
-              <table className="w-full border-collapse hidden sm:table">
+          <div className="overflow-x-auto">
+          <div className="h-[calc(150vh-200px)] overflow-y-auto mb-4" ref={contactListRef}>
+          <table className="w-full border-collapse hidden sm:table" style={{ minWidth: '1200px' }}>
                 <thead className="sticky top-0 bg-white dark:bg-gray-700 z-10 py-2">
                   <tr className="text-left">
                     <th className="p-4 font-medium text-gray-700 dark:text-gray-300">
@@ -4164,6 +4237,16 @@ const getFilteredScheduledMessages = () => {
                     {visibleColumns.notes && (
                       <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Notes</th>
                     )}
+                    {Object.entries(visibleColumns)
+      .filter(([key, isVisible]) => key.startsWith('customField_') && isVisible)
+      .map(([key]) => (
+        <th 
+          key={key} 
+          className="p-4 font-medium text-gray-700 dark:text-gray-300"
+        >
+          {key.replace('customField_', '')}
+        </th>
+    ))}
                     {visibleColumns.actions && (
                       <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Actions</th>
                     )}
@@ -4262,6 +4345,16 @@ const getFilteredScheduledMessages = () => {
                             {contact.notes || '-'}
                           </td>
                         )}
+                         {Object.entries(visibleColumns)
+                          .filter(([key, isVisible]) => key.startsWith('customField_') && isVisible)
+                          .map(([key]) => {
+                            const fieldName = key.replace('customField_', '');
+                            return (
+                              <td key={key} className="p-4 text-gray-600 dark:text-gray-400">
+                                {contact.customFields?.[fieldName] || '-'}
+                              </td>
+                            );
+                        })}
                         {visibleColumns.actions && (
                           <td className="p-4">
                             <div className="flex space-x-2">
@@ -4861,14 +4954,56 @@ const getFilteredScheduledMessages = () => {
                 <div className="text-red-500">You don't have permission to send blast messages.</div>
               ) : (
                 <>
-                  <textarea
-                    className="w-full p-2 border rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    placeholder="Type your message here..."
-                    value={blastMessage}
-                    onChange={(e) => setBlastMessage(e.target.value)}
-                    rows={3}
-                    style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
-                  ></textarea>
+                 {useMessageRotation ? (
+  <div className="space-y-4">
+    <div className="flex items-center justify-between">
+      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Rotating Messages</label>
+      <button
+        type="button"
+        className="text-sm text-indigo-600 hover:text-indigo-500"
+        onClick={() => setRotatingMessages([...rotatingMessages, ''])}
+      >
+        Add Message
+      </button>
+    </div>
+    {rotatingMessages.map((message, index) => (
+      <div key={index} className="flex items-start space-x-2">
+        <textarea
+          className="flex-1 p-2 border rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+          placeholder={`Message ${index + 1}`}
+          value={message}
+          onChange={(e) => {
+            const newMessages = [...rotatingMessages];
+            newMessages[index] = e.target.value;
+            setRotatingMessages(newMessages);
+          }}
+          rows={3}
+          style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+        />
+        {rotatingMessages.length > 1 && (
+          <button
+            onClick={() => {
+              const newMessages = rotatingMessages.filter((_, i) => i !== index);
+              setRotatingMessages(newMessages);
+            }}
+            className="p-2 text-red-500 hover:text-red-700"
+          >
+            <span>×</span>
+          </button>
+        )}
+      </div>
+    ))}
+  </div>
+) : (
+  <textarea
+    className="w-full p-2 border rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+    placeholder="Type your message here..."
+    value={blastMessage}
+    onChange={(e) => setBlastMessage(e.target.value)}
+    rows={3}
+    style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+  />
+)}
                   <div className="mt-2">
                     <button
                       type="button"
@@ -5022,6 +5157,67 @@ const getFilteredScheduledMessages = () => {
           )}
         </div>
       </div>
+<div className="mt-4">
+  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Active Hours</label>
+  <div className="flex items-center space-x-2">
+  <div>
+  <label className="text-sm text-gray-600 dark:text-gray-400">From</label>
+  <DatePickerComponent
+    selected={(() => {
+      const date = new Date();
+      const [hours, minutes] = activeTimeStart.split(':');
+      date.setHours(parseInt(hours), parseInt(minutes));
+      return date;
+    })()}
+    onChange={(date: Date | null) => {
+      if (date) {
+        setActiveTimeStart(`${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`);
+      }
+    }}
+    showTimeSelect
+    showTimeSelectOnly
+    timeIntervals={15}
+    timeCaption="Time"
+    dateFormat="h:mm aa"
+    className="w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+  />
+</div>
+<div>
+  <label className="text-sm text-gray-600 dark:text-gray-400">To</label>
+  <DatePickerComponent
+    selected={(() => {
+      const date = new Date();
+      const [hours, minutes] = activeTimeEnd.split(':');
+      date.setHours(parseInt(hours), parseInt(minutes));
+      return date;
+    })()}
+    onChange={(date: Date | null) => {
+      if (date) {
+        setActiveTimeEnd(`${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`);
+      }
+    }}
+    showTimeSelect
+    showTimeSelectOnly
+    timeIntervals={15}
+    timeCaption="Time"
+    dateFormat="h:mm aa"
+    className="w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+  />
+</div>
+  </div>
+</div>
+
+<div className="mt-4">
+  <label className="flex items-center">
+    <input
+      type="checkbox"
+      checked={useMessageRotation}
+      onChange={(e) => setUseMessageRotation(e.target.checked)}
+      className="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+    />
+    <span className="ml-2 text-sm text-gray-600 dark:text-gray-400">Enable Message Rotation</span>
+  </label>
+</div>
                     <div className="mt-2">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="phone">Phone</label>
                       <select
@@ -5281,6 +5477,7 @@ const getFilteredScheduledMessages = () => {
           draggable
           pauseOnHover
         />
+      </div>
       </div>
     </div>
   );
