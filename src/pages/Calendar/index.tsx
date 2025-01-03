@@ -402,6 +402,86 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
     fetchAppointments(employeeId);
   };
 
+  const fetchContacts = async () => {
+    try {
+      const user = auth.currentUser;
+      if (!user?.email) return;
+  
+      const docUserRef = doc(firestore, 'user', user.email);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document for user!');
+        return;
+      }
+  
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+      
+      const contactsRef = collection(firestore, `companies/${companyId}/contacts`);
+      const contactsSnapshot = await getDocs(contactsRef);
+  
+      const contactsData: Contact[] = [];
+      contactsSnapshot.forEach((doc) => {
+        const contactData = doc.data();
+        contactsData.push({ 
+          id: doc.id,
+          additionalEmails: contactData.additionalEmails || [],
+          address1: contactData.address1 || null,
+          assignedTo: contactData.assignedTo || null,
+          businessId: contactData.businessId || null,
+          city: contactData.city || null,
+          companyName: contactData.companyName || null,
+          contactName: contactData.contactName || '',
+          country: contactData.country || '',
+          customFields: contactData.customFields || [],
+          dateAdded: contactData.dateAdded || new Date().toISOString(),
+          dateOfBirth: contactData.dateOfBirth || null,
+          dateUpdated: contactData.dateUpdated || new Date().toISOString(),
+          dnd: contactData.dnd || false,
+          dndSettings: contactData.dndSettings || {},
+          email: contactData.email || null,
+          firstName: contactData.firstName || '',
+          followers: contactData.followers || [],
+          lastName: contactData.lastName || '',
+          locationId: contactData.locationId || '',
+          phone: contactData.phone || null,
+          postalCode: contactData.postalCode || null,
+          source: contactData.source || null,
+          state: contactData.state || null,
+          tags: contactData.tags || [],
+          type: contactData.type || '',
+          website: contactData.website || null
+        });
+      });
+  
+      // Remove duplicates by contactName before setting state
+      const uniqueContacts = contactsData.reduce((acc: Contact[], current) => {
+        const isDuplicate = acc.find(contact => 
+          contact.contactName === current.contactName || 
+          contact.id === current.id
+        );
+        if (!isDuplicate) {
+          acc.push(current);
+        }
+        return acc;
+      }, []);
+
+      // Sort alphabetically
+      const sortedContacts = uniqueContacts.sort((a, b) => 
+        (a.contactName || '').localeCompare(b.contactName || '')
+      );
+
+      setContacts(sortedContacts);
+    } catch (error) {
+      console.error('Error fetching contacts:', error);
+    }
+  };
+  
+  // Add this useEffect to fetch contacts when component mounts
+  useEffect(() => {
+    fetchContacts();
+  }, []);
+
   const fetchContactSession = async (contactId: string) => {
     try {
       const auth = getAuth(app);
@@ -436,10 +516,11 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
   };
 
   const handleContactChange = (selectedOptions: any) => {
-    const selectedContactsArray = selectedOptions.map((option: any) => contacts.find(contact => contact.id === option.value)!);
-    setSelectedContacts(selectedContactsArray);
-
-    selectedContactsArray.forEach((contact: { id: string; }) => fetchContactSession(contact.id));
+    const selectedContactIds = selectedOptions.map((option: any) => option.value);
+    const selectedContactsData = contacts.filter(contact => 
+      selectedContactIds.includes(contact.id)
+    );
+    setSelectedContacts(selectedContactsData);
   };
 
   const handleEventClick = async (info: any) => {
@@ -2363,9 +2444,8 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                 </div>
               </div>
               <div className="mt-6 space-y-4">
-                {/* Phone Number (Title) */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Phone Number</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Title</label>
                   <input
                     type="text"
                     className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -2382,41 +2462,6 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                     className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                     value={currentEvent?.extendedProps?.address || ''}
                     onChange={(e) => setCurrentEvent({ ...currentEvent, extendedProps: { ...currentEvent.extendedProps, address: e.target.value } })}
-                  />
-                </div>
-
-                {/* Units */}
-                <div className="w-1/3">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Units</label>
-                  <input
-                    type="number"
-                    min="0"
-                    className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    value={currentEvent?.extendedProps?.units || ''}
-                    onChange={(e) => setCurrentEvent({ 
-                      ...currentEvent, 
-                      extendedProps: { 
-                        ...currentEvent.extendedProps, 
-                        units: e.target.value 
-                      } 
-                    })}
-                  />
-                </div>
-
-                {/* Type */}
-                <div className="w-1/3">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
-                  <input
-                    type="text"
-                    className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    value={currentEvent?.extendedProps?.type || ''}
-                    onChange={(e) => setCurrentEvent({
-                      ...currentEvent,
-                      extendedProps: {
-                        ...currentEvent.extendedProps,
-                        type: e.target.value
-                      }
-                    })}
                   />
                 </div>
 
@@ -2685,66 +2730,58 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Contacts</label>
                   <Select
                     isMulti
-                    value={selectedContacts.map(contact => ({ value: contact.id, label: contact.contactName }))}
-                    options={contacts.map(contact => ({ value: contact.id, label: contact.contactName }))}
+                    options={contacts
+                      // Remove duplicates and sort alphabetically
+                      .filter((contact, index, self) => 
+                        index === self.findIndex(c => c.id === contact.id)
+                      )
+                      .sort((a, b) => a.contactName.localeCompare(b.contactName))
+                      .map(contact => ({
+                        value: contact.id,
+                        label: contact.contactName || `${contact.firstName} ${contact.lastName}`.trim()
+                      }))}
+                    value={selectedContacts.map(contact => ({
+                      value: contact.id,
+                      label: contact.contactName || `${contact.firstName} ${contact.lastName}`.trim()
+                    }))}
                     onChange={handleContactChange}
+                    className="react-select-container"
                     classNamePrefix="react-select"
-                    className="capitalize"
                     styles={{
-                      control: (provided, state) => ({
-                        ...provided,
-                        backgroundColor: state.isFocused ? '#f9fafb' : '#ffffff', // Light mode background
-                        borderColor: state.isFocused ? '#3b82f6' : '#d1d5db', // Light mode border
-                        boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : 'none',
+                      control: (base) => ({
+                        ...base,
+                        minHeight: '42px',
+                        borderColor: 'rgb(209 213 219)',
+                        backgroundColor: 'white',
                         '&:hover': {
-                          borderColor: '#3b82f6',
-                        },
-                        '.dark &': {
-                          backgroundColor: state.isFocused ? '#374151' : '#1f2937', // Dark mode background
-                          borderColor: state.isFocused ? '#3b82f6' : '#4b5563', // Dark mode border
-                          boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : 'none',
-                          '&:hover': {
-                            borderColor: '#3b82f6',
-                          },
-                        },
+                          borderColor: 'rgb(107 114 128)'
+                        }
                       }),
-                      menu: (provided) => ({
-                        ...provided,
-                        backgroundColor: '#ffffff', // Light mode background
-                        '.dark &': {
-                          backgroundColor: '#1f2937', // Dark mode background
-                        },
+                      option: (base, state) => ({
+                        ...base,
+                        backgroundColor: state.isSelected ? '#1e40af' : state.isFocused ? '#e5e7eb' : 'white',
+                        color: state.isSelected ? 'white' : 'black',
+                        '&:active': {
+                          backgroundColor: '#1e40af'
+                        }
                       }),
-                      multiValue: (provided) => ({
-                        ...provided,
-                        backgroundColor: '#e5e7eb', // Light mode background
-                        '.dark &': {
-                          backgroundColor: '#4b5563', // Dark mode background
-                        },
+                      multiValue: (base) => ({
+                        ...base,
+                        backgroundColor: '#e5e7eb'
                       }),
-                      multiValueLabel: (provided) => ({
-                        ...provided,
-                        color: '#111827', // Light mode text color
-                        '.dark &': {
-                          color: '#d1d5db', // Dark mode text color
-                        },
+                      multiValueLabel: (base) => ({
+                        ...base,
+                        color: '#374151'
                       }),
-                      multiValueRemove: (provided) => ({
-                        ...provided,
-                        color: '#111827', // Light mode text color
+                      multiValueRemove: (base) => ({
+                        ...base,
                         '&:hover': {
-                          backgroundColor: '#d1d5db', // Light mode hover background
-                          color: '#111827', // Light mode hover text color
-                        },
-                        '.dark &': {
-                          color: '#d1d5db', // Dark mode text color
-                          '&:hover': {
-                            backgroundColor: '#4b5563', // Dark mode hover background
-                            color: '#f9fafb', // Dark mode hover text color
-                          },
-                        },
-                      }),
+                          backgroundColor: '#d1d5db',
+                          color: '#374151'
+                        }
+                      })
                     }}
+                    placeholder="Select contacts..."
                   />
                   {selectedContacts.map(contact => (
                     <div key={contact.id} className="capitalize text-sm text-gray-600 dark:text-gray-300">
@@ -2800,7 +2837,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
               </div>
               <div className="mt-6 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Phone Number</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Title</label>
                   <input
                     type="text"
                     className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -2817,38 +2854,6 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                     onChange={(e) => setCurrentEvent({ ...currentEvent, extendedProps: { ...currentEvent.extendedProps, address: e.target.value } })}
                   />
                 </div>
-                <div className="w-1/3">
-    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Units</label>
-    <input
-      type="number"
-      min="0"
-      className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-      value={currentEvent?.extendedProps?.units || ''}
-      onChange={(e) => setCurrentEvent({ 
-        ...currentEvent, 
-        extendedProps: { 
-          ...currentEvent.extendedProps, 
-          units: e.target.value 
-        } 
-      })}
-    />
-  </div>
- <div className="w-1/3">
-      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
-      <input
-        type="text"
-        className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-        value={currentEvent?.extendedProps?.type || ''}
-        onChange={(e) => setCurrentEvent({
-          ...currentEvent,
-          extendedProps: {
-            ...currentEvent.extendedProps,
-            type: e.target.value
-          }
-        })}
-      />
-    </div>
-
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Date</label>
                   <input
@@ -2970,35 +2975,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                     options={appointmentTags.map((tag: any) => ({ value: tag.id, label: tag.name }))}
                     value={currentEvent?.extendedProps?.tags?.map((tag: any) => ({ value: tag.id, label: tag.name })) || []}
                     onChange={handleTagChange}
-                    className="capitalize dark:bg-gray-700 dark:text-white dark:border-gray-600"
-                    styles={{
-                      control: (provided: any) => ({
-                        ...provided,
-                        backgroundColor: '#1f2937', // Solid color for better visibility
-                        borderColor: 'border-gray-300 dark:border-gray-600',
-                        boxShadow: 'shadow-sm',
-                      }),
-                      menu: (provided) => ({
-                        ...provided,
-                        backgroundColor: '#1f2937', // Solid color for better visibility
-                      }),
-                      multiValue: (provided) => ({
-                        ...provided,
-                        backgroundColor: '#4b5563', // Solid color for better visibility
-                      }),
-                      multiValueLabel: (provided) => ({
-                        ...provided,
-                        color: 'text-gray-800 dark:text-gray-200',
-                      }),
-                      multiValueRemove: (provided) => ({
-                        ...provided,
-                        color: 'text-gray-800 dark:text-gray-200',
-                        '&:hover': {
-                          backgroundColor: 'bg-gray-300 dark:bg-gray-500',
-                          color: 'text-gray-900 dark:text-gray-100',
-                        },
-                      }),
-                    }}
+                    className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 bg-white text-gray-700 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   />
                 </div>
              
@@ -3030,7 +3007,14 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Contacts</label>
                   <Select
                     isMulti
-                    options={contacts.map(contact => ({ value: contact.id, label: contact.contactName }))}
+                    options={contacts.map(contact => ({ 
+                      value: contact.id, 
+                      label: contact.contactName 
+                    }))}
+                    value={selectedContacts.map(contact => ({ 
+                      value: contact.id, 
+                      label: contact.contactName 
+                    }))}
                     onChange={handleContactChange}
                     className="capitalize dark:bg-gray-700 dark:text-white"
                   />
