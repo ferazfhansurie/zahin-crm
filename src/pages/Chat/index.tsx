@@ -3805,14 +3805,6 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
       }
 
       const employeeData = employeeDoc.data();
-      const currentQuota = employeeData.quotaLeads || 0;
-      
-      // Check quota availability
-      if (currentQuota <= 0) {
-        toast.error(`${tagName} has no available quota leads`);
-        return;
-      }
-
       const contactRef = doc(firestore, `companies/${companyId}/contacts/${contact.id}`);
       const contactDoc = await getDoc(contactRef);
 
@@ -3820,11 +3812,13 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
         toast.error('Contact not found');
         return;
       }
+
       const currentTags = contactDoc.data().tags || [];
       const oldEmployeeTag = currentTags.find((tag: string) => 
         employeeList.some(emp => emp.name === tag)
       );
-      // If contact was assigned to another employee, update their quota first
+
+      // If contact was assigned to another employee, update their quota
       if (oldEmployeeTag) {
         const oldEmployee = employeeList.find(emp => emp.name === oldEmployeeTag);
         if (oldEmployee) {
@@ -3857,9 +3851,9 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
         lastAssignedAt: serverTimestamp()
       });
 
-      // Update new employee's quota
+      // Update new employee's quota and assigned contacts
       batch.update(employeeRef, {
-        quotaLeads: currentQuota - 1,
+        quotaLeads: Math.max(0, (employeeData.quotaLeads || 0) - 1), // Prevent negative quota
         assignedContacts: (employeeData.assignedContacts || 0) + 1
       });
 
@@ -3879,7 +3873,7 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
           emp.id === employee.id
             ? {
                 ...emp,
-                quotaLeads: currentQuota - 1,
+                quotaLeads: Math.max(0, (emp.quotaLeads || 0) - 1), // Prevent negative quota
                 assignedContacts: (emp.assignedContacts || 0) + 1
               }
             : oldEmployeeTag && emp.name === oldEmployeeTag
