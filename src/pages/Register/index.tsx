@@ -153,11 +153,7 @@ function Main() {
   const handleRegister = async () => {
     try {
       // Verify the code before proceeding
-      const storedCode = localStorage.getItem('verificationCode');
-      if (verificationCode !== storedCode) {
-        toast.error("Invalid verification code");
-        return;
-      }
+     
 
 
 
