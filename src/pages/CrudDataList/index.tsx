@@ -254,6 +254,10 @@ function Main() {
   const [phoneOptions, setPhoneOptions] = useState<number[]>([]);
   const [phoneNames, setPhoneNames] = useState<{ [key: number]: string }>({});
   const [employeeSearch, setEmployeeSearch] = useState('');
+
+  const [sortField, setSortField] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
   const [selectedPhoneIndex, setSelectedPhoneIndex] = useState<number | null>(null);
   const [showRecipients, setShowRecipients] = useState<string | null>(null);
   const [recipientSearch, setRecipientSearch] = useState('');
@@ -326,6 +330,59 @@ const [rotatingMessages, setRotatingMessages] = useState(['']);
       setPhoneNames({});
     }
   };
+
+  // Add this sorting function
+const handleSort = (field: string) => {
+  if (sortField === field) {
+    // If clicking the same field, toggle direction
+    setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+  } else {
+    // If clicking a new field, set it with ascending direction
+    setSortField(field);
+    setSortDirection('asc');
+  }
+};
+
+const getDisplayedContacts = () => {
+  if (!sortField) return currentContacts;
+
+  return [...currentContacts].sort((a, b) => {
+    let aValue: any = a[sortField as keyof typeof a];
+    let bValue: any = b[sortField as keyof typeof b];
+
+    // Handle special cases
+    if (sortField === 'tags') {
+      // Sort by first tag, or empty string if no tags
+      aValue = a.tags?.[0] || '';
+      bValue = b.tags?.[0] || '';
+    } else if (sortField === 'points') {
+      // Sort numerically for points
+      aValue = Number(a.points || 0);
+      bValue = Number(b.points || 0);
+      return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
+    } else if (sortField.startsWith('customField_')) {
+      const fieldName = sortField.replace('customField_', '');
+      aValue = a.customFields?.[fieldName] || '';
+      bValue = b.customFields?.[fieldName] || '';
+    }
+
+    // Convert to strings for comparison (except for points which is handled above)
+    if (sortField !== 'points') {
+      aValue = String(aValue || '').toLowerCase();
+      bValue = String(bValue || '').toLowerCase();
+      return sortDirection === 'asc' 
+        ? aValue.localeCompare(bValue)
+        : bValue.localeCompare(aValue);
+    }
+
+    return 0; // Fallback return for points sorting
+  });
+};
+
+const resetSort = () => {
+  setSortField(null);
+  setSortDirection('asc');
+};
 
   const filterContactsByUserRole = (contacts: Contact[], userRole: string, userName: string) => {
     switch (userRole) {
@@ -4118,51 +4175,131 @@ const getFilteredScheduledMessages = () => {
           <div className="overflow-x-auto">
           <div className="h-[calc(150vh-200px)] overflow-y-auto mb-4" ref={contactListRef}>
           <table className="w-full border-collapse hidden sm:table" style={{ minWidth: '1200px' }}>
-                <thead className="sticky top-0 bg-white dark:bg-gray-700 z-10 py-2">
-                  <tr className="text-left">
-                    <th className="p-4 font-medium text-gray-700 dark:text-gray-300">
-                      <input
-                        type="checkbox"
-                        checked={currentContacts.length > 0 && currentContacts.every(contact => 
-                          selectedContacts.some(sc => sc.phone === contact.phone)
-                        )}
-                        onChange={() => handleSelectCurrentPage()}
-                        className="rounded border-gray-300"
-                      />
-                    </th>
-                    {visibleColumns.contact && (
-                      <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Contact</th>
+            <thead className="sticky top-0 bg-white dark:bg-gray-700 z-10 py-2">
+              <tr className="text-left">
+                <th className="p-4 font-medium text-gray-700 dark:text-gray-300">
+                  <input
+                    type="checkbox"
+                    checked={currentContacts.length > 0 && currentContacts.every(contact => 
+                      selectedContacts.some(sc => sc.phone === contact.phone)
                     )}
-                    {visibleColumns.phone && (
-                      <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Phone</th>
-                    )}
-                    {visibleColumns.tags && (
-                      <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Tags</th>
-                    )}
-                    {visibleColumns.points && (
-                      <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Points</th>
-                    )}
-                    {visibleColumns.notes && (
-                      <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Notes</th>
-                    )}
-                    {Object.entries(visibleColumns)
-      .filter(([key, isVisible]) => key.startsWith('customField_') && isVisible)
-      .map(([key]) => (
-        <th 
-          key={key} 
-          className="p-4 font-medium text-gray-700 dark:text-gray-300"
-        >
-          {key.replace('customField_', '')}
-        </th>
-    ))}
-                    {visibleColumns.actions && (
-                      <th className="p-4 font-medium text-gray-700 dark:text-gray-300">Actions</th>
-                    )}
+                    onChange={() => handleSelectCurrentPage()}
+                    className="rounded border-gray-300"
+                  />
+                </th>
+                {visibleColumns.contact && (
+                  <th 
+                    className="p-4 font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-600"
+                    onClick={() => handleSort('contactName')}
+                    onDoubleClick={resetSort}
+                  >
+                    <div className="flex items-center">
+                      Contact
+                      {sortField === 'contactName' && (
+                        <Lucide 
+                          icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
+                          className="w-4 h-4 ml-1"
+                        />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.phone && (
+                  <th 
+                    className="p-4 font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-600"
+                    onClick={() => handleSort('phone')}
+                  >
+                    <div className="flex items-center">
+                      Phone
+                      {sortField === 'phone' && (
+                        <Lucide 
+                          icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
+                          className="w-4 h-4 ml-1"
+                        />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.tags && (
+                  <th 
+                    className="p-4 font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-600"
+                    onClick={() => handleSort('tags')}
+                  >
+                    <div className="flex items-center">
+                      Tags
+                      {sortField === 'tags' && (
+                        <Lucide 
+                          icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
+                          className="w-4 h-4 ml-1"
+                        />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.points && (
+                  <th 
+                    className="p-4 font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-600"
+                    onClick={() => handleSort('points')}
+                  >
+                    <div className="flex items-center">
+                      Points
+                      {sortField === 'points' && (
+                        <Lucide 
+                          icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
+                          className="w-4 h-4 ml-1"
+                        />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {visibleColumns.notes && (
+                  <th 
+                    className="p-4 font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-600"
+                    onClick={() => handleSort('notes')}
+                  >
+                    <div className="flex items-center">
+                      Notes
+                      {sortField === 'notes' && (
+                        <Lucide 
+                          icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
+                          className="w-4 h-4 ml-1"
+                        />
+                      )}
+                    </div>
+                  </th>
+                )}
+                {Object.entries(visibleColumns)
+                  .filter(([key, isVisible]) => key.startsWith('customField_') && isVisible)
+                  .map(([key]) => {
+                    const fieldName = key.replace('customField_', '');
+                    return (
+                      <th 
+                        key={key} 
+                        className="p-4 font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-600"
+                        onClick={() => handleSort(`customField_${fieldName}`)}
+                      >
+                        <div className="flex items-center">
+                          {fieldName}
+                          {sortField === `customField_${fieldName}` && (
+                            <Lucide 
+                              icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
+                              className="w-4 h-4 ml-1"
+                            />
+                          )}
+                        </div>
+                      </th>
+                    );
+                  })}
+                {visibleColumns.actions && (
+                  <th className="p-4 font-medium text-gray-700 dark:text-gray-300">
+                    Actions
+                  </th>
+                )}
                   </tr>
                 </thead>
                 
                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {currentContacts.map((contact, index) => {
+                  {getDisplayedContacts().map((contact, index) => {
                     const isSelected = selectedContacts.some((c) => c.phone === contact.phone);
                     return (
                       <tr 
