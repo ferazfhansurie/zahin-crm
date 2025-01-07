@@ -1287,6 +1287,94 @@ const handleConfirmDeleteTag = async () => {
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
   
+    // Check if this is the 'Stop Blast' tag
+    if (tagName.toLowerCase() === 'stop blast') {
+      const contactChatId = contact.phone?.replace(/\D/g, '') + "@s.whatsapp.net";
+      const scheduledMessagesRef = collection(firestore, `companies/${companyId}/scheduledMessages`);
+      const scheduledSnapshot = await getDocs(scheduledMessagesRef);
+      
+      // Create a log entry for this batch of deletions
+      const logsRef = collection(firestore, `companies/${companyId}/scheduledMessageLogs`);
+      const batchLogRef = doc(logsRef);
+      
+      const deletedMessages: any[] = [];
+      
+      // Delete all scheduled messages for this contact
+      const deletePromises = scheduledSnapshot.docs.map(async (doc) => {
+        const messageData = doc.data();
+        if (messageData.chatIds?.includes(contactChatId)) {
+          const logEntry = {
+            messageId: doc.id,
+            deletedAt: serverTimestamp(),
+            deletedBy: user.email,
+            reason: 'Stop Blast tag added',
+            contactInfo: {
+              id: contact.id,
+              phone: contact.phone,
+              name: contact.contactName
+            },
+            originalMessage: messageData
+          };
+
+          if (messageData.chatIds.length === 1) {
+            // Full message deletion
+            try {
+              await axios.delete(`https://mighty-dane-newly.ngrok-free.app/api/schedule-message/${companyId}/${doc.id}`);
+    
+              console.log(`Deleted scheduled message ${doc.id}`);
+            } catch (error) {
+      
+            }
+          } else {
+            // Partial message update (removing recipient)
+            try {
+              const updatedChatIds = messageData.chatIds.filter((id: string) => id !== contactChatId);
+              const updatedMessages = messageData.messages?.filter((msg: any) => msg.chatId !== contactChatId) || [];
+              
+              await axios.put(
+                `https://mighty-dane-newly.ngrok-free.app/api/schedule-message/${companyId}/${doc.id}`,
+                {
+                  ...messageData,
+                  chatIds: updatedChatIds,
+                  messages: updatedMessages
+                }
+              );
+         
+              deletedMessages.push(logEntry);
+              console.log(`Updated scheduled message ${doc.id}`);
+            } catch (error) {
+              console.error(`Error updating scheduled message ${doc.id}:`, error);
+              
+              deletedMessages.push(logEntry);
+            }
+          }
+        }
+      });
+
+      await Promise.all(deletePromises);
+
+      // Save the batch log if there were any deletions
+      if (deletedMessages.length > 0) {
+        await setDoc(batchLogRef, {
+          timestamp: serverTimestamp(),
+          triggeredBy: user.email,
+          contactId: contact.id,
+          contactPhone: contact.phone,
+          reason: 'Stop Blast tag added',
+          deletedMessages: deletedMessages
+        });
+
+        console.log(`Logged ${deletedMessages.length} deleted messages`, {
+          logId: batchLogRef.id,
+          deletedMessages
+        });
+
+        toast.success(`Cancelled ${deletedMessages.length} scheduled messages for this contact`);
+      } else {
+        console.log('No scheduled messages found for deletion');
+        toast.info('No scheduled messages found for this contact');
+      }
+    }
       // Check if the tag is an employee name
       const employee = employeeList.find(emp => emp.name === tagName);
       

@@ -7724,7 +7724,7 @@ console.log(prompt);
                 phoneCount === 0 ||
                 message.phoneIndex === undefined || 
                 message.phoneIndex === null || 
-                message.phoneIndex === userData?.phone)))
+                message.phoneIndex.toString() === userData?.phone.toString())))
               .slice()
               .reverse()
               .map((message, index, array) => {
