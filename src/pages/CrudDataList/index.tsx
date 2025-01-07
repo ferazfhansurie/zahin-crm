@@ -3195,14 +3195,77 @@ useEffect(() => {
     );
   };
 
+  // Update handleDownloadSampleCsv to use visible columns
   const handleDownloadSampleCsv = () => {
-    const sampleCsvContent = `contactName,lastName,phone,email,companyName,address1,branch,expiryDate,vehicleNumber,ic,points,notes
-John,Doe,60123456789,john@example.com,ABC Company,123 Main St,Branch A,2023-12-31,ABC1234,123456-78-9012,100,Notes for John
-Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,XYZ5678,987654-32-1098,200,Notes for Jane`;
-
-    const blob = new Blob([sampleCsvContent], { type: 'text/csv;charset=utf-8' });
+    // Define all possible contact fields
+    const allFields = [
+      'contactName',
+      'lastName',
+      'phone',
+      'email',
+      'companyName',
+      'address1',
+      'city',
+      'state',
+      'postalCode',
+      'country',
+      'branch',
+      'expiryDate',
+      'vehicleNumber',
+      'points',
+      'IC',
+      'notes',
+      ...Object.keys(contacts[0]?.customFields || {}) // Include any custom fields
+    ];
+  
+    // Create sample data with all fields
+    const sampleData = [
+      allFields.join(','),
+      allFields.map(field => {
+        switch(field) {
+          case 'phone': return '60123456789';
+          case 'points': return '100';
+          case 'email': return 'john@example.com';
+          case 'IC': return '123456-78-9012';
+          case 'expiryDate': return '2024-12-31';
+          default: return `Sample ${field}`;
+        }
+      }).join(',')
+    ].join('\n');
+  
+    const blob = new Blob([sampleData], { type: 'text/csv;charset=utf-8' });
     saveAs(blob, 'sample_contacts.csv');
   };
+
+// Update parseCSV in handleCsvImport to match headers
+const parseCSV = async (): Promise<Array<any>> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const lines = text.split('\n');
+      const headers = lines[0].toLowerCase().trim().split(',');
+      const data = lines.slice(1)
+        .filter(line => line.trim())
+        .map(line => {
+          const values = line.split(',');
+          return headers.reduce((obj: any, header, index) => {
+            // Map CSV headers to your database fields
+            const key = header.trim().replace(/\s+/g, '');
+            obj[key] = values[index]?.trim() || '';
+            return obj;
+          }, {});
+        });
+      resolve(data);
+    };
+    reader.onerror = () => reject(new Error('Failed to read CSV'));
+    if (selectedCsvFile) {
+      reader.readAsText(selectedCsvFile);
+    } else {
+      reject(new Error('No file selected'));
+    }
+  });
+};
   
 
   const filterRecipients = (chatIds: string[], search: string) => {
