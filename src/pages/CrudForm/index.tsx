@@ -767,20 +767,7 @@ function Main() {
               disabled={isFieldDisabled("invoiceNumber")}
             />
           </div>
-          {currentUserRole === "1" && (
-            <div>
-              <FormLabel htmlFor="weightage">Weightage</FormLabel>
-              <FormInput
-                id="weightage"
-                name="weightage"
-                type="number"
-                value={userData.weightage}
-                onChange={(e) => setUserData(prev => ({ ...prev, weightage: parseInt(e.target.value) || 0 }))}
-                placeholder="Weightage"
-                min="0"
-              />
-            </div>
-          )}
+    
         </div>
         <div className="mt-4">
           <FormLabel htmlFor="notes">Notes</FormLabel>
@@ -794,34 +781,18 @@ function Main() {
             />
           </div>
         </div>
+     
         {currentUserRole === "1" && phoneOptions.length > 0 && (
           <>
-            {Array.from({ length: phoneOptions.length }).map((_, index) => {
-              const phoneField = index === 0 ? 'phone' : `phone${index + 1}`;
-              const weightageField = index === 0 ? 'weightage' : `weightage${index + 1}`;
-              
+            {Object.entries(phoneNames).map(([index, phoneName]) => {
+              const phoneField = index === '0' ? 'phone' : `phone${parseInt(index)}`;
+              const weightageField = index === '0' ? 'weightage' : `weightage${parseInt(index)}`;
               return (
                 <div key={index} className="grid grid-cols-2 gap-4">
                   <div>
-                    <FormLabel htmlFor={phoneField}>{`Phone ${index + 1}`}</FormLabel>
-                    <select
-                      id={phoneField}
-                      name={phoneField}
-                      value={userData[phoneField as keyof typeof userData] || ''}
-                      onChange={handleChange}
-                      className="text-black dark:text-white border-primary dark:border-primary-dark bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 focus:ring-2 focus:ring-blue-300 dark:focus:ring-blue-700 rounded-lg text-sm w-full"
-                      disabled={isFieldDisabled("phone") || (currentUserRole !== "1" && userData.role !== "2")}
-                    >
-                      <option value="">Select a phone</option>
-                      {Object.entries(phoneNames).map(([idx, phoneName]) => (
-                        <option key={idx} value={parseInt(idx) - 1}>
-                          {phoneName}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <FormLabel htmlFor={weightageField}>Weightage for Phone {index+1}</FormLabel>
+                    <FormLabel htmlFor={weightageField}>
+                      Weightage for {phoneName}
+                    </FormLabel>
                     <FormInput
                       id={weightageField}
                       name={weightageField}
@@ -830,6 +801,11 @@ function Main() {
                       onChange={handleChange}
                       placeholder="Weightage"
                       min="0"
+                    />
+                    <input 
+                      type="hidden" 
+                      name={phoneField} 
+                      value={(parseInt(index) - 1).toString()}
                     />
                   </div>
                 </div>

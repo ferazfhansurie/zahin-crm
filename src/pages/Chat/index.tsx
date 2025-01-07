@@ -2077,14 +2077,33 @@ async function fetchConfigFromDatabase() {
   const selectChat = useCallback(async (chatId: string, contactId?: string, contactSelect?: Contact) => {
     console.log('Attempting to select chat:', { chatId, userRole, userName: userData?.name });
     setLoading(true);
-    
+    console.log('userData:', userData);
     try {
       // Permission check
       if (userRole === "3" && contactSelect && contactSelect.assignedTo?.toLowerCase() !== userData?.name.toLowerCase()) {
         console.log('Permission denied for role 3 user');
         toast.error("You don't have permission to view this chat.");
         return;
+      }const user = auth.currentUser;
+      if (!user) {
+        console.error('No authenticated user');
+        return;
       }
+      // Update local state
+      setUserData(prevState => {
+        if (prevState === null) {
+          return {
+            phone: userData?.phone,
+            companyId: '',
+            name: '',
+            role: ''
+          };
+        }
+        return {
+          ...prevState,
+          phone: userData?.phone
+        };
+      });
   
       // Find contact
       let contact = contactSelect || contacts.find(c => c.chat_id === chatId || c.id === contactId);
@@ -7709,6 +7728,7 @@ console.log(prompt);
               .slice()
               .reverse()
               .map((message, index, array) => {
+                console.log('message:', message.id, 'phoneIndex:', message.phoneIndex, 'userData.phone:', userData?.phone, );
                 const previousMessage = messages[index - 1];
                 const showDateHeader =
                   index === 0 ||

@@ -119,6 +119,8 @@ function Main() {
     id?: string;
     chatIds: string[];
     message: string;
+    messages?: Array<{ text: string }>;
+    messageDelays?: number[];
     mediaUrl?: string;
     documentUrl?: string;
     mimeType?: string;
@@ -140,6 +142,17 @@ function Main() {
     count?: number;
     v2?:boolean;
     whapiToken?:string;
+    minDelay: number;
+    maxDelay: number;
+    activateSleep: boolean;
+    sleepAfterMessages: number | null;
+    sleepDuration: number | null;
+    activeHours: {
+      start: string;
+      end: string;
+    };
+    infiniteLoop: boolean;
+    numberOfBatches: number;
     processedMessages?: {
       chatId: string;
       message: string;
@@ -160,7 +173,10 @@ function Main() {
       placeholdersUsed: string[];
     };
   }
-
+  interface Message {
+    text: string;
+    delayAfter: number;
+  }
   const DatePickerComponent = DatePicker as any;
   
   const [deleteConfirmationModal, setDeleteConfirmationModal] = useState(false);
@@ -268,8 +284,8 @@ function Main() {
   const [sleepDuration, setSleepDuration] = useState(5);
   const [activeTimeStart, setActiveTimeStart] = useState('09:00');
 const [activeTimeEnd, setActiveTimeEnd] = useState('17:00');
-const [useMessageRotation, setUseMessageRotation] = useState(false);
-const [rotatingMessages, setRotatingMessages] = useState(['']);
+const [messages, setMessages] = useState<Message[]>([{ text: '', delayAfter: 0 }]);
+const [infiniteLoop, setInfiniteLoop] = useState(false);
   const [showScheduledMessages, setShowScheduledMessages] = useState<boolean>(true);
   // First, add a state to track visible columns
   const [visibleColumns, setVisibleColumns] = useState<{ [key: string]: boolean }>({
@@ -2240,48 +2256,27 @@ useEffect(() => {
 }, [contacts, filteredContactsSearch, searchQuery, scheduledMessages]);
 
 
-//faeez incompetent
 const sendBlastMessage = async () => {
   console.log('Starting sendBlastMessage function');
 
   // Validation checks
   if (selectedContacts.length === 0) {
-    console.log('No contacts selected');
     toast.error("No contacts selected!");
     return;
   }
 
   if (!blastStartTime) {
-    console.log('No start time selected');
     toast.error("Please select a start time for the blast message.");
     return;
   }
 
-  if (useMessageRotation && rotatingMessages.every(msg => msg.trim() === '')) {
-    console.log('No rotating messages provided');
-    toast.error("Please add at least one message for rotation.");
+  if (messages.some(msg => !msg.text.trim())) {
+    toast.error("Please fill in all message fields");
     return;
   }
 
-  // Validate active hours
-  const [startHour, startMinute] = activeTimeStart.split(':').map(Number);
-  const [endHour, endMinute] = activeTimeEnd.split(':').map(Number);
-
-  // Combine date and time
-  const combinedDateTime = new Date(
-    blastStartDate.getFullYear(),
-    blastStartDate.getMonth(),
-    blastStartDate.getDate(),
-    blastStartTime?.getHours() || 0,
-    blastStartTime?.getMinutes() || 0
-  );
-
-  const now = new Date();
-  const scheduledTime = new Date(combinedDateTime);
-
-  if (scheduledTime <= now) {
-    console.log('Selected time is in the past');
-    toast.error("Please select a future time for the blast message.");
+  if (phoneIndex === undefined || phoneIndex === null) {
+    toast.error("Please select a phone to send from");
     return;
   }
 
@@ -2290,109 +2285,96 @@ const sendBlastMessage = async () => {
   try {
     let mediaUrl = '';
     let documentUrl = '';
+    let fileName = '';
+    let mimeType = '';
+
+    // Handle media and document uploads...
     if (selectedMedia) {
-      console.log('Uploading media...');
-      mediaUrl = await uploadFile(selectedMedia);
-      console.log(`Media uploaded. URL: ${mediaUrl}`);
+      try {
+        mediaUrl = await uploadFile(selectedMedia);
+        mimeType = selectedMedia.type;
+      } catch (error) {
+        console.error('Error uploading media:', error);
+        toast.error("Failed to upload media file");
+        return;
+      }
     }
+
     if (selectedDocument) {
-      console.log('Uploading document...');
-      documentUrl = await uploadFile(selectedDocument);
-      console.log(`Document uploaded. URL: ${documentUrl}`);
+      try {
+        documentUrl = await uploadFile(selectedDocument);
+        fileName = selectedDocument.name;
+        mimeType = selectedDocument.type;
+      } catch (error) {
+        console.error('Error uploading document:', error);
+        toast.error("Failed to upload document");
+        return;
+      }
     }
 
+    // Authentication and company data checks...
     const user = auth.currentUser;
-    console.log(`Current user: ${user?.email}`);
-
-    const docUserRef = doc(firestore, 'user', user?.email!);
-    const docUserSnapshot = await getDoc(docUserRef);
-    if (!docUserSnapshot.exists()) {
-      console.log('No such document for user!');
+    if (!user) {
+      toast.error("User not authenticated");
       return;
     }
+
+    // Get company data...
+    const docUserRef = doc(firestore, 'user', user.email!);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) {
+      toast.error("User data not found");
+      return;
+    }
+
     const userData = docUserSnapshot.data();
     const companyId = userData.companyId;
-    console.log(`Company ID: ${companyId}`);
 
     const companyRef = doc(firestore, 'companies', companyId);
     const companySnapshot = await getDoc(companyRef);
     if (!companySnapshot.exists()) {
-      console.log('No such document for company!');
+      toast.error("Company data not found");
       return;
     }
+
     const companyData = companySnapshot.data();
     const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
     const isV2 = companyData.v2 || false;
     const whapiToken = companyData.whapiToken || '';
 
+    // Process contact IDs
     const chatIds = selectedContacts.map(contact => {
       const phoneNumber = contact.phone?.replace(/\D/g, '');
-      return phoneNumber ? phoneNumber + "@s.whatsapp.net" : null;
+      return phoneNumber ? phoneNumber + "@c.us" : null;
     }).filter(chatId => chatId !== null);
 
-    if (chatIds.length === 0) {
-      toast.error("No valid chat IDs found in selected contacts.");
-      return;
-    }
-
-    // Process messages based on rotation setting
-    const processMessages = (messageText: string, contact: any) => {
-      let processedMessage = messageText;
-      const placeholders = {
-        contactName: contact.contactName || '',
-        firstName: contact.firstName || '',
-        lastName: contact.lastName || '',
-        email: contact.email || '',
-        phone: contact.phone || '',
-        vehicleNumber: contact.vehicleNumber || '',
-        branch: contact.branch || '',
-        expiryDate: contact.expiryDate || '',
-        ic: contact.ic || ''
-      };
-
-      Object.entries(placeholders).forEach(([key, value]) => {
-        processedMessage = processedMessage.replace(
-          new RegExp(`@{${key}}`, 'g'),
-          value
-        );
-      });
-
-      return processedMessage;
-    };
-
-    let processedMessages;
-    if (useMessageRotation) {
-      const validRotatingMessages = rotatingMessages.filter(msg => msg.trim() !== '');
-      processedMessages = selectedContacts.map((contact, index) => {
-        const messageIndex = index % validRotatingMessages.length;
-        const messageText = validRotatingMessages[messageIndex];
-        return {
-          chatId: contact.phone?.replace(/\D/g, '') + "@s.whatsapp.net",
-          message: processMessages(messageText, contact)
-        };
-      });
-    } else {
-      processedMessages = selectedContacts.map(contact => ({
-        chatId: contact.phone?.replace(/\D/g, '') + "@s.whatsapp.net",
-        message: processMessages(blastMessage, contact)
-      }));
-    }
-
+    // Format the data in the original structure with support for multiple messages
     const scheduledMessageData = {
-      chatIds: chatIds,
-      phoneIndex: phoneIndex,
-      message: blastMessage,
-      messages: processedMessages,
-      batchQuantity: batchQuantity,
-      companyId: companyId,
+      chatIds,
+      phoneIndex,
+      // First message goes in the original message field
+      message: messages[0].text,
+      // Additional messages go in the messages array
+      messages: messages.slice(1).map(msg => ({
+        text: msg.text
+      })),
+      messageDelays: messages.slice(1).map(msg => msg.delayAfter),
+      batchQuantity,
+      companyId,
       createdAt: Timestamp.now(),
-      documentUrl: documentUrl || "",
-      fileName: selectedDocument ? selectedDocument.name : null,
-      mediaUrl: mediaUrl || "",
-      mimeType: selectedMedia ? selectedMedia.type : (selectedDocument ? selectedDocument.type : null),
-      repeatInterval: repeatInterval,
-      repeatUnit: repeatUnit,
-      scheduledTime: Timestamp.fromDate(scheduledTime),
+      documentUrl,
+      fileName,
+      mediaUrl,
+      mimeType,
+      repeatInterval,
+      repeatUnit,
+      scheduledTime: Timestamp.fromDate(new Date(
+        blastStartDate.getFullYear(),
+        blastStartDate.getMonth(),
+        blastStartDate.getDate(),
+        blastStartTime?.getHours() || 0,
+        blastStartTime?.getMinutes() || 0
+      )),
       status: "scheduled",
       v2: isV2,
       whapiToken: isV2 ? null : whapiToken,
@@ -2405,8 +2387,8 @@ const sendBlastMessage = async () => {
         start: activeTimeStart,
         end: activeTimeEnd
       },
-      useMessageRotation,
-      rotatingMessages: useMessageRotation ? rotatingMessages.filter(msg => msg.trim() !== '') : []
+      infiniteLoop,
+      numberOfBatches: 1
     };
 
     console.log('Sending scheduledMessageData:', JSON.stringify(scheduledMessageData, null, 2));
@@ -2414,48 +2396,48 @@ const sendBlastMessage = async () => {
     // Make API call to schedule the messages
     const response = await axios.post(`${baseUrl}/api/schedule-message/${companyId}`, scheduledMessageData);
 
-    console.log(`Scheduled messages added. Document ID: ${response.data.id}`);
+    if (response.data.success) {
+      toast.success(`Blast messages scheduled successfully for ${selectedContacts.length} contacts.`);
+      toast.info(`Messages will be sent at: ${scheduledMessageData.scheduledTime.toDate().toLocaleString()} (local time)`);
 
-    // Show success toast
-    toast.success(`Blast messages scheduled successfully for ${selectedContacts.length} contacts.`);
-    toast.info(`Messages will be sent at: ${scheduledTime.toLocaleString()} (local time)`);
-
-    // Refresh the scheduled messages list
-    await fetchScheduledMessages();
-
-    // Close the modal and reset state
-    setBlastMessageModal(false);
-    setBlastMessage("");
-    setBlastStartTime(null);
-    setBatchQuantity(10);
-    setRepeatInterval(0);
-    setRepeatUnit('days');
-    setSelectedMedia(null);
-    setSelectedDocument(null);
-    setActiveTimeStart('09:00');
-    setActiveTimeEnd('17:00');
-    setUseMessageRotation(false);
-    setRotatingMessages(['']);
+      // Refresh and reset
+      await fetchScheduledMessages();
+      setBlastMessageModal(false);
+      resetForm();
+    } else {
+      toast.error(response.data.message || "Failed to schedule messages");
+    }
 
   } catch (error) {
     console.error('Error scheduling blast messages:', error);
     if (axios.isAxiosError(error) && error.response) {
-      console.error('Server response:', error.response.data);
-      console.error('Server status:', error.response.status);
-      console.error('Server headers:', error.response.headers);
       const errorMessage = error.response.data.error || 'Unknown server error';
       toast.error(`Failed to schedule message: ${errorMessage}`);
     } else {
-      console.error('Unexpected error:', error);
       toast.error("An unexpected error occurred while scheduling blast messages.");
     }
   } finally {
     setIsScheduling(false);
   }
-
-  console.log('sendBlastMessage function completed');
 };
-  
+
+// Helper function to reset the form
+const resetForm = () => {
+  setMessages([{ text: '', delayAfter: 0 }]);
+  setInfiniteLoop(false);
+  setBatchQuantity(10);
+  setRepeatInterval(0);
+  setRepeatUnit('days');
+  setSelectedMedia(null);
+  setSelectedDocument(null);
+  setActiveTimeStart('09:00');
+  setActiveTimeEnd('17:00');
+  setMinDelay(1);
+  setMaxDelay(3);
+  setActivateSleep(false);
+  setSleepAfterMessages(10);
+  setSleepDuration(30);
+};
 
   const sendImageMessage = async (id: string, imageUrl: string,caption?: string) => {
     try {
@@ -2961,15 +2943,15 @@ const sendBlastMessage = async () => {
 
   const handleSaveScheduledMessage = async () => {
     if (!currentScheduledMessage) return;
-
+  
     try {
       const user = auth.currentUser;
       if (!user) return;
-
+  
       const docUserRef = doc(firestore, 'user', user.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) return;
-
+  
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
       const docRef = doc(firestore, 'companies', companyId);
@@ -2977,19 +2959,20 @@ const sendBlastMessage = async () => {
       if (!docSnapshot.exists()) throw new Error('No company document found');
       const companyData = docSnapshot.data();
       const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
-      // Upload new media/document files (existing code)
+  
+      // Upload new media/document files if needed
       let newMediaUrl = currentScheduledMessage.mediaUrl;
       if (editMediaFile) {
         newMediaUrl = await uploadFile(editMediaFile);
       }
-
+  
       let newDocumentUrl = currentScheduledMessage.documentUrl;
       let newFileName = currentScheduledMessage.fileName;
       if (editDocumentFile) {
         newDocumentUrl = await uploadFile(editDocumentFile);
         newFileName = editDocumentFile.name;
       }
-
+  
       // Process messages for each contact
       const processedMessages = await Promise.all(
         currentScheduledMessage.chatIds.map(async (chatId) => {
@@ -2998,10 +2981,10 @@ const sendBlastMessage = async () => {
           
           if (!contact) {
             console.warn(`No contact found for chatId: ${chatId}`);
-            return { chatId, message: blastMessage }; // Return unprocessed message as fallback
+            return { text: blastMessage }; // Return unprocessed message as fallback
           }
   
-          // Process message with contact data using the NEW blast message
+          // Process message with contact data
           let processedMessage = blastMessage
             .replace(/@{contactName}/g, contact.contactName || '')
             .replace(/@{firstName}/g, contact.contactName?.split(' ')[0] || '')
@@ -3013,60 +2996,55 @@ const sendBlastMessage = async () => {
             .replace(/@{expiryDate}/g, contact.expiryDate || '')
             .replace(/@{ic}/g, contact.ic || '');
   
-          return {
-            chatId,
-            message: processedMessage
-          };
+          return { text: processedMessage };
         })
       );
-
+  
       // Prepare the updated message data
-      const updatedMessageData = {
+      const updatedMessageData: ScheduledMessage = {
         ...currentScheduledMessage,
-        message: blastMessage, // Store the new template
-        messages: processedMessages, // Store the newly processed messages
-        templateData: {
-          hasPlaceholders: blastMessage.includes('@{'),
-          placeholdersUsed: [...blastMessage.matchAll(/@{([^}]+)}/g)].map(match => match[1])
-        },
+        message: blastMessage, // Store the main message
+        messages: processedMessages.slice(1), // Store additional messages if any
+        messageDelays: currentScheduledMessage.messageDelays || [],
         batchQuantity: currentScheduledMessage.batchQuantity || 10,
-        companyId,
         createdAt: currentScheduledMessage.createdAt || Timestamp.now(),
         documentUrl: newDocumentUrl,
         fileName: newFileName,
         mediaUrl: newMediaUrl,
-        mimeType: editMediaFile ? editMediaFile.type : (editDocumentFile ? editDocumentFile.type : null),
+        mimeType: editMediaFile ? editMediaFile.type : (editDocumentFile ? editDocumentFile.type : currentScheduledMessage.mimeType),
         repeatInterval: currentScheduledMessage.repeatInterval || 0,
         repeatUnit: currentScheduledMessage.repeatUnit || 'days',
         scheduledTime: currentScheduledMessage.scheduledTime,
         status: 'scheduled',
         v2: currentScheduledMessage.v2 || false,
-        whapiToken: currentScheduledMessage.whapiToken || null,
+        whapiToken: currentScheduledMessage.whapiToken || undefined,
+        minDelay: currentScheduledMessage.minDelay || 1,
+        maxDelay: currentScheduledMessage.maxDelay || 3,
+        activateSleep: currentScheduledMessage.activateSleep || false,
+        sleepAfterMessages: currentScheduledMessage.sleepAfterMessages || null,
+        sleepDuration: currentScheduledMessage.sleepDuration || null,
+        activeHours: currentScheduledMessage.activeHours || { start: '09:00', end: '17:00' },
+        infiniteLoop: currentScheduledMessage.infiniteLoop || false,
+        numberOfBatches: currentScheduledMessage.numberOfBatches || 1,
+        chatIds: currentScheduledMessage.chatIds
       };
-
-      console.log('Updating scheduled message with data:', updatedMessageData);
-
+  
       // Send PUT request to update the scheduled message
       const response = await axios.put(
         `${baseUrl}/api/schedule-message/${companyId}/${currentScheduledMessage.id}`,
         updatedMessageData
       );
-
+  
       if (response.status === 200) {
         // Update local state
         setScheduledMessages(prev => 
           prev.map(msg => 
             msg.id === currentScheduledMessage.id 
-              ? { 
-                  ...msg, 
-                  ...updatedMessageData, 
-                  message: blastMessage, // Use the edited message content
-                  mimeType: updatedMessageData.mimeType || undefined 
-                } as ScheduledMessage
+              ? updatedMessageData
               : msg
           )
         );
-
+  
         setEditScheduledMessageModal(false);
         setEditMediaFile(null);
         setEditDocumentFile(null);
@@ -3077,7 +3055,7 @@ const sendBlastMessage = async () => {
       } else {
         throw new Error("Failed to update scheduled message");
       }
-
+  
     } catch (error) {
       console.error("Error updating scheduled message:", error);
       toast.error("Failed to update scheduled message.");
@@ -3832,9 +3810,77 @@ const getFilteredScheduledMessages = () => {
                                 {formatDate(message.scheduledTime.toDate())}
                               </span>
                             </div>
-                            <p className="text-gray-800 dark:text-gray-200 mb-2 font-medium text-md line-clamp-2">
-                              {message.message ? message.message : 'No message content'}
-                            </p>  
+                            <div className="text-gray-800 dark:text-gray-200 mb-2 font-medium text-md">
+  {/* First Message */}
+  <p className="line-clamp-2">
+    {message.message ? message.message : 'No message content'}
+  </p>
+
+  {/* Additional Messages */}
+  {message.messages && message.messages.length > 0 && (
+    <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+      {message.messages.map((msg: any, index: number) => (
+        <div key={index} className="mt-2">
+          <p className="line-clamp-2">
+            Message {index + 2}: {msg.text}
+          </p>
+          {message.messageDelays && message.messageDelays[index] > 0 && (
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              Delay: {message.messageDelays[index]} seconds
+            </span>
+          )}
+        </div>
+      ))}
+    </div>
+  )}
+
+  {/* Message Settings */}
+  <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+    <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
+      {/* Batch Settings */}
+      <div>
+        <span className="font-semibold">Batch Size:</span> {message.batchQuantity}
+      </div>
+      
+      {/* Delay Settings */}
+      <div>
+        <span className="font-semibold">Delay:</span> {message.minDelay}-{message.maxDelay}s
+      </div>
+
+      {/* Repeat Settings */}
+      {message.repeatInterval > 0 && (
+        <div>
+          <span className="font-semibold">Repeat:</span> Every {message.repeatInterval} {message.repeatUnit}
+        </div>
+      )}
+
+      {/* Sleep Settings */}
+      {message.activateSleep && (
+        <>
+          <div>
+            <span className="font-semibold">Sleep After:</span> {message.sleepAfterMessages} messages
+          </div>
+          <div>
+            <span className="font-semibold">Sleep Duration:</span> {message.sleepDuration} minutes
+          </div>
+        </>
+      )}
+
+      {/* Active Hours */}
+      <div className="col-span-2">
+        <span className="font-semibold">Active Hours:</span> {message.activeHours?.start} - {message.activeHours?.end}
+      </div>
+
+      {/* Infinite Loop */}
+      {message.infiniteLoop && (
+        <div className="col-span-2 text-indigo-600 dark:text-indigo-400 flex items-center">
+          <Lucide icon="RefreshCw" className="w-4 h-4 mr-1" />
+          Messages will loop indefinitely
+        </div>
+      )}
+    </div>
+  </div>
+</div>
                             <div className="flex items-center text-xs text-gray-600 dark:text-gray-400">
                               <Lucide icon="Users" className="w-4 h-4 mr-1" />
                               <div className="ml-5 max-h-20 overflow-y-auto">
@@ -5054,321 +5100,375 @@ const getFilteredScheduledMessages = () => {
   </div>
 </Dialog>
      
-        <Dialog open={blastMessageModal} onClose={() => setBlastMessageModal(false)}>
-          <div className="fixed inset-0 flex items-center justify-center p-4 bg-black bg-opacity-50">
-            <Dialog.Panel className="w-full max-w-md p-6 bg-white dark:bg-gray-800 rounded-md mt-10 text-gray-900 dark:text-white">
-              <div className="mb-4 text-lg font-semibold">Send Blast Message</div>
-              {userRole === "3" ? (
-                <div className="text-red-500">You don't have permission to send blast messages.</div>
-              ) : (
-                <>
-                 {useMessageRotation ? (
-  <div className="space-y-4">
-    <div className="flex items-center justify-between">
-      <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Rotating Messages</label>
-      <button
-        type="button"
-        className="text-sm text-indigo-600 hover:text-indigo-500"
-        onClick={() => setRotatingMessages([...rotatingMessages, ''])}
-      >
-        Add Message
-      </button>
-    </div>
-    {rotatingMessages.map((message, index) => (
-      <div key={index} className="flex items-start space-x-2">
-        <textarea
-          className="flex-1 p-2 border rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-          placeholder={`Message ${index + 1}`}
-          value={message}
-          onChange={(e) => {
-            const newMessages = [...rotatingMessages];
-            newMessages[index] = e.target.value;
-            setRotatingMessages(newMessages);
-          }}
-          rows={3}
-          style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
-        />
-        {rotatingMessages.length > 1 && (
-          <button
-            onClick={() => {
-              const newMessages = rotatingMessages.filter((_, i) => i !== index);
-              setRotatingMessages(newMessages);
-            }}
-            className="p-2 text-red-500 hover:text-red-700"
-          >
-            <span>×</span>
-          </button>
-        )}
-      </div>
-    ))}
-  </div>
-) : (
-  <textarea
-    className="w-full p-2 border rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-    placeholder="Type your message here..."
-    value={blastMessage}
-    onChange={(e) => setBlastMessage(e.target.value)}
-    rows={3}
-    style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
-  />
-)}
-                  <div className="mt-2">
+<Dialog open={blastMessageModal} onClose={() => setBlastMessageModal(false)}>
+  <div className="fixed inset-0 flex items-center justify-center p-4 bg-black bg-opacity-50">
+    <Dialog.Panel className="w-full max-w-md p-6 bg-white dark:bg-gray-800 rounded-md mt-10 text-gray-900 dark:text-white">
+      <div className="mb-4 text-lg font-semibold">Send Blast Message</div>
+      {userRole === "3" ? (
+        <div className="text-red-500">You don't have permission to send blast messages.</div>
+      ) : (
+        <>
+          {/* Multiple Messages Section */}
+          <div className="mt-4">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Messages</label>
+              <button
+                type="button"
+                className="text-sm text-indigo-600 hover:text-indigo-500"
+                onClick={() => setMessages([...messages, { text: '', delayAfter: 0 }])}
+              >
+                Add Message
+              </button>
+            </div>
+            
+            {messages.map((message, index) => (
+              <div key={index} className="mt-4 space-y-2">
+                <div className="flex items-start space-x-2">
+                  <textarea
+                    className="flex-1 p-2 border rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                    placeholder={`Message ${index + 1}`}
+                    value={message.text}
+                    onChange={(e) => {
+                      const newMessages = [...messages];
+                      newMessages[index] = { ...message, text: e.target.value };
+                      setMessages(newMessages);
+                    }}
+                    rows={3}
+                    style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                  />
+                  {messages.length > 1 && (
                     <button
-                      type="button"
-                      className="text-sm text-blue-500 hover:text-blue-400"
-                      onClick={() => setShowPlaceholders(!showPlaceholders)}
+                      onClick={() => {
+                        const newMessages = messages.filter((_, i) => i !== index);
+                        setMessages(newMessages);
+                      }}
+                      className="p-2 text-red-500 hover:text-red-700"
                     >
-                      {showPlaceholders ? 'Hide Placeholders' : 'Show Placeholders'}
+                      <span>×</span>
                     </button>
-                    {showPlaceholders && (
-                      <div className="mt-2 space-y-1">
-                        <p className="text-sm text-gray-600 dark:text-gray-400">Click to insert:</p>
-                        {['contactName', 'firstName', 'lastName', 'email', 'phone', 'vehicleNumber', 'branch', 'expiryDate', 'ic'].map(field => (
-                          <button
-                            key={field}
-                            type="button"
-                            className="mr-2 mb-2 px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
-                            onClick={() => insertPlaceholder(field)}
-                          >
-                            @{'{'}${field}{'}'}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Attach Media (Image or Video)</label>
-                    <input
-                      type="file"
-                      accept="image/*,video/*"
-                      onChange={(e) => handleMediaUpload(e)}
-                      className="block w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
-                  </div>
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Attach Document</label>
-                    <input
-                      type="file"
-                      accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
-                      onChange={(e) => handleDocumentUpload(e)}
-                      className="block w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
-                  </div>
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Start Date & Time</label>
-                    <div className="flex space-x-2">
-                      <DatePickerComponent
-                        selected={blastStartDate}
-                        onChange={(date: Date | null) => setBlastStartDate(date as Date)}
-                        dateFormat="MMMM d, yyyy"
-                        className="w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      />
-                      <DatePickerComponent
-                        selected={blastStartTime}
-                        onChange={(date: Date | null) => setBlastStartTime(date as Date)}
-                        showTimeSelect
-                        showTimeSelectOnly
-                        timeIntervals={15}
-                        timeCaption="Time"
-                        dateFormat="h:mm aa"
-                        className="w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      />
-                    </div>
-                  </div>
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Contacts per Batch</label>
-                    <input
-                      type="number"
-                      value={batchQuantity}
-                      onChange={(e) => setBatchQuantity(parseInt(e.target.value))}
-                      min={1}
-                      className="block w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    />
-                  </div>
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Repeat Every</label>
-                    <div className="flex items-center">
-                      <input
-                        type="number"
-                        value={repeatInterval}
-                        onChange={(e) => setRepeatInterval(parseInt(e.target.value))}
-                        min={0}
-                        className="w-20 mt-1 mr-2 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      />
-                      <select
-                        value={repeatUnit}
-                        onChange={(e) => setRepeatUnit(e.target.value as 'minutes' | 'hours' | 'days')}
-                        className="mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                      >
-                        <option value="minutes">Minutes</option>
-                        <option value="hours">Hours</option>
-                        <option value="days">Days</option>
-                      </select>
-                    </div>
-                    <div className="mt-4">
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Delay between messages</label>
-        <div className="flex items-center space-x-2 mt-1">
-          <div className="flex items-center">
-            <span className="text-sm text-gray-600 dark:text-gray-400 mr-2">Wait between:</span>
-            <input
-              type="number"
-              value={minDelay}
-              onChange={(e) => setMinDelay(parseInt(e.target.value))}
-              min={1}
-              className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            />
-          </div>
-          <div className="flex items-center">
-            <span className="text-sm text-gray-600 dark:text-gray-400 mx-2">and</span>
-            <input
-              type="number"
-              value={maxDelay}
-              onChange={(e) => setMaxDelay(parseInt(e.target.value))}
-              min={1}
-              className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            />
-            <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">Seconds</span>
-          </div>
-        </div>
+                  )}
+                </div>
+                
+                 {/* Only show delay input if there are multiple messages */}
+    {messages.length > 1 && (
+      <div className="flex items-center space-x-2">
+        <span className="text-sm text-gray-600 dark:text-gray-400">Wait</span>
+        <input
+          type="number"
+          value={message.delayAfter}
+          onChange={(e) => {
+            const newMessages = [...messages];
+            newMessages[index] = { ...message, delayAfter: parseInt(e.target.value) || 0 };
+            setMessages(newMessages);
+          }}
+          min={0}
+          className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+        />
+        <span className="text-sm text-gray-600 dark:text-gray-400">seconds after this message</span>
+      </div>
+    )}
+  </div>
+            ))}
 
-        <div className="mt-4">
-          <label className="flex items-center">
+            <div className="mt-4">
+              <label className="flex items-center">
+                <input
+                  type="checkbox"
+                  checked={infiniteLoop}
+                  onChange={(e) => setInfiniteLoop(e.target.checked)}
+                  className="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+                />
+                <span className="ml-2 text-sm text-gray-600 dark:text-gray-400">
+                  Loop messages indefinitely
+                </span>
+              </label>
+            </div>
+          </div>
+
+          {/* Placeholders Section */}
+          <div className="mt-2">
+            <button
+              type="button"
+              className="text-sm text-blue-500 hover:text-blue-400"
+              onClick={() => setShowPlaceholders(!showPlaceholders)}
+            >
+              {showPlaceholders ? 'Hide Placeholders' : 'Show Placeholders'}
+            </button>
+            {showPlaceholders && (
+              <div className="mt-2 space-y-1">
+                <p className="text-sm text-gray-600 dark:text-gray-400">Click to insert:</p>
+                {['contactName', 'firstName', 'lastName', 'email', 'phone', 'vehicleNumber', 'branch', 'expiryDate', 'ic'].map(field => (
+                  <button
+                    key={field}
+                    type="button"
+                    className="mr-2 mb-2 px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
+                    onClick={() => insertPlaceholder(field)}
+                  >
+                    @{'{'}${field}{'}'}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Media Upload Section */}
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Attach Media (Image or Video)
+            </label>
             <input
-              type="checkbox"
-              checked={activateSleep}
-              onChange={(e) => setActivateSleep(e.target.checked)}
-              className="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+              type="file"
+              accept="image/*,video/*"
+              onChange={(e) => handleMediaUpload(e)}
+              className="block w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             />
-            <span className="ml-2 text-sm text-gray-600 dark:text-gray-400">Activate Sleep between sending</span>
-          </label>
-          {activateSleep && (
-            <div className="flex items-center space-x-2 mt-2 ml-6">
-              <span className="text-sm text-gray-600 dark:text-gray-400">After:</span>
+          </div>
+
+          {/* Document Upload Section */}
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Attach Document
+            </label>
+            <input
+              type="file"
+              accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx"
+              onChange={(e) => handleDocumentUpload(e)}
+              className="block w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
+          </div>
+
+          {/* Schedule Settings */}
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Start Date & Time
+            </label>
+            <div className="flex space-x-2">
+              <DatePickerComponent
+                selected={blastStartDate}
+                onChange={(date: Date | null) => setBlastStartDate(date as Date)}
+                dateFormat="MMMM d, yyyy"
+                className="w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+              <DatePickerComponent
+                selected={blastStartTime}
+                onChange={(date: Date | null) => setBlastStartTime(date as Date)}
+                showTimeSelect
+                showTimeSelectOnly
+                timeIntervals={15}
+                timeCaption="Time"
+                dateFormat="h:mm aa"
+                className="w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+            </div>
+          </div>
+
+          {/* Batch Settings */}
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Contacts per Batch
+            </label>
+            <input
+              type="number"
+              value={batchQuantity}
+              onChange={(e) => setBatchQuantity(parseInt(e.target.value))}
+              min={1}
+              className="block w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
+          </div>
+
+          {/* Repeat Settings */}
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Repeat Every
+            </label>
+            <div className="flex items-center">
               <input
                 type="number"
-                value={sleepAfterMessages}
-                onChange={(e) => setSleepAfterMessages(parseInt(e.target.value))}
-                min={1}
-                className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                value={repeatInterval}
+                onChange={(e) => setRepeatInterval(parseInt(e.target.value))}
+                min={0}
+                className="w-20 mt-1 mr-2 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               />
-              <span className="text-sm text-gray-600 dark:text-gray-400">Messages</span>
-              <span className="text-sm text-gray-600 dark:text-gray-400">for:</span>
+              <select
+                value={repeatUnit}
+                onChange={(e) => setRepeatUnit(e.target.value as 'minutes' | 'hours' | 'days')}
+                className="mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="minutes">Minutes</option>
+                <option value="hours">Hours</option>
+                <option value="days">Days</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Delay Settings */}
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Delay between batches
+            </label>
+            <div className="flex items-center space-x-2 mt-1">
+              <div className="flex items-center">
+                <span className="text-sm text-gray-600 dark:text-gray-400 mr-2">Wait between:</span>
+                <input
+                  type="number"
+                  value={minDelay}
+                  onChange={(e) => setMinDelay(parseInt(e.target.value))}
+                  min={1}
+                  className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+              <div className="flex items-center">
+                <span className="text-sm text-gray-600 dark:text-gray-400 mx-2">and</span>
+                <input
+                  type="number"
+                  value={maxDelay}
+                  onChange={(e) => setMaxDelay(parseInt(e.target.value))}
+                  min={1}
+                  className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+                <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">Seconds</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Sleep Settings */}
+          <div className="mt-4">
+            <label className="flex items-center">
               <input
-                type="number"
-                value={sleepDuration}
-                onChange={(e) => setSleepDuration(parseInt(e.target.value))}
-                min={1}
-                className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                type="checkbox"
+                checked={activateSleep}
+                onChange={(e) => setActivateSleep(e.target.checked)}
+                className="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
               />
-              <span className="text-sm text-gray-600 dark:text-gray-400">Seconds</span>
+              <span className="ml-2 text-sm text-gray-600 dark:text-gray-400">
+                Activate Sleep between sending
+              </span>
+            </label>
+            {activateSleep && (
+              <div className="flex items-center space-x-2 mt-2 ml-6">
+                <span className="text-sm text-gray-600 dark:text-gray-400">After:</span>
+                <input
+                  type="number"
+                  value={sleepAfterMessages}
+                  onChange={(e) => setSleepAfterMessages(parseInt(e.target.value))}
+                  min={1}
+                  className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+                <span className="text-sm text-gray-600 dark:text-gray-400">Messages</span>
+                <span className="text-sm text-gray-600 dark:text-gray-400">for:</span>
+                <input
+                  type="number"
+                  value={sleepDuration}
+                  onChange={(e) => setSleepDuration(parseInt(e.target.value))}
+                  min={1}
+                  className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+                <span className="text-sm text-gray-600 dark:text-gray-400">Seconds</span>
+              </div>
+            )}
+          </div>
+
+          {/* Active Hours */}
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+              Active Hours
+            </label>
+            <div className="flex items-center space-x-2">
+              <div>
+                <label className="text-sm text-gray-600 dark:text-gray-400">From</label>
+                <DatePickerComponent
+                  selected={(() => {
+                    const date = new Date();
+                    const [hours, minutes] = activeTimeStart.split(':');
+                    date.setHours(parseInt(hours), parseInt(minutes));
+                    return date;
+                  })()}
+                  onChange={(date: Date | null) => {
+                    if (date) {
+                      setActiveTimeStart(`${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`);
+                    }
+                  }}
+                  showTimeSelect
+                  showTimeSelectOnly
+                  timeIntervals={15}
+                  timeCaption="Time"
+                  dateFormat="h:mm aa"
+                  className="w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+              <div>
+                <label className="text-sm text-gray-600 dark:text-gray-400">To</label>
+                <DatePickerComponent
+                  selected={(() => {
+                    const date = new Date();
+                    const [hours, minutes] = activeTimeEnd.split(':');
+                    date.setHours(parseInt(hours), parseInt(minutes));
+                    return date;
+                  })()}
+                  onChange={(date: Date | null) => {
+                    if (date) {
+                      setActiveTimeEnd(`${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`);
+                    }
+                  }}
+                  showTimeSelect
+                  showTimeSelectOnly
+                  timeIntervals={15}
+                  timeCaption="Time"
+                  dateFormat="h:mm aa"
+                  className="w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Phone Selection */}
+          <div className="mt-4">
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="phone">
+              Phone
+            </label>
+            <select
+              id="phone"
+              name="phone"
+              value={phoneIndex}
+              onChange={(e) => setPhoneIndex(parseInt(e.target.value))}
+              className="mt-1 text-black dark:text-white border-primary dark:border-primary-dark bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 focus:ring-2 focus:ring-blue-300 dark:focus:ring-blue-700 rounded-lg text-sm w-full"
+            >
+              <option value="">Select a phone</option>
+              {Object.entries(phoneNames).map(([index, phoneName]) => (
+                <option key={index} value={parseInt(index) - 1}>
+                  {phoneName}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Submit Button */}
+          <div className="flex justify-end mt-6">
+            <button
+              className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={sendBlastMessage}
+              disabled={isScheduling}
+            >
+              {isScheduling ? (
+                <div className="flex items-center">
+                  Scheduling...
+                </div>
+              ) : (
+                "Send Blast Message"
+              )}
+            </button>
+          </div>
+
+          {isScheduling && (
+            <div className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
+              Please wait while we schedule your messages...
             </div>
           )}
-        </div>
-      </div>
-<div className="mt-4">
-  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Active Hours</label>
-  <div className="flex items-center space-x-2">
-  <div>
-  <label className="text-sm text-gray-600 dark:text-gray-400">From</label>
-  <DatePickerComponent
-    selected={(() => {
-      const date = new Date();
-      const [hours, minutes] = activeTimeStart.split(':');
-      date.setHours(parseInt(hours), parseInt(minutes));
-      return date;
-    })()}
-    onChange={(date: Date | null) => {
-      if (date) {
-        setActiveTimeStart(`${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`);
-      }
-    }}
-    showTimeSelect
-    showTimeSelectOnly
-    timeIntervals={15}
-    timeCaption="Time"
-    dateFormat="h:mm aa"
-    className="w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-  />
-</div>
-<div>
-  <label className="text-sm text-gray-600 dark:text-gray-400">To</label>
-  <DatePickerComponent
-    selected={(() => {
-      const date = new Date();
-      const [hours, minutes] = activeTimeEnd.split(':');
-      date.setHours(parseInt(hours), parseInt(minutes));
-      return date;
-    })()}
-    onChange={(date: Date | null) => {
-      if (date) {
-        setActiveTimeEnd(`${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`);
-      }
-    }}
-    showTimeSelect
-    showTimeSelectOnly
-    timeIntervals={15}
-    timeCaption="Time"
-    dateFormat="h:mm aa"
-    className="w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-  />
-</div>
+        </>
+      )}
+    </Dialog.Panel>
   </div>
-</div>
-
-<div className="mt-4">
-  <label className="flex items-center">
-    <input
-      type="checkbox"
-      checked={useMessageRotation}
-      onChange={(e) => setUseMessageRotation(e.target.checked)}
-      className="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
-    />
-    <span className="ml-2 text-sm text-gray-600 dark:text-gray-400">Enable Message Rotation</span>
-  </label>
-</div>
-                    <div className="mt-2">
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="phone">Phone</label>
-                      <select
-                        id="phone"
-                        name="phone"
-                        value={phoneIndex}
-                        onChange={(e) => setPhoneIndex(parseInt(e.target.value))}
-                        className="mt-1 text-black dark:text-white border-primary dark:border-primary-dark bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 focus:ring-2 focus:ring-blue-300 dark:focus:ring-blue-700 rounded-lg text-sm w-full"
-                      >
-                        <option value="">Select a phone</option>
-                        {Object.entries(phoneNames).map(([index, phoneName]) => (
-                          <option key={index} value={parseInt(index) - 1}>
-                            {phoneName}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <div className="flex justify-end mt-4">
-                    <button
-                      className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                      onClick={sendBlastMessage}
-                      disabled={isScheduling}
-                    >
-                      {isScheduling ? (
-                        <div className="flex items-center">
-                          Scheduling...
-                        </div>
-                      ) : (
-                        "Send Blast Message"
-                      )}
-                    </button>
-                  </div>
-                  {isScheduling && (
-                    <div className="mt-4 text-center text-sm text-gray-500 dark:text-gray-400">
-                      Please wait while we schedule your messages...
-                    </div>
-                  )}
-                </>
-              )}
-            </Dialog.Panel>
-          </div>
-        </Dialog>
+</Dialog>
 
         {showAddTagModal && (
           <Dialog open={showAddTagModal} onClose={() => setShowAddTagModal(false)}>
