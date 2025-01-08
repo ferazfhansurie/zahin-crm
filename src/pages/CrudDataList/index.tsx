@@ -2947,6 +2947,15 @@ const resetForm = () => {
                     return obj;
                   }, {});
 
+                  // Extract all tag columns dynamically
+                  const tags = headers
+                    .filter(header => header.toLowerCase().startsWith('tag'))
+                    .map(tagHeader => row[tagHeader.toLowerCase()])
+                    .filter(tag => tag && tag.trim() !== ''); // Remove empty tags
+
+                  // Add the tags array to the row object
+                  row.importedTags = tags;
+
                   // Log each parsed row for debugging
                   console.log(`Parsed row ${index + 1}:`, row);
 
@@ -3070,7 +3079,13 @@ const resetForm = () => {
             vehicleNumber: contact.vehiclenumber || userData.vehicleNumber || '',
             points: contact.points || '0',
             IC: contact.ic || '',
-            tags: [...new Set([...selectedImportTags, ...importTags])],
+            tags: [
+              ...new Set([
+                ...selectedImportTags,
+                ...importTags,
+                ...(contact.importedTags || []) // Add the tags from CSV
+              ])
+            ],
             createdAt: Timestamp.now(),
             updatedAt: Timestamp.now(),
             createdBy: user.email,
