@@ -7488,7 +7488,11 @@ console.log(prompt);
   )}
 </div>
           <div>
-            <div className="font-semibold text-gray-800 dark:text-gray-200 capitalize">{selectedContact.contactName || selectedContact.firstName || selectedContact.phone}</div>
+          <div className="font-semibold text-gray-800 dark:text-gray-200 capitalize">
+  {(selectedContact.contactName && selectedContact.lastName 
+    ? `${selectedContact.contactName} ${selectedContact.lastName}`
+    : selectedContact.contactName || selectedContact.firstName || selectedContact.phone)}
+</div>
             {userRole === '1' && (
               <div className="text-sm text-gray-600 dark:text-gray-400">{selectedContact.phone}</div>
             )}

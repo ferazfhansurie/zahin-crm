@@ -117,36 +117,52 @@ function Main() {
   });
 
   useEffect(() => {
-    if (contact) {
-      setUserData({
-        name: contact.name || "",
-        phoneNumber: contact.phoneNumber ? contact.phoneNumber.split('+6')[1] ?? "" : "",
-        email: contact.id || "",
-        password: "",
-        role: contact.role || "",
-        companyId: companyId || "",
-        group: contact.group || "",
-        employeeId: contact.employeeId || "",
-        notes: contact.notes || "",
-        quotaLeads: contact.quotaLeads || 0,
-        invoiceNumber: contact.invoiceNumber || null,
-        phone: contact.phone || -1,
-        ...(Object.keys(phoneNames).reduce((acc, index) => {
-          const phoneField = index === '0' ? 'phone' : `phone${parseInt(index) + 1}`;
-          const weightageField = index === '0' ? 'weightage' : `weightage${parseInt(index) + 1}`;
-          if (contact[phoneField as keyof typeof contact] !== undefined) {
-            acc[phoneField] = contact[phoneField as keyof typeof contact];
-            acc[weightageField] = contact[weightageField as keyof typeof contact] || 0;
+    const fetchUserData = async () => {
+      if (contact && contact.id) {
+        try {
+          const userDocRef = doc(firestore, 'user', contact.id);
+          const userDocSnap = await getDoc(userDocRef);
+          
+          if (userDocSnap.exists()) {
+            const firebaseUserData = userDocSnap.data();
+            console.log("Firebase user data:", firebaseUserData);
+            
+            const userData = {
+              name: firebaseUserData.name || "",
+              phoneNumber: firebaseUserData.phoneNumber ? firebaseUserData.phoneNumber.split('+6')[1] ?? "" : "",
+              email: contact.id,
+              password: "",
+              role: firebaseUserData.role || "",
+              companyId: firebaseUserData.companyId || "",
+              group: firebaseUserData.group || "",
+              employeeId: firebaseUserData.employeeId || "",
+              notes: firebaseUserData.notes || "",
+              quotaLeads: firebaseUserData.quotaLeads || 0,
+              invoiceNumber: firebaseUserData.invoiceNumber || null,
+              phone: firebaseUserData.phone,
+              phone2: firebaseUserData.phone2,
+              phone3: firebaseUserData.phone3,
+              imageUrl: firebaseUserData.imageUrl || "",
+              weightage: firebaseUserData.weightage,
+              weightage2: firebaseUserData.weightage2,
+              weightage3: firebaseUserData.weightage3
+            };
+
+            console.log("Processed userData:", userData);
+            setUserData(userData);
+            setCategories([firebaseUserData.role]);
+          } else {
+            console.log("No user document found in Firebase");
           }
-          return acc;
-        }, {} as Record<string, any>)),
-        imageUrl: contact.imageUrl || "",
-        weightage: contact.weightage || 0,
-      });
-      setCategories([contact.role]);
-    }
+        } catch (error) {
+          console.error("Error fetching user data from Firebase:", error);
+        }
+      }
+    };
+
+    fetchUserData();
     fetchGroups();
-  }, [contact, companyId, phoneNames]);
+  }, [contact, companyId, firestore]);
 
   const fetchGroups = async () => {
     if (!companyId) {
@@ -781,38 +797,45 @@ function Main() {
             />
           </div>
         </div>
-     
         {currentUserRole === "1" && phoneOptions.length > 0 && (
-          <>
-            {Object.entries(phoneNames).map(([index, phoneName]) => {
-              const phoneField = index === '0' ? 'phone' : `phone${parseInt(index)}`;
-              const weightageField = index === '0' ? 'weightage' : `weightage${parseInt(index)}`;
-              return (
-                <div key={index} className="grid grid-cols-2 gap-4">
-                  <div>
-                    <FormLabel htmlFor={weightageField}>
-                      Weightage for {phoneName}
-                    </FormLabel>
-                    <FormInput
-                      id={weightageField}
-                      name={weightageField}
-                      type="number"
-                      value={userData[weightageField as keyof typeof userData] || 0}
-                      onChange={handleChange}
-                      placeholder="Weightage"
-                      min="0"
-                    />
-                    <input 
-                      type="hidden" 
-                      name={phoneField} 
-                      value={(parseInt(index) - 1).toString()}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </>
-        )}
+  <>
+    {Object.entries(phoneNames).map(([index, phoneName]) => {
+      // Map the field names correctly - first weightage has no number
+      const phoneField = index === '1' ? 'phone' : `phone${index}`;
+      const weightageField = index === '1' ? 'weightage' : `weightage${index}`;
+      
+      console.log('Index:', index, 'WeightageField:', weightageField); // Debug log
+      
+      // Get the correct weightage value based on the field name
+      const weightageValue = userData[weightageField as keyof typeof userData];
+      console.log('WeightageValue for', weightageField, ':', weightageValue); // Debug log
+      
+      return (
+        <div key={index} className="grid grid-cols-2 gap-4">
+          <div>
+            <FormLabel htmlFor={weightageField}>
+              Weightage for {phoneName}
+            </FormLabel>
+            <FormInput
+              id={weightageField}
+              name={weightageField}
+              type="number"
+              value={weightageValue ?? 0}
+              onChange={handleChange}
+              placeholder="Weightage"
+              min="0"
+            />
+            <input 
+              type="hidden" 
+              name={phoneField} 
+              value={index}
+            />
+          </div>
+        </div>
+      );
+    })}
+  </>
+)}
         {errorMessage && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mt-4" role="alert">
             <strong className="font-bold">Error: </strong>

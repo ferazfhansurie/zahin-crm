@@ -452,6 +452,55 @@ const resetSort = () => {
       if (!docSnapshot.exists()) throw new Error('No company document found');
       const companyData = docSnapshot.data();
       const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+  
+      // Check for trigger tags and remove associated follow-up templates
+      const templatesRef = collection(firestore, 'companies', companyId, 'followUpTemplates');
+      const templatesSnapshot = await getDocs(templatesRef);
+      
+      // Find all templates where any of the removed tags are triggers
+      const matchingTemplates = templatesSnapshot.docs
+        .filter(doc => {
+          const template = doc.data();
+          return template.triggerTags?.some((tag: string) => 
+            tagsToRemove.includes(tag)
+          ) && template.status === 'active';
+        })
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+  
+      // Remove follow-up templates
+      for (const template of matchingTemplates) {
+        try {
+          const phoneNumber = contact.phone?.replace(/\D/g, '') || '';
+          const followUpResponse = await fetch(`${baseUrl}/api/tag/followup`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              requestType: 'removeTemplate',
+              phone: phoneNumber,
+              first_name: contact.contactName || contact.firstName || phoneNumber,
+              phoneIndex: userData.phone || 0,
+              templateId: template.id,
+              idSubstring: companyId
+            }),
+          });
+  
+          if (!followUpResponse.ok) {
+            const errorText = await followUpResponse.text();
+            console.error('Failed to remove template messages:', errorText);
+          } else {
+            console.log(`Follow-up template ${template.id} removed successfully`);
+          }
+        } catch (error) {
+          console.error('Error removing template messages:', error);
+        }
+      }
+  
+      // Remove tags from contact
       const response = await axios.post(`${baseUrl}/api/contacts/remove-tags`, {
         companyId,
         contactPhone: contact.phone,
@@ -468,12 +517,12 @@ const resetSort = () => {
           )
         );
   
-        toast.success('Tags removed successfully!');
+        toast.success(`Tags and associated follow-ups removed successfully!`);
         await fetchContacts();
       }
     } catch (error) {
       console.error('Error removing tags:', error);
-      toast.error('Failed to remove tags');
+      toast.error('Failed to remove tags and follow-ups');
     }
   };
   const fetchContacts = useCallback(async () => {
@@ -1270,7 +1319,7 @@ const handleConfirmDeleteTag = async () => {
       toast.error("You don't have permission to assign users to contacts.");
       return;
     }
-  
+
     try {
       const user = auth.currentUser;
       if (!user) {
@@ -1489,13 +1538,127 @@ const handleConfirmDeleteTag = async () => {
         return;
       }
   
-      // Rest of the function for non-employee tags remains unchanged
-      const docRef = doc(firestore, 'companies', companyId);
-      const docSnapshot = await getDoc(docRef);
-      if (!docSnapshot.exists()) {
-        throw new Error('Company document not found');
-      }
-      // ... rest of the existing code for handling non-employee tags ...
+     // Handle non-employee tags
+     const docRef = doc(firestore, 'companies', companyId);
+     const docSnapshot = await getDoc(docRef);
+     if (!docSnapshot.exists()) {
+       console.log('Company document not found');
+       return;
+     }
+     const data2 = docSnapshot.data();
+     const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+
+     // Check for trigger tags
+     const templatesRef = collection(firestore, 'companies', companyId, 'followUpTemplates');
+     const templatesSnapshot = await getDocs(templatesRef);
+     
+     let matchingTemplate: any = null;
+     templatesSnapshot.forEach(doc => {
+       const template = doc.data();
+       if (template.triggerTags?.includes(tagName) && template.status === 'active') {
+         matchingTemplate = { id: doc.id, ...template };
+       }
+     });
+
+     // Update contact's tags
+     const contactRef = doc(firestore, `companies/${companyId}/contacts/${contact.id}`);
+     const contactDoc = await getDoc(contactRef);
+
+     if (!contactDoc.exists()) {
+       toast.error('Contact not found');
+       return;
+     }
+
+     const currentTags = contactDoc.data().tags || [];
+
+     if (!currentTags.includes(tagName)) {
+       await updateDoc(contactRef, {
+         tags: arrayUnion(tagName)
+       });
+
+       setContacts(prevContacts =>
+         prevContacts.map(c =>
+           c.id === contact.id
+             ? { ...c, tags: [...(c.tags || []), tagName] }
+             : c
+         )
+       );
+
+
+// Add these constants at the top of the file with other constants
+const BATCH_SIZE = 10; // Number of requests to process at once
+const DELAY_BETWEEN_BATCHES = 1000; // Delay in ms between batches
+
+// Helper function to process requests in batches
+const processBatchRequests = async (requests: any[], batchSize: number, delayMs: number) => {
+  const results = [];
+  for (let i = 0; i < requests.length; i += batchSize) {
+    const batch = requests.slice(i, i + batchSize);
+    const batchResults = await Promise.all(batch);
+    results.push(...batchResults);
+    
+    if (i + batchSize < requests.length) {
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+  return results;
+};
+
+// Update the relevant section in your code
+if (matchingTemplate) {
+  try {
+    // Prepare the requests
+    const requests = selectedContacts.map(contact => {
+      const phoneNumber = contact.phone?.replace(/\D/g, '');
+      return fetch(`${baseUrl}/api/tag/followup`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requestType: 'startTemplate',
+          phone: phoneNumber,
+          first_name: contact.contactName || contact.firstName || phoneNumber,
+          phoneIndex: contact.phoneIndex || 0,
+          templateId: matchingTemplate.id,
+          idSubstring: companyId
+        }),
+      }).then(async response => {
+        if (!response.ok) {
+          throw new Error(`Follow-up API error for ${phoneNumber}: ${response.statusText}`);
+        }
+        return { success: true, phone: phoneNumber };
+      }).catch(error => {
+        console.error(`Error processing ${phoneNumber}:`, error);
+        return { success: false, phone: phoneNumber, error };
+      });
+    });
+
+    // Process requests in batches
+    const results = await processBatchRequests(requests, BATCH_SIZE, DELAY_BETWEEN_BATCHES);
+
+    // Count successes and failures
+    const successes = results.filter(r => r.success).length;
+    const failures = results.filter(r => !r.success).length;
+
+    // Show appropriate toast messages
+    if (successes > 0) {
+      toast.success(`Follow-up sequences started for ${successes} contacts`);
+    }
+    if (failures > 0) {
+      toast.error(`Failed to start follow-up sequences for ${failures} contacts`);
+    }
+
+  } catch (error) {
+    console.error('Error processing follow-up sequences:', error);
+    toast.error('Failed to process follow-up sequences');
+  }
+}
+
+   
+
+       toast.success(`Tag "${tagName}" added to contact`);
+     } else {
+       toast.info(`Tag "${tagName}" already exists for this contact`);
+     }
     } catch (error) {
       console.error('Error adding tag to contact:', error);
       toast.error('Failed to add tag to contact');
@@ -2115,7 +2278,6 @@ const chatId = tempphone + "@c.us"
       }
     }
   };
-
   const handleMassDelete = async () => {
     if (userRole === "3") {
       toast.error("You don't have permission to perform this action.");
@@ -2140,24 +2302,119 @@ const chatId = tempphone + "@c.us"
       }
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) throw new Error('No company document found');
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
   
-      // Delete selected contacts from Firestore
+      // Get all active templates once
+      const templatesRef = collection(firestore, `companies/${companyId}/followUpTemplates`);
+      const templatesSnapshot = await getDocs(templatesRef);
+      const activeTemplates = templatesSnapshot.docs
+        .filter(doc => doc.data().status === 'active')
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+  
+      // Create batch for contact deletion
       const batch = writeBatch(firestore);
-      selectedContacts.forEach(contact => {
+  
+      // Process each contact
+      for (const contact of selectedContacts) {
+        // Remove follow-up templates
+        for (const template of activeTemplates) {
+          try {
+            const phoneNumber = contact.phone?.replace(/\D/g, '');
+            const followUpResponse = await fetch(`${baseUrl}/api/tag/followup`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                requestType: 'removeTemplate',
+                phone: phoneNumber,
+                first_name: contact.contactName || contact.firstName || phoneNumber,
+                phoneIndex: userData.phone || 0,
+                templateId: template.id,
+                idSubstring: companyId
+              }),
+            });
+  
+            if (!followUpResponse.ok) {
+              const errorText = await followUpResponse.text();
+              console.error('Failed to remove template messages:', errorText);
+            } else {
+              console.log(`Follow-up template ${template.id} removed for contact ${phoneNumber}`);
+            }
+          } catch (error) {
+            console.error('Error removing template messages:', error);
+          }
+        }
+  
+        // Format contact's phone number for scheduled messages
+        const contactChatId = contact.phone?.replace(/\D/g, '') + "@s.whatsapp.net";
+  
+        // Get and handle scheduled messages
+        const scheduledMessagesRef = collection(firestore, `companies/${companyId}/scheduledMessages`);
+        const scheduledSnapshot = await getDocs(scheduledMessagesRef);
+        
+        const messagePromises = scheduledSnapshot.docs.map(async (doc) => {
+          const messageData = doc.data();
+          if (messageData.chatIds?.includes(contactChatId)) {
+            if (messageData.chatIds.length === 1) {
+              try {
+                await axios.delete(`${baseUrl}/api/schedule-message/${companyId}/${doc.id}`);
+                console.log(`Deleted scheduled message ${doc.id}`);
+              } catch (error) {
+                console.error(`Error deleting scheduled message ${doc.id}:`, error);
+              }
+            } else {
+              try {
+                await axios.put(
+                  `${baseUrl}/api/schedule-message/${companyId}/${doc.id}`,
+                  {
+                    ...messageData,
+                    chatIds: messageData.chatIds.filter((id: string) => id !== contactChatId),
+                    messages: messageData.messages?.filter((msg: any) => msg.chatId !== contactChatId) || []
+                  }
+                );
+                console.log(`Updated scheduled message ${doc.id}`);
+              } catch (error) {
+                console.error(`Error updating scheduled message ${doc.id}:`, error);
+              }
+            }
+          }
+        });
+  
+        await Promise.all(messagePromises);
+  
+        // Add contact deletion to batch
         const contactRef = doc(firestore, `companies/${companyId}/contacts`, contact.id!);
         batch.delete(contactRef);
-      });
+      }
+  
+      // Execute the batch delete for contacts
       await batch.commit();
   
       // Update local state
-      setContacts(prevContacts => prevContacts.filter(contact => !selectedContacts.some(selected => selected.id === contact.id)));
+      setContacts(prevContacts => 
+        prevContacts.filter(contact => 
+          !selectedContacts.some(selected => selected.id === contact.id)
+        )
+      );
       setSelectedContacts([]);
       setShowMassDeleteModal(false);
-      toast.success(`${selectedContacts.length} contacts deleted successfully!`);
+      
+      // Refresh lists
+      await fetchScheduledMessages();
+      
+      toast.success(`${selectedContacts.length} contacts and their associated messages deleted successfully!`);
       await fetchContacts();
     } catch (error) {
       console.error('Error deleting contacts:', error);
-      toast.error("An error occurred while deleting the contacts.");
+      toast.error("An error occurred while deleting the contacts and associated messages.");
     }
   };
 
@@ -3259,7 +3516,10 @@ const resetForm = () => {
     if (selectedContacts.length === filteredContactsSearch.length) {
       setSelectedContacts([]);
     } else {
-      setSelectedContacts([...filteredContactsSearch]);
+      // Create a reversed copy of the filtered contacts array
+      const reversedContacts = [...filteredContactsSearch].reverse();
+      console.log(reversedContacts);
+      setSelectedContacts(reversedContacts);
     }
   };
 
