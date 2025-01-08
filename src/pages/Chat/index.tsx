@@ -469,7 +469,7 @@ function Main() {
   const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
   const [isEmojiPickerOpen, setEmojiPickerOpen] = useState(false);
   const [isImageModalOpen2, setImageModalOpen2] = useState(false);
-  const [pastedImageUrl, setPastedImageUrl] = useState('');
+  const [pastedImageUrl, setPastedImageUrl] = useState<string | string[] | null>('');
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [currentPage, setCurrentPage] = useState(0);
@@ -8254,24 +8254,25 @@ console.log(prompt);
             </div>
             <Menu.Items className="absolute left-0 bottom-full mb-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10 max-h-60 overflow-y-auto">
             <button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
-  <label htmlFor="imageUpload" className="flex items-center cursor-pointer text-gray-800 dark:text-gray-200 w-full">
-    <Lucide icon="Image" className="w-4 h-4 mr-2" />
-    Image
-    <input
-      type="file"
-      id="imageUpload"
-      accept="image/*"
-      className="hidden"
-      onChange={(e) => {
-        const file = e.target.files?.[0];
-        if (file) {
-          const imageUrl = URL.createObjectURL(file);
-          setPastedImageUrl(imageUrl);
-          setImageModalOpen2(true);
-        }
-      }}
-    />
-  </label>
+            <label htmlFor="imageUpload" className="flex items-center cursor-pointer text-gray-800 dark:text-gray-200 w-full">
+              <Lucide icon="Image" className="w-4 h-4 mr-2" />
+              Image
+              <input
+                type="file"
+                id="imageUpload"
+                accept="image/*"
+                multiple // Add this attribute
+                className="hidden"
+                onChange={(e) => {
+                  const files = e.target.files;
+                  if (files && files.length > 0) {
+                    const imageUrls = Array.from(files).map(file => URL.createObjectURL(file));
+                    setPastedImageUrl(imageUrls); // Update state type to handle array
+                    setImageModalOpen2(true);
+                  }
+                }}
+              />
+            </label>
 </button>
 <button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
     <label htmlFor="videoUpload" className="flex items-center cursor-pointer text-gray-800 dark:text-gray-200 w-full">
@@ -9089,7 +9090,28 @@ console.log(prompt);
   initialCaption={documentCaption}
 />
       <ImageModal isOpen={isImageModalOpen} onClose={closeImageModal} imageUrl={modalImageUrl} />
-      <ImageModal2 isOpen={isImageModalOpen2} onClose={() => setImageModalOpen2(false)} imageUrl={pastedImageUrl} onSend={sendImage}  initialCaption={documentCaption} />
+      <ImageModal2 
+        isOpen={isImageModalOpen2} 
+        onClose={() => setImageModalOpen2(false)} 
+        imageUrl={pastedImageUrl} 
+        onSend={async (urls, caption) => {
+          if (Array.isArray(urls)) {
+            // Get the original files from the input
+            const fileInput = document.getElementById('imageUpload') as HTMLInputElement;
+            if (fileInput && fileInput.files) {
+              for (let i = 0; i < fileInput.files.length; i++) {
+                const file = fileInput.files[i];
+                const url = URL.createObjectURL(file);
+                await sendImage(url, caption);
+              }
+            }
+          } else {
+            sendImage(urls, caption);
+          }
+          setImageModalOpen2(false);
+        }}
+        initialCaption={documentCaption} 
+      />
       {videoModalOpen && selectedVideo && (
   <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
     <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-2xl w-full">
@@ -9207,9 +9229,9 @@ console.log(prompt);
 interface ImageModalProps2 {
   isOpen: boolean;
   onClose: () => void;
-  imageUrl: string;
-  onSend: (url: string | null, caption: string) => void;
-  initialCaption?: string; // Add this line
+  imageUrl: string | string[] | null;
+  onSend: (url: string | string[], caption: string) => void;  // Update to handle array
+  initialCaption?: string;
 }
 
 const ImageModal2: React.FC<ImageModalProps2> = ({ isOpen, onClose, imageUrl, onSend, initialCaption }) => {
@@ -9223,7 +9245,7 @@ const ImageModal2: React.FC<ImageModalProps2> = ({ isOpen, onClose, imageUrl, on
 
   const handleSendClick = () => {
     setCaption('');
-    onSend(imageUrl, caption || ''); // Provide empty string fallback for caption
+    onSend(imageUrl || '', caption || ''); // Provide empty string fallback for imageUrl and caption
     onClose(); // Close the modal after sending
   };
 
@@ -9236,20 +9258,33 @@ const ImageModal2: React.FC<ImageModalProps2> = ({ isOpen, onClose, imageUrl, on
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center mb-4">
-                      <button
+          <button
             className="text-black hover:text-gray-800 dark:text-gray-200 dark:hover:text-gray-400"
             onClick={onClose}
           >
             <Lucide icon="X" className="w-6 h-6" />
           </button>
         </div>
-        <div className="bg-slate-400 dark:bg-gray-800 p-4 rounded-lg mb-4 flex justify-center items-center" style={{ height: '70%' }}>
-          <img
-            src={imageUrl}
-            alt="Modal Content"
-            className="rounded-md"
-            style={{ maxWidth: '100%', maxHeight: '100%' }}
-          />
+        <div className="bg-slate-400 dark:bg-gray-800 p-4 rounded-lg mb-4 overflow-auto" style={{ height: '70%' }}>
+          <div className="grid grid-cols-2 gap-4">
+            {Array.isArray(imageUrl) ? (
+              imageUrl.map((url, index) => (
+                <div key={index} className="relative">
+                  <img
+                    src={url}
+                    alt={`Image ${index + 1}`}
+                    className="w-full h-auto rounded-md object-contain"
+                  />
+                </div>
+              ))
+            ) : (
+              <img
+                src={imageUrl || ''}
+                alt="Modal Content"
+                className="w-full h-auto rounded-md object-contain"
+              />
+            )}
+          </div>
         </div>
         <div className="flex items-center bg-slate-500 dark:bg-gray-700 rounded-lg p-2">
           <input
@@ -9262,13 +9297,12 @@ const ImageModal2: React.FC<ImageModalProps2> = ({ isOpen, onClose, imageUrl, on
           <button
             className="ml-2 bg-primary dark:bg-blue-600 text-white p-2 rounded-lg"
             onClick={handleSendClick}
-                      >
-                        <Lucide icon="Send" className="w-5 h-5" />
-                      </button>
-         
-                  </div>
-                </div>
-              </div>
+          >
+            <Lucide icon="Send" className="w-5 h-5" />
+          </button>
+        </div>
+      </div>
+    </div>
   );
 };
 
