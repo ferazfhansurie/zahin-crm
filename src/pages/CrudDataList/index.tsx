@@ -909,7 +909,7 @@ const handleSaveNewContact = async () => {
     }
     const chat_id = formattedPhone.split('+')[1]+"@c.us";
     // Prepare the contact data with the formatted phone number
-    const contactData = {
+    const contactData: { [key: string]: any } = {
       id: formattedPhone,
       chat_id: chat_id,
       contactName: newContact.contactName,
@@ -3062,8 +3062,12 @@ const resetForm = () => {
 
           const contactRef = doc(firestore, `companies/${companyId}/contacts`, phoneNumber);
           
+          // Fetch existing contact data first
+          const existingContact = await getDoc(contactRef);
+          const existingTags = existingContact.exists() ? existingContact.data().tags || [] : [];
+
           // Prepare contact data
-          const contactData = {
+          const contactData: { [key: string]: any } = {
             contactName: contact.contactname,
             phone: phoneNumber,
             email: contact.email || '',
@@ -3081,18 +3085,23 @@ const resetForm = () => {
             IC: contact.ic || '',
             tags: [
               ...new Set([
-                ...selectedImportTags,
-                ...importTags,
-                ...(contact.importedTags || []) // Add the tags from CSV
+                ...existingTags,                    // Keep existing tags
+                ...selectedImportTags,              // Add selected tags from UI
+                ...importTags,                      // Add import tags from UI
+                ...(contact.importedTags || [])     // Add tags from CSV
               ])
             ],
-            createdAt: Timestamp.now(),
             updatedAt: Timestamp.now(),
-            createdBy: user.email,
             updatedBy: user.email
           };
 
-          console.log('Adding contact:', contactData);
+          // Only set createdAt and createdBy if it's a new contact
+          if (!existingContact.exists()) {
+            contactData.createdAt = Timestamp.now();
+            contactData.createdBy = user.email;
+          }
+
+          console.log('Adding/Updating contact:', contactData);
           batch.set(contactRef, contactData, { merge: true });
         }
   
