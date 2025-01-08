@@ -2644,22 +2644,86 @@ const resetForm = () => {
         return new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = (event) => {
-            const text = event.target?.result as string;
-            const lines = text.split('\n');
-            const headers = lines[0].toLowerCase().trim().split(',');
-            const data = lines.slice(1)
-              .filter(line => line.trim()) // Skip empty lines
-              .map(line => {
-                const values = line.split(',');
-                return headers.reduce((obj: any, header, index) => {
-                  obj[header.trim()] = values[index]?.trim() || '';
-                  return obj;
-                }, {});
-              });
-            resolve(data);
+            try {
+              const text = event.target?.result as string;
+              if (!text) {
+                throw new Error('Failed to read CSV file content');
+              }
+
+              console.log('Raw CSV content:', text);
+
+              const lines = text.split('\n');
+              if (lines.length < 2) {
+                throw new Error('CSV file must contain at least a header row and one data row');
+              }
+
+              // Get headers and create a case-insensitive map
+              const headers = lines[0].split(',').map(header => 
+                header.trim().replace(/['"]/g, '') // Remove quotes and trim whitespace
+              );
+              console.log('CSV headers:', headers);
+
+              // Case-insensitive header validation
+              const headerMap = new Map(headers.map(h => [h.toLowerCase(), h]));
+              if (!headerMap.has('contactname') && !headerMap.has('contactName')) {
+                throw new Error('CSV must contain a "contactName" header');
+              }
+              if (!headerMap.has('phone')) {
+                throw new Error('CSV must contain a "phone" header');
+              }
+
+              // Process data rows
+              const data = lines.slice(1)
+                .filter(line => line.trim()) // Skip empty lines
+                .map((line, index) => {
+                  const values = line.split(',').map(val => 
+                    val.trim().replace(/^["']|["']$/g, '') // Remove quotes and trim
+                  );
+                  
+                  const row = headers.reduce((obj: any, header, i) => {
+                    // Convert header to the format expected by the rest of the code
+                    const normalizedHeader = header.toLowerCase();
+                    const key = normalizedHeader === 'contactname' ? 'contactname' : 
+                               normalizedHeader === 'contactName' ? 'contactname' : 
+                               normalizedHeader;
+                    obj[key] = values[i] || '';
+                    return obj;
+                  }, {});
+
+                  // Log each parsed row for debugging
+                  console.log(`Parsed row ${index + 1}:`, row);
+
+                  // Validate required fields
+                  if (!row.contactname || !row.phone) {
+                    console.warn(`Row ${index + 1} missing required fields:`, row);
+                  }
+
+                  return row;
+                });
+
+              console.log(`Parsed ${data.length} rows from CSV`);
+              
+              if (data.length === 0) {
+                throw new Error('No valid data rows found in CSV file');
+              }
+
+              resolve(data);
+            } catch (error) {
+              console.error('CSV parsing error:', error);
+              reject(error);
+            }
           };
-          reader.onerror = () => reject(new Error('Failed to read CSV'));
-          reader.readAsText(selectedCsvFile);
+
+          reader.onerror = (error) => {
+            console.error('FileReader error:', error);
+            reject(new Error('Failed to read CSV file'));
+          };
+
+          if (selectedCsvFile) {
+            reader.readAsText(selectedCsvFile);
+          } else {
+            reject(new Error('No file selected'));
+          }
         });
       };
   
@@ -2700,27 +2764,36 @@ const resetForm = () => {
         const batchContacts = validContacts.slice(i, i + batchSize);
   
         for (const contact of batchContacts) {
-           // Format phone number (remove any non-digit characters)
+          // Remove any non-digit characters from phone number
           let phoneNumber = contact.phone.replace(/\D/g, '');
           
-          // Add proper prefix based on the starting digits
+          // Handle different country formats
           if (phoneNumber.startsWith('60')) {
+            // Malaysia format
+            phoneNumber = '+' + phoneNumber;
+          } else if (phoneNumber.startsWith('65')) {
+            // Singapore format
+            phoneNumber = '+' + phoneNumber;
+          } else if (phoneNumber.startsWith('62')) {
+            // Indonesia format
             phoneNumber = '+' + phoneNumber;
           } else if (phoneNumber.startsWith('0')) {
-            phoneNumber = '+6' + phoneNumber;
-          } else if (phoneNumber.startsWith('1')) {
+            // Assume Malaysia number if starts with 0
+            phoneNumber = '+60' + phoneNumber.substring(1);
+          } else if (phoneNumber.length <= 10) {
+            // Assume Malaysia number if length is 10 or less
             phoneNumber = '+60' + phoneNumber;
           } else {
-            console.warn('Invalid phone number format:', contact.phone);
+            // For other countries, add + prefix if not present
+            phoneNumber = phoneNumber.startsWith('+') ? phoneNumber : '+' + phoneNumber;
+          }
+
+          // Basic phone number validation
+          if (!phoneNumber.match(/^\+\d{10,15}$/)) {
+            console.warn('Invalid phone number format:', contact.phone, 'Formatted as:', phoneNumber);
             continue;
           }
 
-          // Validate final phone number format
-          if (!phoneNumber.match(/^\+60\d{9,10}$/)) {
-            console.warn('Invalid Malaysian phone number:', phoneNumber);
-            continue;
-          }
-  
           const contactRef = doc(firestore, `companies/${companyId}/contacts`, phoneNumber);
           
           // Prepare contact data
@@ -2746,10 +2819,8 @@ const resetForm = () => {
             createdBy: user.email,
             updatedBy: user.email
           };
-  
-          // Log each contact being added
+
           console.log('Adding contact:', contactData);
-          
           batch.set(contactRef, contactData, { merge: true });
         }
   
@@ -3308,23 +3379,81 @@ const parseCSV = async (): Promise<Array<any>> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (event) => {
-      const text = event.target?.result as string;
-      const lines = text.split('\n');
-      const headers = lines[0].toLowerCase().trim().split(',');
-      const data = lines.slice(1)
-        .filter(line => line.trim())
-        .map(line => {
-          const values = line.split(',');
-          return headers.reduce((obj: any, header, index) => {
-            // Map CSV headers to your database fields
-            const key = header.trim().replace(/\s+/g, '');
-            obj[key] = values[index]?.trim() || '';
-            return obj;
-          }, {});
-        });
-      resolve(data);
+      try {
+        const text = event.target?.result as string;
+        if (!text) {
+          throw new Error('Failed to read CSV file content');
+        }
+
+        console.log('Raw CSV content:', text);
+
+        const lines = text.split('\n');
+        if (lines.length < 2) {
+          throw new Error('CSV file must contain at least a header row and one data row');
+        }
+
+        // Get headers and create a case-insensitive map
+        const headers = lines[0].split(',').map(header => 
+          header.trim().replace(/['"]/g, '') // Remove quotes and trim whitespace
+        );
+        console.log('CSV headers:', headers);
+
+        // Case-insensitive header validation
+        const headerMap = new Map(headers.map(h => [h.toLowerCase(), h]));
+        if (!headerMap.has('contactname') && !headerMap.has('contactName')) {
+          throw new Error('CSV must contain a "contactName" header');
+        }
+        if (!headerMap.has('phone')) {
+          throw new Error('CSV must contain a "phone" header');
+        }
+
+        // Process data rows
+        const data = lines.slice(1)
+          .filter(line => line.trim()) // Skip empty lines
+          .map((line, index) => {
+            const values = line.split(',').map(val => 
+              val.trim().replace(/^["']|["']$/g, '') // Remove quotes and trim
+            );
+            
+            const row = headers.reduce((obj: any, header, i) => {
+              // Convert header to the format expected by the rest of the code
+              const normalizedHeader = header.toLowerCase();
+              const key = normalizedHeader === 'contactname' ? 'contactname' : 
+                         normalizedHeader === 'contactName' ? 'contactname' : 
+                         normalizedHeader;
+              obj[key] = values[i] || '';
+              return obj;
+            }, {});
+
+            // Log each parsed row for debugging
+            console.log(`Parsed row ${index + 1}:`, row);
+
+            // Validate required fields
+            if (!row.contactname || !row.phone) {
+              console.warn(`Row ${index + 1} missing required fields:`, row);
+            }
+
+            return row;
+          });
+
+        console.log(`Parsed ${data.length} rows from CSV`);
+        
+        if (data.length === 0) {
+          throw new Error('No valid data rows found in CSV file');
+        }
+
+        resolve(data);
+      } catch (error) {
+        console.error('CSV parsing error:', error);
+        reject(error);
+      }
     };
-    reader.onerror = () => reject(new Error('Failed to read CSV'));
+
+    reader.onerror = (error) => {
+      console.error('FileReader error:', error);
+      reject(new Error('Failed to read CSV file'));
+    };
+
     if (selectedCsvFile) {
       reader.readAsText(selectedCsvFile);
     } else {
