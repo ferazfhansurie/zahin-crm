@@ -2509,6 +2509,8 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
   // Add new component for grid view
   const GridView = () => {
     const hours = ['9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '2:00 PM', '3:00 PM', '4:00 PM'];
+    const [selectedCell, setSelectedCell] = useState<{ row: number; col: number } | null>(null);
+    const gridRef = useRef<HTMLDivElement>(null);
     
     // Debug logs
     console.log('Selected date:', format(selectedDate, 'yyyy-MM-dd'));
@@ -2530,24 +2532,94 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       
       return aptDateStr === selectedDateStr;
     });
-
+  
     console.log('Filtered appointments:', selectedDateAppointments);
-
+  
     const formatAppointmentTime = (isoString: string) => {
       const date = new Date(isoString);
-      // Don't adjust for timezone since we want to display the stored time
       return format(date, 'h:mm a');
     };
-
+  
     // Helper function to find employee by email
     const findEmployeeByEmail = (email: string) => {
       const employee = employees.find(emp => emp.id === email);
       console.log('Finding employee for email:', email, 'Found:', employee);
       return employee;
     };
+  
     const [employeeExpenses, setEmployeeExpenses] = useState<Record<string, { minyak: number; toll: number }>>({});
-
-    // Add this useEffect to fetch expenses when the date changes
+  
+    // Handle keyboard navigation
+    useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (!selectedCell) return;
+  
+        const { row, col } = selectedCell;
+        const maxRow = hours.length - 1;
+        const maxCol = employees.length - 1;
+  
+        switch (e.key) {
+          case 'ArrowUp':
+            e.preventDefault();
+            if (row > 0) {
+              setSelectedCell({ row: row - 1, col });
+              scrollToCell(row - 1, col);
+            }
+            break;
+          case 'ArrowDown':
+            e.preventDefault();
+            if (row < maxRow) {
+              setSelectedCell({ row: row + 1, col });
+              scrollToCell(row + 1, col);
+            }
+            break;
+          case 'ArrowLeft':
+            e.preventDefault();
+            if (col > 0) {
+              setSelectedCell({ row, col: col - 1 });
+              scrollToCell(row, col - 1);
+            }
+            break;
+          case 'ArrowRight':
+            e.preventDefault();
+            if (col < maxCol) {
+              setSelectedCell({ row, col: col + 1 });
+              scrollToCell(row, col + 1);
+            }
+            break;
+          case 'Enter':
+          case ' ':
+            e.preventDefault();
+            const employee = employees[col];
+            const hour = hours[row];
+            if (employee && hour) {
+              // Assuming handleEmptySlotClick is a function that needs to be defined
+              const handleEmptySlotClick = () => {
+                console.log('Empty slot clicked');
+              };
+              handleEmptySlotClick();
+            }
+            break;
+        }
+      };
+  
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [selectedCell, hours, employees]);
+  
+    // Helper function to scroll to a specific cell
+    const scrollToCell = (row: number, col: number) => {
+      const cell = document.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+      if (cell && gridRef.current) {
+        cell.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+          inline: 'nearest'
+        });
+      }
+    };
+  
+    // Fetch expenses useEffect
     useEffect(() => {
       const fetchExpenses = async () => {
         try {
@@ -2580,8 +2652,9 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
     
       fetchExpenses();
     }, [selectedDate, employees]);
+  
     return (
-      <div>
+      <div className="flex flex-col h-[calc(100vh-200px)]">
         {/* Date selector */}
         <div className="mb-4 flex items-center gap-2">
           <button
@@ -2630,12 +2703,20 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
             Today
           </button>
         </div>
-
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse border border-gray-300 dark:border-gray-600">
-            <thead>
+  
+        {/* Grid container with scroll */}
+        <div 
+          ref={gridRef}
+          className="overflow-auto flex-1 border border-gray-300 dark:border-gray-600 rounded-lg"
+          style={{
+            scrollbarWidth: 'thin',
+            scrollbarColor: 'rgb(156 163 175) transparent'
+          }}
+        >
+          <table className="min-w-full border-collapse h-full">
+            <thead className="sticky top-0 z-10 bg-gray-100 dark:bg-gray-700">
               <tr>
-                <th className="border border-gray-300 dark:border-gray-600 p-2 bg-gray-100 dark:bg-gray-700">
+                <th className="sticky left-0 z-20 border border-gray-300 dark:border-gray-600 p-2 bg-gray-100 dark:bg-gray-700">
                   <div className="flex justify-between items-center">
                     <span className="text-gray-800 dark:text-white">TIME</span>
                     <span className="text-sm text-gray-600 dark:text-white">
@@ -2653,38 +2734,24 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
               </tr>
             </thead>
             <tbody>
-              {hours.map((hour) => (
+              {hours.map((hour, rowIndex) => (
                 <tr key={hour}>
-                  <td className="border border-gray-300 dark:border-gray-600 p-2 font-medium text-gray-800 dark:text-white">
+                  <td className="sticky left-0 z-10 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 p-2 font-medium text-gray-800 dark:text-white">
                     {hour}
                   </td>
-                  {employees.map((employee) => {
+                  {employees.map((employee, colIndex) => {
                     const appointments = selectedDateAppointments.filter(apt => {
                       const aptTime = formatAppointmentTime(apt.startTime);
                       const isAssignedToStaff = apt.staff.length === 0 || apt.staff.includes(employee.id);
-                      
-                      console.log('Checking appointment slot:', {
-                        appointment: apt.title,
-                        hour,
-                        aptTime,
-                        employee: employee.id,
-                        isAssignedToStaff,
-                        matches: aptTime === hour && isAssignedToStaff
-                      });
-                      
                       return aptTime === hour && isAssignedToStaff;
                     });
-
+  
                     const handleEmptySlotClick = () => {
-                      // Convert the hour string to 24-hour format for consistency
                       const timeDate = parse(hour, 'h:mm a', new Date());
                       const formattedHour = format(timeDate, 'HH:mm');
-                      
-                      // Create end time (1 hour after start time)
                       const endTimeDate = addHours(timeDate, 1);
                       const formattedEndHour = format(endTimeDate, 'HH:mm');
-
-                      // Set up the new appointment
+  
                       setCurrentEvent({
                         title: '',
                         dateStr: format(selectedDate, 'yyyy-MM-dd'),
@@ -2693,7 +2760,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                         extendedProps: {
                           address: '',
                           appointmentStatus: 'new',
-                          staff: [employee.id], // Pre-select the employee
+                          staff: [employee.id],
                           package: '',
                           dateAdded: new Date().toISOString(),
                           tags: [],
@@ -2710,23 +2777,28 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                           }
                         }
                       });
-
-                      // Pre-select the employee
+  
                       setSelectedEmployeeIds([employee.id]);
-                      
-                      // Open the add modal
                       setAddModalOpen(true);
                     };
-
+  
                     return (
                       <td 
-                        key={`${employee.id}-${hour}`} 
-                        className="border border-gray-300 dark:border-gray-600 p-2 min-w-[200px] relative cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700"
+                        key={`${employee.id}-${hour}`}
+                        data-row={rowIndex}
+                        data-col={colIndex}
+                        className={`border border-gray-300 dark:border-gray-600 p-2 min-w-[200px] relative cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 ${
+                          selectedCell?.row === rowIndex && selectedCell?.col === colIndex
+                            ? 'ring-2 ring-primary ring-inset'
+                            : ''
+                        }`}
                         onClick={() => {
+                          setSelectedCell({ row: rowIndex, col: colIndex });
                           if (appointments.length === 0) {
                             handleEmptySlotClick();
                           }
                         }}
+                        tabIndex={0}
                       >
                         {appointments.map((apt) => (
                           <div 
@@ -2736,11 +2808,10 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                               backgroundColor: '#51484f',
                             }}
                             onClick={(e) => {
-                              e.stopPropagation(); // Prevent triggering the empty slot click
+                              e.stopPropagation();
                               handleAppointmentClick(apt);
                             }}
                           >
-                            {/* Existing appointment content */}
                             <div className="font-medium flex justify-between items-center">
                               <span>{apt.title || 'Untitled'}</span>
                               {apt.appointmentStatus && (
@@ -2786,94 +2857,97 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                   })}
                 </tr>
               ))}
-             <tr>
-  <td className="border border-gray-300 dark:border-gray-600 p-2 font-medium text-gray-800 dark:text-white">
-    MINYAK & TOL
-  </td>
-  {employees.map((employee) => {
-    const expenses = employeeExpenses[employee.id] || { minyak: 0, toll: 0 };
-
-    const handleExpenseChange = async (type: 'minyak' | 'toll', value: number) => {
-      try {
-        const user = auth.currentUser;
-        if (!user?.email) return;
-
-        const newExpenses = {
-          ...expenses,
-          [type]: value
-        };
-
-        // Update local state immediately
-        setEmployeeExpenses(prev => ({
-          ...prev,
-          [employee.id]: newExpenses
-        }));
-
-        // Save to Firestore
-        const expenseRef = doc(
-          firestore,
-          `user/${user.email}/expenses/${format(selectedDate, 'yyyy-MM-dd')}_${employee.id}`
-        );
-
-        await setDoc(expenseRef, {
-          date: format(selectedDate, 'yyyy-MM-dd'),
-          employeeId: employee.id,
-          ...newExpenses
-        }, { merge: true });
-
-      } catch (error) {
-        console.error('Error updating expense:', error);
-      }
-    };
-
-    return (
-      <td key={`${employee.id}-expenses`} className="border border-gray-300 dark:border-gray-600 p-2">
-        <div className="text-sm">
-          <div className="flex justify-between items-center mb-2">
-            <span>Minyak:</span>
-            <div className="flex items-center">
-              <span className="mr-1">RM</span>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                className="w-20 px-2 py-1 text-right border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                value={expenses.minyak === 0 ? "0" : expenses.minyak || ""}
-                onChange={(e) => {
-                  const value = e.target.value === "" ? 0 : parseFloat(e.target.value);
-                  handleExpenseChange('minyak', value);
-                }}
-              />
-            </div>
-          </div>
-          <div className="flex justify-between items-center mb-2">
-            <span>Toll:</span>
-            <div className="flex items-center">
-              <span className="mr-1">RM</span>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                className="w-20 px-2 py-1 text-right border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                value={expenses.toll === 0 ? "0" : expenses.toll || ""}
-                onChange={(e) => {
-                  const value = e.target.value === "" ? 0 : parseFloat(e.target.value);
-                  handleExpenseChange('toll', value);
-                }}
-              />
-            </div>
-          </div>
-          <div className="flex justify-between font-medium border-t border-gray-200 dark:border-gray-600 mt-1 pt-1">
-            <span>Total:</span>
-            <span>RM {((expenses.minyak || 0) + (expenses.toll || 0)).toFixed(2)}</span>
-          </div>
-        </div>
-      </td>
-    );
-  })}
-</tr>
+              <tr>
+                <td className="sticky left-0 z-10 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 p-2 font-medium text-gray-800 dark:text-white">
+                  MINYAK & TOL
+                </td>
+                {employees.map((employee) => {
+                  const expenses = employeeExpenses[employee.id] || { minyak: 0, toll: 0 };
+  
+                  const handleExpenseChange = async (type: 'minyak' | 'toll', value: number) => {
+                    try {
+                      const user = auth.currentUser;
+                      if (!user?.email) return;
+  
+                      const newExpenses = {
+                        ...expenses,
+                        [type]: value
+                      };
+  
+                      setEmployeeExpenses(prev => ({
+                        ...prev,
+                        [employee.id]: newExpenses
+                      }));
+  
+                      const expenseRef = doc(
+                        firestore,
+                        `user/${user.email}/expenses/${format(selectedDate, 'yyyy-MM-dd')}_${employee.id}`
+                      );
+  
+                      await setDoc(expenseRef, {
+                        date: format(selectedDate, 'yyyy-MM-dd'),
+                        employeeId: employee.id,
+                        ...newExpenses
+                      }, { merge: true });
+  
+                    } catch (error) {
+                      console.error('Error updating expense:', error);
+                    }
+                  };
+  
+                  return (
+                    <td key={`${employee.id}-expenses`} className="border border-gray-300 dark:border-gray-600 p-2">
+                      <div className="text-sm">
+                        <div className="flex justify-between items-center mb-2">
+                          <span>Minyak:</span>
+                          <div className="flex items-center">
+                            <span className="mr-1">RM</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              className="w-20 px-2 py-1 text-right border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                              value={expenses.minyak === 0 ? "0" : expenses.minyak || ""}
+                              onChange={(e) => {
+                                const value = e.target.value === "" ? 0 : parseFloat(e.target.value);
+                                handleExpenseChange('minyak', value);
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center mb-2">
+                          <span>Toll:</span>
+                          <div className="flex items-center">
+                            <span className="mr-1">RM</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              className="w-20 px-2 py-1 text-right border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                              value={expenses.toll === 0 ? "0" : expenses.toll || ""}
+                              onChange={(e) => {
+                                const value = e.target.value === "" ? 0 : parseFloat(e.target.value);
+                                handleExpenseChange('toll', value);
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-between font-medium border-t border-gray-200 dark:border-gray-600 mt-1 pt-1">
+                          <span>Total:</span>
+                          <span>RM {((expenses.minyak || 0) + (expenses.toll || 0)).toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
             </tbody>
           </table>
+        </div>
+  
+        {/* Scroll indicators */}
+        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          Use arrow keys to navigate or scroll to view more
         </div>
       </div>
     );
