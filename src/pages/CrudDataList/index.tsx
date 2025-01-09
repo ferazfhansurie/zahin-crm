@@ -28,7 +28,9 @@ import { saveAs } from 'file-saver';
 import Papa from 'papaparse';
 import ReactPaginate from 'react-paginate';
 import { Tab } from '@headlessui/react';
-import { DragDropContext, Droppable, Draggable } from 'react-beautiful-dnd';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+
+import type { DropResult } from '@hello-pangea/dnd';
 
 
 
@@ -332,7 +334,7 @@ function Main() {
   });
 
   // Add this handler function
-  const handleColumnReorder = (result: any) => {
+  const handleColumnReorder = (result: DropResult) => {
     if (!result.destination) return;
     
     const newColumnOrder = Array.from(columnOrder);
