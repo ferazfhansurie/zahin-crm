@@ -655,7 +655,7 @@ useEffect(() => {
         };
         return getTimestamp(b) - getTimestamp(a);
       })
-      .slice(0, 20); // Reduce from 100 to 20 most recent contacts
+      .slice(0, 10); // Reduce from 100 to 20 most recent contacts
 
     // Only cache last 50 messages per contact
     const messagePromises = mostRecentContacts.map(async (contact) => {
@@ -671,7 +671,7 @@ useEffect(() => {
 
         const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
         const response = await axios.get(
-          `${baseUrl}/api/messages/${contact.chat_id}/${companyData.whapiToken}?limit=50`,
+          `${baseUrl}/api/messages/${contact.chat_id}/${companyData.whapiToken}?limit=20`,
           {
             headers: {
               'Authorization': `Bearer ${await user.getIdToken()}`

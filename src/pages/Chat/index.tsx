@@ -2077,33 +2077,20 @@ async function fetchConfigFromDatabase() {
   const selectChat = useCallback(async (chatId: string, contactId?: string, contactSelect?: Contact) => {
     console.log('Attempting to select chat:', { chatId, userRole, userName: userData?.name });
     setLoading(true);
-    console.log('userData:', userData);
+    
     try {
       // Permission check
       if (userRole === "3" && contactSelect && contactSelect.assignedTo?.toLowerCase() !== userData?.name.toLowerCase()) {
         console.log('Permission denied for role 3 user');
         toast.error("You don't have permission to view this chat.");
         return;
-      }const user = auth.currentUser;
+      }
+  
+      const user = auth.currentUser;
       if (!user) {
         console.error('No authenticated user');
         return;
       }
-      // Update local state
-      setUserData(prevState => {
-        if (prevState === null) {
-          return {
-            phone: userData?.phone,
-            companyId: '',
-            name: '',
-            role: ''
-          };
-        }
-        return {
-          ...prevState,
-          phone: userData?.phone
-        };
-      });
   
       // Find contact
       let contact = contactSelect || contacts.find(c => c.chat_id === chatId || c.id === contactId);
@@ -2114,32 +2101,23 @@ async function fetchConfigFromDatabase() {
   
       // Try to get cached messages first
       const cachedData = localStorage.getItem('messagesCache');
+      let shouldFetchFresh = true;
+  
       if (cachedData) {
         try {
           const cache = JSON.parse(LZString.decompress(cachedData));
           if (cache.expiry > Date.now() && cache.messages[chatId]) {
+            // Show cached messages immediately
             setMessages(cache.messages[chatId]);
             setLoading(false);
+            
+            // Only fetch fresh messages if cache is older than 5 minutes
+            shouldFetchFresh = (Date.now() - cache.timestamp) > (5 * 60 * 1000);
           }
         } catch (error) {
           console.error('Error reading cache:', error);
         }
       }
-  
-      // Update contacts state
-      setContacts(prevContacts => {
-        const updatedContacts = prevContacts.map(c =>
-          c.chat_id === chatId ? { ...c, unreadCount: 0 } : c
-        ).sort((a, b) => {
-          if (a.pinned && !b.pinned) return -1;
-          if (!a.pinned && b.pinned) return 1;
-          return getTimestamp(b.last_message?.timestamp || b.last_message?.createdAt) - 
-                 getTimestamp(a.last_message?.timestamp || a.last_message?.createdAt);
-        });
-  
-        localStorage.setItem('contacts', LZString.compress(JSON.stringify(updatedContacts)));
-        return updatedContacts;
-      });
   
       // Update UI state immediately
       setSelectedContact(contact);
@@ -2147,26 +2125,16 @@ async function fetchConfigFromDatabase() {
       setIsChatActive(true);
   
       // Run background tasks in parallel
-      await Promise.all([
-        // Update Firebase
-        (async () => {
-          const user = auth.currentUser;
-          if (!user?.email) return;
-          
-          const docUserRef = doc(firestore, 'user', user.email);
-          const docUserSnapshot = await getDoc(docUserRef);
-          
-          if (docUserSnapshot.exists()) {
-            const userData = docUserSnapshot.data();
-            const contactRef = doc(firestore, `companies/${userData.companyId}/contacts`, contact.id!);
-            await updateDoc(contactRef, { unreadCount: 0 });
-          }
-        })(),
-        // Delete notifications
-        deleteNotifications(chatId),
-        // Fetch fresh messages in background
-        fetchMessagesBackground(chatId, whapiToken!)
-      ]);
+      const backgroundTasks = [
+        updateFirebaseUnreadCount(contact),
+        deleteNotifications(chatId)
+      ];
+  
+      // Only fetch fresh messages if needed
+       // Only fetch fresh messages if needed
+   
+  
+      await Promise.all(backgroundTasks);
   
       // Update URL
       const newUrl = `/chat?chatId=${chatId.replace('@c.us', '')}`;
@@ -2179,7 +2147,6 @@ async function fetchConfigFromDatabase() {
       setLoading(false);
     }
   }, [contacts, userRole, userData?.name, whapiToken]);
-
   const getTimestamp = (timestamp: any): number => {
     // If timestamp is missing, return 0 to put it at the bottom
     if (!timestamp) return 0;
@@ -2205,7 +2172,20 @@ async function fetchConfigFromDatabase() {
     console.warn('Invalid timestamp format:', timestamp);
     return 0;
   };
-
+// Add this helper function above your component
+const updateFirebaseUnreadCount = async (contact: Contact) => {
+  const user = auth.currentUser;
+  if (!user?.email) return;
+  
+  const docUserRef = doc(firestore, 'user', user.email);
+  const docUserSnapshot = await getDoc(docUserRef);
+  
+  if (docUserSnapshot.exists()) {
+    const userData = docUserSnapshot.data();
+    const contactRef = doc(firestore, `companies/${userData.companyId}/contacts`, contact.id!);
+    await updateDoc(contactRef, { unreadCount: 0 });
+  }
+};
 const fetchContactsBackground = async (whapiToken: string, locationId: string, ghlToken: string, user_name: string, role: string, userEmail: string | null | undefined) => {
   try {
     if (!userEmail) throw new Error("User email is not provided.");
