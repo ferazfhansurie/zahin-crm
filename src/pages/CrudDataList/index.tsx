@@ -119,7 +119,9 @@ function Main() {
     id?: string;
     chatIds: string[];
     message: string;
-    messages?: Array<{ text: string }>;
+    messages?: Array<{
+      [x: string]: string; text: string 
+}>;
     messageDelays?: number[];
     mediaUrl?: string;
     documentUrl?: string;
@@ -215,6 +217,9 @@ function Main() {
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [showColumnsModal, setShowColumnsModal] = useState(false);
   const [exportModalContent, setExportModalContent] = useState<React.ReactNode | null>(null);
+  const [focusedMessageIndex, setFocusedMessageIndex] = useState<number>(0);
+  const [cursorPosition, setCursorPosition] = useState<number>(0);
+
   const [newContact, setNewContact] = useState({
       contactName: '',
       lastName: '',
@@ -3336,6 +3341,13 @@ const resetForm = () => {
 
   const insertPlaceholder = (field: string) => {
     const placeholder = `@{${field}}`;
+     // Update the current scheduled message
+  if (currentScheduledMessage) {
+    setCurrentScheduledMessage({
+      ...currentScheduledMessage,
+      message: blastMessage + placeholder
+    });
+  }
     setBlastMessage(prevMessage => prevMessage + placeholder);
   };
 
@@ -4312,28 +4324,34 @@ const getFilteredScheduledMessages = () => {
                               </span>
                             </div>
                             <div className="text-gray-800 dark:text-gray-200 mb-2 font-medium text-md">
-  {/* First Message */}
-  <p className="line-clamp-2">
-    {message.message ? message.message : 'No message content'}
-  </p>
+{/* First Message */}
+<p className="line-clamp-2">
+  {message.message ? message.message : 'No message content'}
+</p>
 
-  {/* Additional Messages */}
-  {message.messages && message.messages.length > 0 && (
-    <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-      {message.messages.map((msg: any, index: number) => (
-        <div key={index} className="mt-2">
-          <p className="line-clamp-2">
-            Message {index + 2}: {msg.text}
-          </p>
-          {message.messageDelays && message.messageDelays[index] > 0 && (
-            <span className="text-xs text-gray-500 dark:text-gray-400">
-              Delay: {message.messageDelays[index]} seconds
-            </span>
-          )}
-        </div>
-      ))}
-    </div>
-  )}
+{/* Additional Messages */}
+{message.messages && message.messages.length > 0 && message.messages.some(msg => msg.message !== message.message) && (
+  <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+    {message.messages.map((msg: any, index: number) => {
+      // Only show messages that are different from the first message
+      if (msg.message !== message.message) {
+        return (
+          <div key={index} className="mt-2">
+            <p className="line-clamp-2">
+              Message {index + 2}: {msg.text}
+            </p>
+            {message.messageDelays && message.messageDelays[index] > 0 && (
+              <span className="text-xs text-gray-500 dark:text-gray-400">
+                Delay: {message.messageDelays[index]} seconds
+              </span>
+            )}
+          </div>
+        );
+      }
+      return null;
+    })}
+  </div>
+)}
 
   {/* Message Settings */}
   <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
@@ -5629,6 +5647,13 @@ const getFilteredScheduledMessages = () => {
                     className="flex-1 p-2 border rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     placeholder={`Message ${index + 1}`}
                     value={message.text}
+                    onFocus={() => setFocusedMessageIndex(index)}
+                    onSelect={(e: React.SyntheticEvent<HTMLTextAreaElement>) => {
+                      setCursorPosition((e.target as HTMLTextAreaElement).selectionStart);
+                    }}
+                    onClick={(e) => {
+                      setCursorPosition((e.target as HTMLTextAreaElement).selectionStart);
+                    }}
                     onChange={(e) => {
                       const newMessages = [...messages];
                       newMessages[index] = { ...message, text: e.target.value };
@@ -5651,23 +5676,33 @@ const getFilteredScheduledMessages = () => {
                 </div>
                 
                  {/* Only show delay input if there are multiple messages */}
-    {messages.length > 1 && (
-      <div className="flex items-center space-x-2">
-        <span className="text-sm text-gray-600 dark:text-gray-400">Wait</span>
-        <input
-          type="number"
-          value={message.delayAfter}
-          onChange={(e) => {
-            const newMessages = [...messages];
-            newMessages[index] = { ...message, delayAfter: parseInt(e.target.value) || 0 };
-            setMessages(newMessages);
-          }}
-          min={0}
-          className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-        />
-        <span className="text-sm text-gray-600 dark:text-gray-400">seconds after this message</span>
-      </div>
-    )}
+                 {messages.length > 1 && (
+  <div className="flex items-center space-x-2">
+    <span className="text-sm text-gray-600 dark:text-gray-400">Wait</span>
+    <input
+      type="number"
+      value={message.delayAfter}
+      onFocus={(e: React.FocusEvent<HTMLInputElement>) => {
+        setFocusedMessageIndex(index);
+        setCursorPosition(e.target.selectionStart ?? 0);
+      }}
+      onSelect={(e: React.SyntheticEvent<HTMLInputElement>) => {
+        setCursorPosition((e.target as HTMLInputElement).selectionStart ?? 0);
+      }}
+      onClick={(e: React.MouseEvent<HTMLInputElement>) => {
+        setCursorPosition((e.target as HTMLInputElement).selectionStart ?? 0);
+      }}
+      onChange={(e) => {
+        const newMessages = [...messages];
+        newMessages[index] = { ...message, delayAfter: parseInt(e.target.value) || 0 };
+        setMessages(newMessages);
+      }}
+      min={0}
+      className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+    />
+    <span className="text-sm text-gray-600 dark:text-gray-400">seconds after this message</span>
+  </div>
+)}
   </div>
             ))}
 
@@ -5699,15 +5734,34 @@ const getFilteredScheduledMessages = () => {
               <div className="mt-2 space-y-1">
                 <p className="text-sm text-gray-600 dark:text-gray-400">Click to insert:</p>
                 {['contactName', 'firstName', 'lastName', 'email', 'phone', 'vehicleNumber', 'branch', 'expiryDate', 'ic'].map(field => (
-                  <button
-                    key={field}
-                    type="button"
-                    className="mr-2 mb-2 px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
-                    onClick={() => insertPlaceholder(field)}
-                  >
-                    @{'{'}${field}{'}'}
-                  </button>
-                ))}
+        <button
+          key={field}
+          type="button"
+          className="mr-2 mb-2 px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
+          onClick={() => {
+            const placeholder = `@{${field}}`;
+            const newMessages = [...messages];
+            if (newMessages.length > 0) {
+              const currentText = newMessages[focusedMessageIndex].text;
+              const newText = 
+                currentText.slice(0, cursorPosition) + 
+                placeholder + 
+                currentText.slice(cursorPosition);
+              
+              newMessages[focusedMessageIndex] = {
+                ...newMessages[focusedMessageIndex],
+                text: newText
+              };
+              setMessages(newMessages);
+              
+              // Optional: Update cursor position after insertion
+              setCursorPosition(cursorPosition + placeholder.length);
+            }
+          }}
+        >
+          @{'{'}${field}{'}'}
+        </button>
+      ))}
               </div>
             )}
           </div>
