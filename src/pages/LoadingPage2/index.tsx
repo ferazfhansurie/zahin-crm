@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
-import logoUrl from "@/assets/images/zahin-circle-logo.png";
+import logoUrl from "@/assets/images/logo.png";
 import { useNavigate, useLocation } from "react-router-dom";
 import LoadingIcon from "@/components/Base/LoadingIcon";
 import { useConfig } from '../../config';
@@ -641,12 +641,12 @@ function LoadingPage2() {
           </div>
         ) : (
           <div className="mt-4">
-          <LoadingIcon icon="three-dots" className="w-20 h-20 p-4 text-gray-800 dark:text-gray-200" />
-        </div>
-      )}
+            <LoadingIcon icon="three-dots" className="w-20 h-20 p-4 text-gray-800 dark:text-gray-200" />
+          </div>
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
 }
 
 export default LoadingPage2;
