@@ -5759,6 +5759,7 @@ interface Template {
   }, [contacts]);
 
   const [companyStopBot, setCompanyStopBot] = useState(false);
+
 // Update the useEffect that fetches company stop bot status
 useEffect(() => {
   let isMounted = true;
@@ -5780,9 +5781,19 @@ useEffect(() => {
       if (!companySnapshot.exists()) return;
 
       const companyData = companySnapshot.data();
-      const stopbots = companyData.stopbots || {};
-      if (isMounted) {
-        setCompanyStopBot(stopbots[currentPhoneIndex] || false);
+      
+      // Update this logic to correctly set the bot status
+      if (companyData.phoneCount) {
+        const stopbots = companyData.stopbots || {};
+        if (isMounted) {
+          // true means bot is stopped, false means bot is running
+          setCompanyStopBot(!!stopbots[currentPhoneIndex]);
+        }
+      } else {
+        if (isMounted) {
+          // true means bot is stopped, false means bot is running
+          setCompanyStopBot(!!companyData.stopbot);
+        }
       }
     } catch (error) {
       console.error('Error fetching company stopbot status:', error);
@@ -5790,10 +5801,52 @@ useEffect(() => {
   };
 
   fetchCompanyStopBot();
+  
+  // Set up a real-time listener for changes
+  const setupRealtimeListener = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const docUserRef = doc(firestore, 'user', user.email!);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) return;
+
+    const userData = docUserSnapshot.data();
+    const companyId = userData.companyId;
+    
+    const companyRef = doc(firestore, 'companies', companyId);
+    const unsubscribe = onSnapshot(companyRef, (snapshot) => {
+      if (snapshot.exists() && isMounted) {
+        const companyData = snapshot.data();
+        const currentPhoneIndex = userData.phone || 0;
+        
+        if (companyData.phoneCount) {
+          const stopbots = companyData.stopbots || {};
+          setCompanyStopBot(!!stopbots[currentPhoneIndex]);
+        } else {
+          setCompanyStopBot(!!companyData.stopbot);
+        }
+      }
+    });
+
+    return unsubscribe;
+  };
+
+  const unsubscribe = setupRealtimeListener();
+
   return () => {
     isMounted = false;
+    if (unsubscribe) {
+      unsubscribe.then(unsub => {
+        if (unsub) {
+          unsub();
+        }
+      }).catch(error => {
+        console.error('Error during unsubscribe:', error);
+      });
+    }
   };
-}, [userData?.phone]); // Add userData?.phone as dependency
+}, [userData?.phone]);
 
 const getCompanyData = async () => {
   const user = auth.currentUser;
@@ -5830,12 +5883,12 @@ const toggleBot = async () => {
       };
       
       await updateDoc(companyRef, { stopbots: newStopbots });
-      setCompanyStopBot(!currentStopbots[currentPhoneIndex]);
-      toast.success(`Bot for ${phoneNames[currentPhoneIndex]} ${currentStopbots[currentPhoneIndex] ? 'enabled' : 'disabled'} successfully`);
+      setCompanyStopBot(!companyStopBot); // Update local state immediately
+      toast.success(`Bot for ${phoneNames[currentPhoneIndex]} ${companyStopBot ? 'enabled' : 'disabled'} successfully`);
     } else {
       await updateDoc(companyRef, { stopbot: !companyData.stopbot });
-      setCompanyStopBot(!companyData.stopbot);
-      toast.success(`Bot ${companyData.stopbot ? 'enabled' : 'disabled'} successfully`);
+      setCompanyStopBot(!companyStopBot); // Update local state immediately
+      toast.success(`Bot ${companyStopBot ? 'enabled' : 'disabled'} successfully`);
     }
   } catch (error) {
     console.error('Error toggling bot status:', error);
