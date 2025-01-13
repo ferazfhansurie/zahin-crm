@@ -5761,6 +5761,7 @@ interface Template {
   const [companyStopBot, setCompanyStopBot] = useState(false);
 // Update the useEffect that fetches company stop bot status
 useEffect(() => {
+  let isMounted = true;
   const fetchCompanyStopBot = async () => {
     try {
       const user = auth.currentUser;
@@ -5780,63 +5781,65 @@ useEffect(() => {
 
       const companyData = companySnapshot.data();
       const stopbots = companyData.stopbots || {};
-      setCompanyStopBot(stopbots[currentPhoneIndex] || false);
+      if (isMounted) {
+        setCompanyStopBot(stopbots[currentPhoneIndex] || false);
+      }
     } catch (error) {
       console.error('Error fetching company stopbot status:', error);
     }
   };
 
   fetchCompanyStopBot();
+  return () => {
+    isMounted = false;
+  };
 }, [userData?.phone]); // Add userData?.phone as dependency
+
+const getCompanyData = async () => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('No authenticated user');
+
+  const docUserRef = doc(firestore, 'user', user.email!);
+  const docUserSnapshot = await getDoc(docUserRef);
+  if (!docUserSnapshot.exists()) throw new Error('User document not found');
+
+  const userData = docUserSnapshot.data();
+  const companyId = userData.companyId;
+  const currentPhoneIndex = userData.phone || 0;
+
+  const companyRef = doc(firestore, 'companies', companyId);
+  const companySnapshot = await getDoc(companyRef);
+  if (!companySnapshot.exists()) throw new Error('Company document not found');
+
+  return {
+    companyRef,
+    companyData: companySnapshot.data(),
+    currentPhoneIndex,
+  };
+};
 
 const toggleBot = async () => {
   try {
-    const user = auth.currentUser;
-    if (!user) return;
-
-    const docUserRef = doc(firestore, 'user', user.email!);
-    const docUserSnapshot = await getDoc(docUserRef);
-    if (!docUserSnapshot.exists()) return;
-
-    const userData = docUserSnapshot.data();
-    const companyId = userData.companyId;
-    const currentPhoneIndex = userData.phone || 0;
-
-    const companyRef = doc(firestore, 'companies', companyId);
-    const companySnapshot = await getDoc(companyRef);
-    if (!companySnapshot.exists()) return;
-
-    const companyData = companySnapshot.data();
+    const { companyRef, companyData, currentPhoneIndex } = await getCompanyData();
     
-    // Check if phoneCount exists and is not null
     if (companyData.phoneCount) {
-      // Handle multiple phones case with stopbots
       const currentStopbots = companyData.stopbots || {};
+      const newStopbots = {
+        ...currentStopbots,
+        [currentPhoneIndex]: !currentStopbots[currentPhoneIndex]
+      };
       
-      if (companyData.phoneCount) {
-        // If phoneCount exists, use stopbots map
-        const newStopbots = {
-          ...currentStopbots,
-          [currentPhoneIndex]: !currentStopbots[currentPhoneIndex]
-        };
-        await updateDoc(companyRef, {
-          stopbots: newStopbots
-        });
-        setCompanyStopBot(!currentStopbots[currentPhoneIndex]);
-        toast.success(`Bot for ${phoneNames[currentPhoneIndex]} ${currentStopbots[currentPhoneIndex] ? 'enabled' : 'disabled'} successfully`);
-      }
+      await updateDoc(companyRef, { stopbots: newStopbots });
+      setCompanyStopBot(!currentStopbots[currentPhoneIndex]);
+      toast.success(`Bot for ${phoneNames[currentPhoneIndex]} ${currentStopbots[currentPhoneIndex] ? 'enabled' : 'disabled'} successfully`);
     } else {
-      // Handle single phone case with stopbot
-      await updateDoc(companyRef, {
-        stopbot: !companyData.stopbot
-      });
+      await updateDoc(companyRef, { stopbot: !companyData.stopbot });
       setCompanyStopBot(!companyData.stopbot);
       toast.success(`Bot ${companyData.stopbot ? 'enabled' : 'disabled'} successfully`);
     }
-
   } catch (error) {
     console.error('Error toggling bot status:', error);
-    toast.error('Failed to toggle bot status');
+    toast.error(error instanceof Error ? error.message : 'Failed to toggle bot status');
   }
 };
 
