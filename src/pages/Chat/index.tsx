@@ -134,7 +134,7 @@ interface Message {
   };
   link_preview?: { link: string; title: string; description: string ,body:string,preview:string};
   sticker?: { link: string; emoji: string;mimetype:string;data:string };
-  location?: { latitude: number; longitude: number; name: string };
+  location?: { latitude: number; longitude: number; name: string; description:string };
   live_location?: { latitude: number; longitude: number; name: string };
   contact?: { name: string; phone: string };
   contact_list?: { contacts: { name: string; phone: string }[] };
@@ -784,7 +784,7 @@ const handleVideoUpload = async (caption: string = '') => {
     // First upload the video file to get a URL
     const videoFile = new File([selectedVideo], `video_${Date.now()}.mp4`, { type: selectedVideo.type });
     const videoUrl = await uploadFile(videoFile);
-
+    
     // Get company ID and other necessary data
     const docUserRef = doc(firestore, 'user', userData.email);
     const docUserSnapshot = await getDoc(docUserRef);
@@ -792,8 +792,8 @@ const handleVideoUpload = async (caption: string = '') => {
       throw new Error('No such document for user!');
     }
     const userDataFromDb = docUserSnapshot.data();
-    const companyId = userDataFromDb.companyId;
 
+    const companyId = userDataFromDb.companyId;
     // Format chat ID
     const phoneNumber = selectedChatId.split('+')[1];
     const chat_id = phoneNumber + "@s.whatsapp.net";
@@ -815,7 +815,7 @@ const handleVideoUpload = async (caption: string = '') => {
       return;
     }
     // Call the video message API
-    const response = await axios.post(`${baseUrl}/api/v2/messages/video/${companyId}/${chat_id}`, {
+    const response = await axios.post(`${baseUrl}/api/v2/messages/video/${companyId}/${selectedChatId}`, {
       videoUrl,
       caption,
       phoneIndex: selectedContact.phoneIndex || 0,
@@ -829,7 +829,11 @@ const handleVideoUpload = async (caption: string = '') => {
       toast.success('Video sent successfully');
     }
   } catch (error) {
-    console.error('Error uploading video:', error);
+    if (axios.isAxiosError(error)) {
+      console.error('Error uploading video:', error.response?.data || error.message);
+    } else {
+      console.error('Unexpected error:', error);
+    }
     toast.error('Failed to send video message');
   }
 };
@@ -3282,19 +3286,24 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
         handleAddPrivateNote(messageText);
         return;
       }
-  
-      // Send message to API
-      const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${selectedChatId}`, {
+  console.log('selectedChatId:', selectedChatId);
+     const url = `${baseUrl}/api/v2/messages/text/${companyId}/${selectedChatId}`;
+    const requestBody = {
+      message: messageText,
+      quotedMessageId: replyToMessage?.id || null,
+      phoneIndex: selectedContact?.phoneIndex ?? 0,
+      userName: userData?.name || ''
+    };
+console.log('requestBody:', requestBody);
+      const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: messageText,
-          quotedMessageId: replyToMessage?.id || null,
-          phoneIndex,
-          userName
-        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        credentials: 'include', // Include credentials if needed
+        body: JSON.stringify(requestBody)
       });
-  
       if (!response.ok) throw new Error('Failed to send message');
   
       const now = new Date();
@@ -3375,7 +3384,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
   
     } catch (error) {
       console.error('Error sending message:', error);
-      toast.error("Failed to send message");
+      //toast.error("Failed to send message");
       
       // Remove temporary message from local storage and UI if send failed
       console.log('Message send failed, removing temporary message from localStorage');
@@ -5228,7 +5237,7 @@ const sortContacts = (contacts: Contact[]) => {
       fetchMessages(chatId, companyData.ghl_accessToken);
     } catch (error) {
       console.error('Error sending image message:', error);
-      toast.error(`Failed to send image: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    //  toast.error(`Failed to send image: ${error instanceof Error ? error.message : 'Unknown error'}`);
       throw error;
     }
   };
@@ -5287,7 +5296,7 @@ const sortContacts = (contacts: Contact[]) => {
       fetchMessages(chatId, companyData.ghl_accessToken);
     } catch (error) {
       console.error('Error sending document message:', error);
-      toast.error(`Failed to send document: ${error instanceof Error ? error.message : 'Unknown error'}`);
+     // toast.error(`Failed to send document: ${error instanceof Error ? error.message : 'Unknown error'}`);
       throw error;
     }
   };
@@ -5706,7 +5715,7 @@ interface Template {
       }
     } catch (error) {
       console.error('Error sending document:', error);
-      toast.error('Failed to send document. Please try again.');
+      //toast.error('Failed to send document. Please try again.');
     } finally {
       setLoading(false);
       setDocumentModalOpen(false);
@@ -5753,7 +5762,7 @@ interface Template {
       }
     } catch (error) {
       console.error('Error sending image:', error);
-      toast.error('Failed to send image. Please try again.');
+     // toast.error('Failed to send image. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -7752,7 +7761,7 @@ console.log(prompt);
               .slice()
               .reverse()
               .map((message, index, array) => {
-                console.log('message:', message.id, 'phoneIndex:', message.phoneIndex, 'userData.phone:', userData?.phone, );
+                //console.log('message:', message.id, 'phoneIndex:', message.phoneIndex, 'userData.phone:', userData?.phone, );
                 const previousMessage = messages[index - 1];
                 const showDateHeader =
                   index === 0 ||
@@ -8095,11 +8104,21 @@ console.log(prompt);
                           />
                         </div>
                       )}
-                      {message.type === 'location' && message.location && (
-                        <div className="location-content p-0 message-content image-message">
-                          <div className="text-sm text-gray-800 dark:text-gray-200">Location: {message.location.latitude}, {message.location.longitude}</div>
-                        </div>
-                      )}
+                   {message.type === 'location' && message.location && (
+  <div className="location-content p-0 message-content image-message">
+    <button
+      className="text-white bg-blue-500 hover:bg-blue-600 rounded-md px-3 py-1"
+      onClick={() => window.open(`https://www.google.com/maps?q=${message.location?.latitude},${message.location?.longitude}`, '_blank')}
+    >
+      Open Location in Google Maps
+    </button>
+    {message.location?.description && (
+      <div className="text-xs text-white mt-1">
+        {message.location.description}
+      </div>
+    )}
+  </div>
+)}
                       {message.type === 'poll' && message.poll && (
                         <div className="poll-content p-0 message-content image-message">
                           <div className="text-sm text-gray-800 dark:text-gray-200">Poll: {message.poll.title}</div>
@@ -9132,58 +9151,57 @@ console.log(prompt);
         }}
         initialCaption={documentCaption} 
       />
-      {videoModalOpen && selectedVideo && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-2xl w-full">
-            <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-200">Send Video</h2>
-            {selectedVideo.size > 20 * 1024 * 1024 ? (
-              <>
-                {setVideoModalOpen(false)}
-                {toast.error('The video file is too big. Please select a file smaller than 20MB.')}
-              </>
-            ) : (
-              <>
-                <video
-                  src={URL.createObjectURL(selectedVideo)}
-                  controls
-                  className="w-full mb-4 rounded"
-                  style={{ maxHeight: '400px' }}
-                />
-                <textarea
-                  value={videoCaption}
-                  onChange={(e) => setVideoCaption(e.target.value)}
-                  placeholder="Add a caption..."
-                  className="w-full p-2 mb-4 border rounded bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-                />
-                <div className="flex justify-end space-x-2">
-                  <button
-                    onClick={() => {
-                      setVideoModalOpen(false);
-                      setSelectedVideo(null);
-                      setVideoCaption('');
-                    }}
-                    className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => handleVideoUpload(videoCaption)}
-                    className="px-4 py-2 bg-primary text-white rounded"
-                  >
-                    Send
-                  </button>
-                </div>
-              </>
-            )}
-            <button
-              onClick={() => setVideoModalOpen(false)}
-              className="absolute top-2 right-2 text-gray-800 dark:text-gray-200"
-            >
-              &times;
-            </button>
-          </div>
+     {videoModalOpen && selectedVideo && (() => {
+  if (selectedVideo.size > 20 * 1024 * 1024) {
+    setVideoModalOpen(false);
+    toast.error('The video file is too big. Please select a file smaller than 20MB.');
+    return null; // Return null to render nothing
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-2xl w-full">
+        <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-200">Send Video</h2>
+        <video
+          src={URL.createObjectURL(selectedVideo)}
+          controls
+          className="w-full mb-4 rounded"
+          style={{ maxHeight: '400px' }}
+        />
+        <textarea
+          value={videoCaption}
+          onChange={(e) => setVideoCaption(e.target.value)}
+          placeholder="Add a caption..."
+          className="w-full p-2 mb-4 border rounded bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+        />
+        <div className="flex justify-end space-x-2">
+          <button
+            onClick={() => {
+              setVideoModalOpen(false);
+              setSelectedVideo(null);
+              setVideoCaption('');
+            }}
+            className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => handleVideoUpload(videoCaption)}
+            className="px-4 py-2 bg-primary text-white rounded"
+          >
+            Send
+          </button>
         </div>
-      )}
+        <button
+          onClick={() => setVideoModalOpen(false)}
+          className="absolute top-2 right-2 text-gray-800 dark:text-gray-200"
+        >
+          &times;
+        </button>
+      </div>
+    </div>
+  );
+})()}
       <ToastContainer
         position="top-right"
         autoClose={5000}

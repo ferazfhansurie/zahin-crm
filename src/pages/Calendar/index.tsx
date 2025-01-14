@@ -19,6 +19,7 @@ import { title } from "process";
 import CreatableSelect from 'react-select/creatable';
 import React from "react";
 import { toast } from 'react-toastify';
+import { useNavigate } from 'react-router-dom';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCc0oSHlqlX7fLeqqonODsOIC3XA8NI7hc",
@@ -187,7 +188,7 @@ function Main() {
   const [viewType, setViewType] = useState('calendar'); // 'calendar' or 'grid'
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [employeeExpenses, setEmployeeExpenses] = useState<Record<string, { minyak: number; toll: number }>>({});
-
+  const navigate = useNavigate();
   class ErrorBoundary extends Component<{ children: ReactNode; onError: (error: Error) => void }> {
     componentDidCatch(error: Error, errorInfo: ErrorInfo) {
       this.props.onError(error);
@@ -2652,6 +2653,16 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
           >
             <Lucide icon={viewType === 'calendar' ? 'TableProperties' : 'Calendar'} className="w-4 h-4 mr-2 inline-block" />
             {viewType === 'calendar' ? 'Slots View' : 'Calendar View'}
+          </button>
+        </div>
+             {/* Add new Appointment Requests button */}
+             <div className="w-full mb-4 sm:w-auto sm:mr-2 lg:mb-0 lg:mr-4">
+          <button
+            className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
+            onClick={() => navigate('/appointment-requests')}
+          >
+            <Lucide icon="ClipboardList" className="w-4 h-4 mr-2 inline-block" />
+            Appointment Requests
           </button>
         </div>
         {/* Employee selection dropdown */}

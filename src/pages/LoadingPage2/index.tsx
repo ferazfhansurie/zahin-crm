@@ -176,7 +176,7 @@ function LoadingPage2() {
     if (companyId === '0123') {
       return phoneIndex === 0 ? 'Revotrend' : phoneIndex === 1 ? 'Storeguru':'ShipGuru';
     }
-    return `Phone ${phoneIndex + 1}`;
+    return phoneIndex;
   };
   const handleRefresh = async () => {
     // Reset states
@@ -522,7 +522,7 @@ function LoadingPage2() {
       setIsPairingCodeLoading(false);
     }
   };
-
+  console.log(qrCodes);
   const unscannedPhones = Array.isArray(qrCodes) 
     ? qrCodes.filter(qr => qr.status !== 'ready')
     : [];
