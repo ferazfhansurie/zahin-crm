@@ -229,7 +229,7 @@ function AppointmentRequests() {
           const employeeData = employeeDoc.data();
           return employeeData?.phoneNumber?.replace(/\+/, '') + "@c.us"; // Using phoneNumber field instead of phone
         }));
-        console.log(staffPhones);
+        
         // Filter out any undefined phone numbers
         const validStaffPhones = staffPhones.filter(phone => phone);
 
@@ -514,7 +514,7 @@ function AppointmentRequests() {
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
 
@@ -523,7 +523,7 @@ function AppointmentRequests() {
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document for company!');
+        
         return;
       }
       const companyData = docSnapshot.data();
