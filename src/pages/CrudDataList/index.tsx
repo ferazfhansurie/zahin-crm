@@ -95,6 +95,7 @@ function Main() {
     intakePreference?:string | null;
     englishProficiency?:string | null;
     passport?:string | null;
+    importedTags?:string[] | null;
     customFields?: { [key: string]: string };
     notes?: string | null;  // Add this line to the Contact interface
 
@@ -3001,7 +3002,7 @@ const resetForm = () => {
   
         for (const contact of batchContacts) {
           // Phone number formatting (your existing code)
-          let phoneNumber = contact.phone.replace(/\D/g, '');
+          let phoneNumber = contact.phone?.replace(/\D/g, '') || '';
           // ... (keep your existing phone formatting logic) ...
   
           const contactRef = doc(firestore, `companies/${companyId}/contacts`, phoneNumber);
@@ -3012,19 +3013,19 @@ const resetForm = () => {
   
           // Prepare contact data with custom fields
           const contactData: { [key: string]: any } = {
-            contactName: contact.contactname,
+            contactName: contact.contactName,
             phone: phoneNumber,
             email: contact.email || '',
-            lastName: contact.lastname || '',
-            companyName: contact.companyname || '',
+            lastName: contact.lastName || '',
+            companyName: contact.companyName || '',
             address1: contact.address1 || '',
             city: contact.city || '',
             state: contact.state || '',
-            postalCode: contact.postalcode || '',
+            postalCode: contact.postalCode || '',
             country: contact.country || '',
             branch: contact.branch || userData.branch || '',
-            expiryDate: contact.expirydate || userData.expiryDate || '',
-            vehicleNumber: contact.vehiclenumber || userData.vehicleNumber || '',
+            expiryDate: contact.expiryDate || userData.expiryDate || '',
+            vehicleNumber: contact.vehicleNumber || userData.vehicleNumber || '',
             points: contact.points || '0',
             IC: contact.ic || '',
             customFields: contact.customFields || {}, // This will have all fields from ensureAllCustomFields
@@ -3096,24 +3097,29 @@ const resetForm = () => {
     }
   };
   
-  // Add these helper functions at the top of your file
   const getAllCustomFields = (contacts: Contact[]): string[] => {
     const customFieldsSet = new Set<string>();
     contacts.forEach(contact => {
-      if (contact.customFields) {
-        Object.keys(contact.customFields).forEach(field => customFieldsSet.add(field));
+      if (contact?.customFields) {
+        Object.keys(contact.customFields).forEach(field => {
+          if (field) customFieldsSet.add(field);
+        });
       }
     });
     return Array.from(customFieldsSet);
   };
   
-  const ensureAllCustomFields = (contactData: any, allCustomFields: string[]): any => {
-    const customFields = { ...contactData.customFields } || {};
+  const ensureAllCustomFields = (contactData: Contact, allCustomFields: string[]): Contact => {
+    const customFields: { [key: string]: string } = {
+      ...(contactData.customFields || {})
+    };
+    
     allCustomFields.forEach(field => {
       if (!(field in customFields)) {
         customFields[field] = '';
       }
     });
+  
     return {
       ...contactData,
       customFields
