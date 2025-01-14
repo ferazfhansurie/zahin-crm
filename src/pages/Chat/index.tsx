@@ -798,8 +798,24 @@ const handleVideoUpload = async (caption: string = '') => {
     const phoneNumber = selectedChatId.split('+')[1];
     const chat_id = phoneNumber + "@s.whatsapp.net";
 
+    const docRef = doc(firestore, 'companies', companyId);
+    const docSnapshot = await getDoc(docRef);
+    if (!docSnapshot.exists()) return;
+    const companyData = docSnapshot.data();
+    console.log(companyData)
+    const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+    console.log(baseUrl)
+
+    // Check the size of the video file
+    const maxSizeInMB = 20;
+    const maxSizeInBytes = maxSizeInMB * 1024 * 1024;
+
+    if (selectedVideo.size > maxSizeInBytes) {
+      toast.error('The video file is too big. Please select a file smaller than 20MB.');
+      return;
+    }
     // Call the video message API
-    const response = await axios.post(`/api/v2/messages/video/${companyId}/${chat_id}`, {
+    const response = await axios.post(`${baseUrl}/api/v2/messages/video/${companyId}/${chat_id}`, {
       videoUrl,
       caption,
       phoneIndex: selectedContact.phoneIndex || 0,
@@ -9117,42 +9133,57 @@ console.log(prompt);
         initialCaption={documentCaption} 
       />
       {videoModalOpen && selectedVideo && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-2xl w-full">
-      <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-200">Send Video</h2>
-      <video
-        src={URL.createObjectURL(selectedVideo)}
-        controls
-        className="w-full mb-4 rounded"
-        style={{ maxHeight: '400px' }}
-      />
-      <textarea
-        value={videoCaption}
-        onChange={(e) => setVideoCaption(e.target.value)}
-        placeholder="Add a caption..."
-        className="w-full p-2 mb-4 border rounded bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-      />
-      <div className="flex justify-end space-x-2">
-        <button
-          onClick={() => {
-            setVideoModalOpen(false);
-            setSelectedVideo(null);
-            setVideoCaption('');
-          }}
-          className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={() => handleVideoUpload(videoCaption)}
-          className="px-4 py-2 bg-primary text-white rounded"
-        >
-          Send
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-2xl w-full">
+            <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-200">Send Video</h2>
+            {selectedVideo.size > 20 * 1024 * 1024 ? (
+              <>
+                {setVideoModalOpen(false)}
+                {toast.error('The video file is too big. Please select a file smaller than 20MB.')}
+              </>
+            ) : (
+              <>
+                <video
+                  src={URL.createObjectURL(selectedVideo)}
+                  controls
+                  className="w-full mb-4 rounded"
+                  style={{ maxHeight: '400px' }}
+                />
+                <textarea
+                  value={videoCaption}
+                  onChange={(e) => setVideoCaption(e.target.value)}
+                  placeholder="Add a caption..."
+                  className="w-full p-2 mb-4 border rounded bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                />
+                <div className="flex justify-end space-x-2">
+                  <button
+                    onClick={() => {
+                      setVideoModalOpen(false);
+                      setSelectedVideo(null);
+                      setVideoCaption('');
+                    }}
+                    className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handleVideoUpload(videoCaption)}
+                    className="px-4 py-2 bg-primary text-white rounded"
+                  >
+                    Send
+                  </button>
+                </div>
+              </>
+            )}
+            <button
+              onClick={() => setVideoModalOpen(false)}
+              className="absolute top-2 right-2 text-gray-800 dark:text-gray-200"
+            >
+              &times;
+            </button>
+          </div>
+        </div>
+      )}
       <ToastContainer
         position="top-right"
         autoClose={5000}

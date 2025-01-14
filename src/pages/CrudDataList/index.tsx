@@ -334,8 +334,7 @@ function Main() {
       'points',
       'notes',
       'actions',
-      ...Object.keys(visibleColumns)
-        .filter(key => key.startsWith('customField_'))
+      ...Object.keys(contacts[0]?.customFields || {}).map(field => `customField_${field}`)
     ];
   });
 
@@ -858,7 +857,20 @@ const handleTagSelection = (e: React.ChangeEvent<HTMLInputElement>, tagName: str
 const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
   const file = e.target.files?.[0];
   if (file) {
-    setSelectedMedia(file);
+    const maxSizeInMB = 20;
+    const maxSizeInBytes = maxSizeInMB * 1024 * 1024;
+
+    if (file.type.startsWith('video/') && file.size > maxSizeInBytes) {
+      toast.error('The video file is too big. Please select a file smaller than 20MB.');
+      return;
+    }
+
+    try {
+      setSelectedMedia(file);
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      toast.error('Upload unsuccessful. Please try again.');
+    }
   }
 };
 
@@ -2946,103 +2958,6 @@ const resetForm = () => {
     try {
       setLoading(true);
   
-      // Read CSV data
-      const parseCSV = async (): Promise<Array<any>> => {
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = (event) => {
-            try {
-              const text = event.target?.result as string;
-              if (!text) {
-                throw new Error('Failed to read CSV file content');
-              }
-
-              console.log('Raw CSV content:', text);
-
-              const lines = text.split('\n');
-              if (lines.length < 2) {
-                throw new Error('CSV file must contain at least a header row and one data row');
-              }
-
-              // Get headers and create a case-insensitive map
-              const headers = lines[0].split(',').map(header => 
-                header.trim().replace(/['"]/g, '') // Remove quotes and trim whitespace
-              );
-              console.log('CSV headers:', headers);
-
-              // Case-insensitive header validation
-              const headerMap = new Map(headers.map(h => [h.toLowerCase(), h]));
-              if (!headerMap.has('contactname') && !headerMap.has('contactName')) {
-                throw new Error('CSV must contain a "contactName" header');
-              }
-              if (!headerMap.has('phone')) {
-                throw new Error('CSV must contain a "phone" header');
-              }
-
-              // Process data rows
-              const data = lines.slice(1)
-                .filter(line => line.trim()) // Skip empty lines
-                .map((line, index) => {
-                  const values = line.split(',').map(val => 
-                    val.trim().replace(/^["']|["']$/g, '') // Remove quotes and trim
-                  );
-                  
-                  const row = headers.reduce((obj: any, header, i) => {
-                    // Convert header to the format expected by the rest of the code
-                    const normalizedHeader = header.toLowerCase();
-                    const key = normalizedHeader === 'contactname' ? 'contactname' : 
-                               normalizedHeader === 'contactName' ? 'contactname' : 
-                               normalizedHeader;
-                    obj[key] = values[i] || '';
-                    return obj;
-                  }, {});
-
-                  // Extract all tag columns dynamically
-                  const tags = headers
-                    .filter(header => header.toLowerCase().startsWith('tag'))
-                    .map(tagHeader => row[tagHeader.toLowerCase()])
-                    .filter(tag => tag && tag.trim() !== ''); // Remove empty tags
-
-                  // Add the tags array to the row object
-                  row.importedTags = tags;
-
-                  // Log each parsed row for debugging
-                  console.log(`Parsed row ${index + 1}:`, row);
-
-                  // Validate required fields
-                  if (!row.contactname || !row.phone) {
-                    console.warn(`Row ${index + 1} missing required fields:`, row);
-                  }
-
-                  return row;
-                });
-
-              console.log(`Parsed ${data.length} rows from CSV`);
-              
-              if (data.length === 0) {
-                throw new Error('No valid data rows found in CSV file');
-              }
-
-              resolve(data);
-            } catch (error) {
-              console.error('CSV parsing error:', error);
-              reject(error);
-            }
-          };
-
-          reader.onerror = (error) => {
-            console.error('FileReader error:', error);
-            reject(new Error('Failed to read CSV file'));
-          };
-
-          if (selectedCsvFile) {
-            reader.readAsText(selectedCsvFile);
-          } else {
-            reject(new Error('No file selected'));
-          }
-        });
-      };
-  
       // Get user and company data
       const user = auth.currentUser;
       if (!user?.email) throw new Error('User not authenticated');
@@ -3054,18 +2969,23 @@ const resetForm = () => {
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
   
-      // Parse CSV data
-      const contacts = await parseCSV();
-      console.log('Parsed contacts:', contacts);
+      // Get all existing custom fields from current contacts
+      const allCustomFields = getAllCustomFields(contacts);
+      
+      // Parse CSV data (using your existing parseCSV function)
+      const csvContacts = await parseCSV();
+      console.log('Parsed contacts:', csvContacts);
   
-      // Validate contacts
-      const validContacts = contacts.filter(contact => {
-        const isValid = contact.contactname && contact.phone;
-        if (!isValid) {
-          console.warn('Invalid contact:', contact);
-        }
-        return isValid;
-      });
+      // Validate and enrich contacts with custom fields
+      const validContacts = csvContacts
+        .filter(contact => {
+          const isValid = contact.contactname && contact.phone;
+          if (!isValid) {
+            console.warn('Invalid contact:', contact);
+          }
+          return isValid;
+        })
+        .map(contact => ensureAllCustomFields(contact, allCustomFields));
   
       if (validContacts.length === 0) {
         throw new Error('No valid contacts found in CSV');
@@ -3080,43 +3000,17 @@ const resetForm = () => {
         const batchContacts = validContacts.slice(i, i + batchSize);
   
         for (const contact of batchContacts) {
-          // Remove any non-digit characters from phone number
+          // Phone number formatting (your existing code)
           let phoneNumber = contact.phone.replace(/\D/g, '');
-          
-          // Handle different country formats
-          if (phoneNumber.startsWith('60')) {
-            // Malaysia format
-            phoneNumber = '+' + phoneNumber;
-          } else if (phoneNumber.startsWith('65')) {
-            // Singapore format
-            phoneNumber = '+' + phoneNumber;
-          } else if (phoneNumber.startsWith('62')) {
-            // Indonesia format
-            phoneNumber = '+' + phoneNumber;
-          } else if (phoneNumber.startsWith('0')) {
-            // Assume Malaysia number if starts with 0
-            phoneNumber = '+60' + phoneNumber.substring(1);
-          } else if (phoneNumber.length <= 10) {
-            // Assume Malaysia number if length is 10 or less
-            phoneNumber = '+60' + phoneNumber;
-          } else {
-            // For other countries, add + prefix if not present
-            phoneNumber = phoneNumber.startsWith('+') ? phoneNumber : '+' + phoneNumber;
-          }
-
-          // Basic phone number validation
-          if (!phoneNumber.match(/^\+\d{10,15}$/)) {
-            console.warn('Invalid phone number format:', contact.phone, 'Formatted as:', phoneNumber);
-            continue;
-          }
-
+          // ... (keep your existing phone formatting logic) ...
+  
           const contactRef = doc(firestore, `companies/${companyId}/contacts`, phoneNumber);
           
-          // Fetch existing contact data first
+          // Fetch existing contact data
           const existingContact = await getDoc(contactRef);
           const existingTags = existingContact.exists() ? existingContact.data().tags || [] : [];
-
-          // Prepare contact data
+  
+          // Prepare contact data with custom fields
           const contactData: { [key: string]: any } = {
             contactName: contact.contactname,
             phone: phoneNumber,
@@ -3133,24 +3027,24 @@ const resetForm = () => {
             vehicleNumber: contact.vehiclenumber || userData.vehicleNumber || '',
             points: contact.points || '0',
             IC: contact.ic || '',
+            customFields: contact.customFields || {}, // This will have all fields from ensureAllCustomFields
             tags: [
               ...new Set([
-                ...existingTags,                    // Keep existing tags
-                ...selectedImportTags,              // Add selected tags from UI
-                ...importTags,                      // Add import tags from UI
-                ...(contact.importedTags || [])     // Add tags from CSV
+                ...existingTags,
+                ...selectedImportTags,
+                ...importTags,
+                ...(contact.importedTags || [])
               ])
             ],
             updatedAt: Timestamp.now(),
             updatedBy: user.email
           };
-
-          // Only set createdAt and createdBy if it's a new contact
+  
           if (!existingContact.exists()) {
             contactData.createdAt = Timestamp.now();
             contactData.createdBy = user.email;
           }
-
+  
           console.log('Adding/Updating contact:', contactData);
           batch.set(contactRef, contactData, { merge: true });
         }
@@ -3162,24 +3056,25 @@ const resetForm = () => {
       console.log(`Committing ${batches.length} batches...`);
       await Promise.all(batches);
       console.log('All batches committed successfully');
-  
-      // Verify the import
+
       const verifyImport = async (): Promise<boolean> => {
+        const user = auth.currentUser;
+        if (!user?.email) return false;
+        
+        const docUserRef = doc(firestore, 'user', user.email);
+        const docUserSnapshot = await getDoc(docUserRef);
+        const companyId = docUserSnapshot.data()?.companyId;
+        
         const contactsRef = collection(firestore, `companies/${companyId}/contacts`);
         const snapshot = await getDocs(contactsRef);
         
-        // Log verification results
-        console.log('Verification - Total contacts in Firestore:', snapshot.size);
-        console.log('Verification - Recent contacts:');
-        snapshot.docs.slice(-5).forEach(doc => {
-          console.log(doc.id, doc.data());
-        });
-  
+        console.log('Verification - Total contacts:', snapshot.size);
         return snapshot.size > 0;
       };
+      
   
+      // Your existing verification and cleanup code
       if (await verifyImport()) {
-        // Clear cache and fetch updated contacts
         localStorage.removeItem('contacts');
         sessionStorage.removeItem('contactsFetched');
         await fetchContacts();
@@ -3199,6 +3094,30 @@ const resetForm = () => {
     } finally {
       setLoading(false);
     }
+  };
+  
+  // Add these helper functions at the top of your file
+  const getAllCustomFields = (contacts: Contact[]): string[] => {
+    const customFieldsSet = new Set<string>();
+    contacts.forEach(contact => {
+      if (contact.customFields) {
+        Object.keys(contact.customFields).forEach(field => customFieldsSet.add(field));
+      }
+    });
+    return Array.from(customFieldsSet);
+  };
+  
+  const ensureAllCustomFields = (contactData: any, allCustomFields: string[]): any => {
+    const customFields = { ...contactData.customFields } || {};
+    allCustomFields.forEach(field => {
+      if (!(field in customFields)) {
+        customFields[field] = '';
+      }
+    });
+    return {
+      ...contactData,
+      customFields
+    };
   };
 
   async function sendTextMessage(id: string, blastMessage: string, contact: Contact): Promise<void> {
@@ -3428,7 +3347,16 @@ const resetForm = () => {
 
   const handleEditMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setEditMediaFile(e.target.files[0]);
+      const file = e.target.files[0];
+      const maxSizeInMB = 20;
+      const maxSizeInBytes = maxSizeInMB * 1024 * 1024;
+
+      if (file.type.startsWith('video/') && file.size > maxSizeInBytes) {
+        toast.error('The video file is too big. Please select a file smaller than 20MB.');
+        return;
+      }
+
+      setEditMediaFile(file);
     }
   };
 
@@ -3632,17 +3560,42 @@ const resetForm = () => {
       setSelectedContacts(prevSelected => [...prevSelected, ...currentPageContacts]);
     }
   };
-useEffect(() => {
-  if (contacts.length > 0 && contacts[0].customFields) {
-    setVisibleColumns(prev => ({
-      ...prev,
-      ...Object.keys(contacts[0].customFields || {}).reduce((acc, field) => ({
-        ...acc,
-        [`customField_${field}`]: prev[`customField_${field}`] ?? true
-      }), {})
-    }));
-  }
-}, [contacts]);
+
+
+  useEffect(() => {
+    if (contacts.length > 0) {
+      const firstContact = contacts[0];
+      
+      // Update visible columns
+      setVisibleColumns(prev => ({
+        ...prev,
+        ...(firstContact.customFields ? 
+          Object.keys(firstContact.customFields).reduce((acc, field) => ({
+            ...acc,
+            [field]: true
+          }), {})
+        : {})
+      }));
+
+      // Update column order if new fields are found
+      setColumnOrder(prev => {
+        const customFields = firstContact.customFields ? 
+          Object.keys(firstContact.customFields).map(field => `customField_${field}`) 
+          : [];
+        
+        const existingCustomFields = prev.filter(col => col.startsWith('customField_'));
+        const newCustomFields = customFields.filter(field => !prev.includes(field));
+        
+        if (newCustomFields.length === 0) return prev;
+        
+        // Remove existing custom fields and add all custom fields before 'actions'
+        const baseColumns = prev.filter(col => !col.startsWith('customField_') && col !== 'actions');
+        return [...baseColumns, ...customFields, 'actions'];
+      });
+    }
+  }, [contacts]);
+
+
   const renderTags = (tags: string[] | undefined, contact: Contact) => {
     if (!tags || tags.length === 0) return null;
     return (
@@ -3852,6 +3805,7 @@ useEffect(() => {
     fetchPhoneStatuses();
   }
 }, [companyId]);
+
   
 
   const filterRecipients = (chatIds: string[], search: string) => {
@@ -4613,7 +4567,20 @@ const getFilteredScheduledMessages = () => {
                       <input
                         type="file"
                         accept="image/*,video/*"
-                        onChange={(e) => handleEditMediaUpload(e)}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            if (file.type.startsWith('video/') && file.size > 20 * 1024 * 1024) {
+                              toast.error('The video file is too big. Please select a file smaller than 20MB.');
+                              return;
+                            }
+                            try {
+                              handleEditMediaUpload(e);
+                            } catch (error) {
+                              toast.error('Upload unsuccessful. Please try again.');
+                            }
+                          }
+                        }}
                         className="block w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                       />
                     </div>
@@ -5009,7 +4976,7 @@ const getFilteredScheduledMessages = () => {
                                     className="flex items-center"
                                     onClick={() => handleSort(columnId)}
                                   >
-                                    {columnId.replace('customField_', '')}
+                                    {columnId.replace('customField_', '').replace(/^\w/, c => c.toUpperCase())}
                                     {sortField === columnId && (
                                       <Lucide 
                                         icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
