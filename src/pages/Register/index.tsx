@@ -93,7 +93,7 @@ function Main() {
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const dataUser = docUserSnapshot.data();
@@ -101,7 +101,7 @@ function Main() {
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const data2 = docSnapshot.data();
@@ -153,11 +153,7 @@ function Main() {
   const handleRegister = async () => {
     try {
       // Verify the code before proceeding
-      const storedCode = localStorage.getItem('verificationCode');
-      if (verificationCode !== storedCode) {
-        toast.error("Invalid verification code");
-        return;
-      }
+     
 
 
 
@@ -209,7 +205,7 @@ function Main() {
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const dataUser = docUserSnapshot.data();
@@ -217,14 +213,14 @@ function Main() {
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const data2 = docSnapshot.data();
       const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       const response2 = await axios.post(`${baseUrl}/api/channel/create/${newCompanyId}`);
 
-      console.log(response2);
+      
 
       // Sign in the user after successful registration
       navigate('/loading');
@@ -313,17 +309,7 @@ function Main() {
                     onKeyDown={handleKeyDown}
                   />
                   <div className="flex gap-2">
-                    <select
-                      className="block px-4 py-3 mt-4 intro-x bg-white border rounded dark:bg-darkmode-600 dark:border-darkmode-400"
-                      value={selectedCountry}
-                      onChange={(e) => setSelectedCountry(e.target.value as CountryCode)}
-                    >
-                      {getCountries().map((country) => (
-                        <option key={country} value={country}>
-                          {new Intl.DisplayNames(['en'], { type: 'region' }).of(country)} (+{getCountryCallingCode(country)})
-                        </option>
-                      ))}
-                    </select>
+                  
                     <FormInput
                       type="tel"
                       className="block px-4 py-3 mt-4 intro-x min-w-full xl:min-w-[350px]"
@@ -333,34 +319,7 @@ function Main() {
                       onKeyDown={handleKeyDown}
                     />
                   </div>
-                  {!isVerificationSent ? (
-                    <Button
-                      variant="primary"
-                      className="w-full px-4 py-3 mt-4 align-top xl:w-32 xl:mr-3"
-                      onClick={sendVerificationCode}
-                    >
-                      Verify Phone
-                    </Button>
-                  ) : (
-                    <div className="mt-4">
-                      <FormInput
-                        type="text"
-                        className="block px-4 py-3 intro-x min-w-full xl:min-w-[350px]"
-                        placeholder="Enter 6-digit verification code"
-                        value={verificationCode}
-                        onChange={(e) => setVerificationCode(e.target.value)}
-                        onKeyDown={handleKeyDown}
-                      />
-                      <Button
-                        variant="secondary"
-                        className="mt-2 w-full xl:w-auto"
-                        onClick={sendVerificationCode}
-                        disabled={cooldown > 0}
-                      >
-                        {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend Code'}
-                      </Button>
-                    </div>
-                  )}
+                
                   <FormInput
                     type="text"
                     className="block px-4 py-3 mt-4 intro-x min-w-full xl:min-w-[350px]"

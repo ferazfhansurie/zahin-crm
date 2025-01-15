@@ -106,7 +106,7 @@ function LoadingPage2() {
       const dataUser = docUserSnapshot.data();
       const companyId = dataUser.companyId;
       setCompanyId(companyId); // Store companyId in state
-      console.log(companyId);
+      
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
@@ -118,7 +118,7 @@ function LoadingPage2() {
       setV2(v2);
       const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       // Only proceed with QR code and bot status if v2 exists
-      console.log(`${baseUrl}/api/bot-status/${companyId}`,);
+      
       const botStatusResponse = await axios.get(`${baseUrl}/api/bot-status/${companyId}`, {
         headers: companyId === '0123' 
         ? {
@@ -131,7 +131,7 @@ function LoadingPage2() {
           }
       });
 
-      console.log(botStatusResponse.data);
+      
       if (botStatusResponse.status !== 200) {
         throw new Error(`Unexpected response status: ${botStatusResponse.status}`);
       }
@@ -176,7 +176,7 @@ function LoadingPage2() {
     if (companyId === '0123') {
       return phoneIndex === 0 ? 'Revotrend' : phoneIndex === 1 ? 'Storeguru':'ShipGuru';
     }
-    return `Phone ${phoneIndex + 1}`;
+    return phoneIndex;
   };
   const handleRefresh = async () => {
     // Reset states
@@ -219,20 +219,20 @@ function LoadingPage2() {
         const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
         // Remove 'https://' from baseUrl when creating WebSocket connection
         const wsBaseUrl = baseUrl.replace('https://', '');
-        console.log(wsBaseUrl);
+        
         ws.current = new WebSocket(`wss://${wsBaseUrl}/ws/${user?.email}/${companyId}`);
         
         ws.current.onopen = () => {
-          console.log('WebSocket connected');
+          
           setWsConnected(true);
         };
         
         ws.current.onmessage = async (event) => {
           const data = JSON.parse(event.data);
-          console.log('WebSocket message received:', data);
+          
 
           if (data.type === 'auth_status') {
-            console.log(`Bot status: ${data.status} for bot: ${data.botName}`);
+            
             setBotStatus(data.status);
             
             if (data.status === 'qr') {
@@ -296,7 +296,7 @@ function LoadingPage2() {
         };
         
         ws.current.onclose = () => {
-          console.log('WebSocket disconnected');
+          
           setWsConnected(false);
         };
       }
@@ -309,22 +309,22 @@ function LoadingPage2() {
   useEffect(() => {
     return () => {
       if (ws.current && processingComplete && !isLoading && contacts.length > 0) {
-        console.log('Closing WebSocket connection');
+        
         ws.current.close();
       }
     };
   }, [processingComplete, isLoading, contacts]);
 
   useEffect(() => {
-    console.log("useEffect triggered. shouldFetchContacts:", shouldFetchContacts, "isLoading:", isLoading);
+    
     if (shouldFetchContacts && !isLoading) {
-      console.log("Conditions met, calling fetchContacts");
+      
       fetchContacts();
     }
   }, [shouldFetchContacts, isLoading]);
 
   useEffect(() => {
-    console.log("Contact state changed. contactsFetched:", contactsFetched, "fetchedChats:", fetchedChats, "totalChats:", totalChats, "contacts length:", contacts.length);
+    
  
   }, [contactsFetched, fetchedChats, totalChats, contacts, navigate]);
 
@@ -455,9 +455,9 @@ function LoadingPage2() {
   };
 
   useEffect(() => {
-    console.log('Current bot status:', botStatus);
-    console.log('Is processing chats:', isProcessingChats);
-    console.log('Processing progress:', fetchedChats, totalChats);
+    
+    
+    
   }, [botStatus, isProcessingChats, fetchedChats, totalChats]);
 
   useEffect(() => {
@@ -491,7 +491,7 @@ function LoadingPage2() {
       const dataUser = docUserSnapshot.data();
       const companyId = dataUser.companyId;
       setCompanyId(companyId); // Store companyId in state
-      console.log(companyId);
+      
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
@@ -522,7 +522,7 @@ function LoadingPage2() {
       setIsPairingCodeLoading(false);
     }
   };
-
+  
   const unscannedPhones = Array.isArray(qrCodes) 
     ? qrCodes.filter(qr => qr.status !== 'ready')
     : [];

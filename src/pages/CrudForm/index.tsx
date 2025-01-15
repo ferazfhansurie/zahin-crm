@@ -56,18 +56,18 @@ function Main() {
             const userData = userDocSnap.data();
             setCompanyId(userData.companyId);
             setCurrentUserRole(userData.role);
-            console.log("Fetched companyId:", userData.companyId);
+            
             
             // Fetch phoneIndex from company document
             fetchPhoneIndex(userData.companyId);
           } else {
-            console.log("No user document found");
+            
           }
         } catch (error) {
           console.error("Error fetching user data:", error);
         }
       } else {
-        console.log("No user signed in");
+        
       }
     });
 
@@ -117,43 +117,59 @@ function Main() {
   });
 
   useEffect(() => {
-    if (contact) {
-      setUserData({
-        name: contact.name || "",
-        phoneNumber: contact.phoneNumber ? contact.phoneNumber.split('+6')[1] ?? "" : "",
-        email: contact.id || "",
-        password: "",
-        role: contact.role || "",
-        companyId: companyId || "",
-        group: contact.group || "",
-        employeeId: contact.employeeId || "",
-        notes: contact.notes || "",
-        quotaLeads: contact.quotaLeads || 0,
-        invoiceNumber: contact.invoiceNumber || null,
-        phone: contact.phone || -1,
-        ...(Object.keys(phoneNames).reduce((acc, index) => {
-          const phoneField = index === '0' ? 'phone' : `phone${parseInt(index) + 1}`;
-          const weightageField = index === '0' ? 'weightage' : `weightage${parseInt(index) + 1}`;
-          if (contact[phoneField as keyof typeof contact] !== undefined) {
-            acc[phoneField] = contact[phoneField as keyof typeof contact];
-            acc[weightageField] = contact[weightageField as keyof typeof contact] || 0;
+    const fetchUserData = async () => {
+      if (contact && contact.id) {
+        try {
+          const userDocRef = doc(firestore, 'user', contact.id);
+          const userDocSnap = await getDoc(userDocRef);
+          
+          if (userDocSnap.exists()) {
+            const firebaseUserData = userDocSnap.data();
+            
+            
+            const userData = {
+              name: firebaseUserData.name || "",
+              phoneNumber: firebaseUserData.phoneNumber ? firebaseUserData.phoneNumber.split('+6')[1] ?? "" : "",
+              email: contact.id,
+              password: "",
+              role: firebaseUserData.role || "",
+              companyId: firebaseUserData.companyId || "",
+              group: firebaseUserData.group || "",
+              employeeId: firebaseUserData.employeeId || "",
+              notes: firebaseUserData.notes || "",
+              quotaLeads: firebaseUserData.quotaLeads || 0,
+              invoiceNumber: firebaseUserData.invoiceNumber || null,
+              phone: firebaseUserData.phone,
+              phone2: firebaseUserData.phone2,
+              phone3: firebaseUserData.phone3,
+              imageUrl: firebaseUserData.imageUrl || "",
+              weightage: firebaseUserData.weightage,
+              weightage2: firebaseUserData.weightage2,
+              weightage3: firebaseUserData.weightage3
+            };
+
+            
+            setUserData(userData);
+            setCategories([firebaseUserData.role]);
+          } else {
+            
           }
-          return acc;
-        }, {} as Record<string, any>)),
-        imageUrl: contact.imageUrl || "",
-        weightage: contact.weightage || 0,
-      });
-      setCategories([contact.role]);
-    }
+        } catch (error) {
+          console.error("Error fetching user data from Firebase:", error);
+        }
+      }
+    };
+
+    fetchUserData();
     fetchGroups();
-  }, [contact, companyId, phoneNames]);
+  }, [contact, companyId, firestore]);
 
   const fetchGroups = async () => {
     if (!companyId) {
-      console.log("No companyId available");
+      
       return;
     }
-    console.log("Fetching groups for company:", companyId);
+    
     try {
       const employeeCollectionRef = collection(firestore, `companies/${companyId}/employee`);
       const employeeSnapshot = await getDocs(employeeCollectionRef);
@@ -165,7 +181,7 @@ function Main() {
         }
       });
       const groupsArray = Array.from(uniqueGroups);
-      console.log("Fetched groups:", groupsArray);
+      
       setGroups(groupsArray);
     } catch (error) {
       console.error("Error fetching groups:", error);
@@ -179,7 +195,7 @@ function Main() {
       if (companyDocSnap.exists()) {
         const companyData = companyDocSnap.data();
         const phoneCount = companyData.phoneCount || 0;
-        console.log('phoneCount for this company:', phoneCount);
+        
         
         // Generate phoneNames object
         const phoneNamesData: { [key: number]: string } = {};
@@ -189,7 +205,7 @@ function Main() {
             phoneNamesData[i] = phoneName;
           }
         }
-        console.log('Phone names:', phoneNamesData);
+        
         setPhoneNames(phoneNamesData);
         setPhoneOptions(Object.keys(phoneNamesData).map(Number));
       }
@@ -340,7 +356,7 @@ function Main() {
         const docRef = doc(firestore, 'companies', companyId);
         const docSnapshot = await getDoc(docRef);
         if (!docSnapshot.exists()) {
-          console.log('No such document!');
+          
           return;
         }
         const data2 = docSnapshot.data();
@@ -442,15 +458,14 @@ function Main() {
               formattedPhone = '6' + formattedPhone;
             }
             formattedPhone += '@c.us';
-            console.log('Formatted user chat_id:', formattedPhone);
+            
               url = `${baseUrl}/api/v2/messages/text/${companyId}/${formattedPhone}`;
               requestBody = { 
                 message,
                 phoneIndex: 0, // Include phoneIndex in the request body
               };
       
-            console.log('Sending request to:', url);
-            console.log('Request body:', JSON.stringify(requestBody));
+     
       
             console.log('Full request details:', {
               url,
@@ -767,20 +782,7 @@ function Main() {
               disabled={isFieldDisabled("invoiceNumber")}
             />
           </div>
-          {currentUserRole === "1" && (
-            <div>
-              <FormLabel htmlFor="weightage">Weightage</FormLabel>
-              <FormInput
-                id="weightage"
-                name="weightage"
-                type="number"
-                value={userData.weightage}
-                onChange={(e) => setUserData(prev => ({ ...prev, weightage: parseInt(e.target.value) || 0 }))}
-                placeholder="Weightage"
-                min="0"
-              />
-            </div>
-          )}
+    
         </div>
         <div className="mt-4">
           <FormLabel htmlFor="notes">Notes</FormLabel>
@@ -795,48 +797,44 @@ function Main() {
           </div>
         </div>
         {currentUserRole === "1" && phoneOptions.length > 0 && (
-          <>
-            {Array.from({ length: phoneOptions.length }).map((_, index) => {
-              const phoneField = index === 0 ? 'phone' : `phone${index + 1}`;
-              const weightageField = index === 0 ? 'weightage' : `weightage${index + 1}`;
-              
-              return (
-                <div key={index} className="grid grid-cols-2 gap-4">
-                  <div>
-                    <FormLabel htmlFor={phoneField}>{`Phone ${index + 1}`}</FormLabel>
-                    <select
-                      id={phoneField}
-                      name={phoneField}
-                      value={userData[phoneField as keyof typeof userData] || ''}
-                      onChange={handleChange}
-                      className="text-black dark:text-white border-primary dark:border-primary-dark bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 focus:ring-2 focus:ring-blue-300 dark:focus:ring-blue-700 rounded-lg text-sm w-full"
-                      disabled={isFieldDisabled("phone") || (currentUserRole !== "1" && userData.role !== "2")}
-                    >
-                      <option value="">Select a phone</option>
-                      {Object.entries(phoneNames).map(([idx, phoneName]) => (
-                        <option key={idx} value={parseInt(idx) - 1}>
-                          {phoneName}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <FormLabel htmlFor={weightageField}>Weightage for Phone {index+1}</FormLabel>
-                    <FormInput
-                      id={weightageField}
-                      name={weightageField}
-                      type="number"
-                      value={userData[weightageField as keyof typeof userData] || 0}
-                      onChange={handleChange}
-                      placeholder="Weightage"
-                      min="0"
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </>
-        )}
+  <>
+    {Object.entries(phoneNames).map(([index, phoneName]) => {
+      // Map the field names correctly - first weightage has no number
+      const phoneField = index === '1' ? 'phone' : `phone${index}`;
+      const weightageField = index === '1' ? 'weightage' : `weightage${index}`;
+      
+       // Debug log
+      
+      // Get the correct weightage value based on the field name
+      const weightageValue = userData[weightageField as keyof typeof userData];
+       // Debug log
+      
+      return (
+        <div key={index} className="grid grid-cols-2 gap-4">
+          <div>
+            <FormLabel htmlFor={weightageField}>
+              Weightage for {phoneName}
+            </FormLabel>
+            <FormInput
+              id={weightageField}
+              name={weightageField}
+              type="number"
+              value={weightageValue ?? 0}
+              onChange={handleChange}
+              placeholder="Weightage"
+              min="0"
+            />
+            <input 
+              type="hidden" 
+              name={phoneField} 
+              value={index}
+            />
+          </div>
+        </div>
+      );
+    })}
+  </>
+)}
         {errorMessage && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mt-4" role="alert">
             <strong className="font-bold">Error: </strong>
