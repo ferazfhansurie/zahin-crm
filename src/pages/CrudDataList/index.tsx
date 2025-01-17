@@ -4310,82 +4310,82 @@ const getFilteredScheduledMessages = () => {
                               </span>
                             </div>
                             <div className="text-gray-800 dark:text-gray-200 mb-2 font-medium text-md">
-{/* First Message */}
-<p className="line-clamp-2">
-  {message.message ? message.message : 'No message content'}
-</p>
+                            {/* First Message */}
+                            <p className="line-clamp-2">
+                              {message.message ? message.message : 'No message content'}
+                            </p>
 
-{/* Additional Messages */}
-{message.messages && message.messages.length > 0 && message.messages.some(msg => msg.message !== message.message) && (
-  <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-    {message.messages.map((msg: any, index: number) => {
-      // Only show messages that are different from the first message
-      if (msg.message !== message.message) {
-        return (
-          <div key={index} className="mt-2">
-            <p className="line-clamp-2">
-              Message {index + 2}: {msg.text}
-            </p>
-            {message.messageDelays && message.messageDelays[index] > 0 && (
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                Delay: {message.messageDelays[index]} seconds
-              </span>
-            )}
-          </div>
-        );
-      }
-      return null;
-    })}
-  </div>
-)}
+                            {/* Additional Messages */}
+                            {message.messages && message.messages.length > 0 && message.messages.some(msg => msg.message !== message.message) && (
+                              <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                                {message.messages.map((msg: any, index: number) => {
+                                  // Only show messages that are different from the first message
+                                  if (msg.message !== message.message) {
+                                    return (
+                                      <div key={index} className="mt-2">
+                                        <p className="line-clamp-2">
+                                          Message {index + 2}: {msg.text}
+                                        </p>
+                                        {message.messageDelays && message.messageDelays[index] > 0 && (
+                                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                                            Delay: {message.messageDelays[index]} seconds
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  }
+                                  return null;
+                                })}
+                              </div>
+                            )}
 
-  {/* Message Settings */}
-  <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-    <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
-      {/* Batch Settings */}
-      <div>
-        <span className="font-semibold">Batch Size:</span> {message.batchQuantity}
-      </div>
-      
-      {/* Delay Settings */}
-      <div>
-        <span className="font-semibold">Delay:</span> {message.minDelay}-{message.maxDelay}s
-      </div>
+                              {/* Message Settings */}
+                              <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                                <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
+                                  {/* Batch Settings */}
+                                  <div>
+                                    <span className="font-semibold">Batch Size:</span> {message.batchQuantity}
+                                  </div>
+                                  
+                                  {/* Delay Settings */}
+                                  <div>
+                                    <span className="font-semibold">Delay:</span> {message.minDelay}-{message.maxDelay}s
+                                  </div>
 
-      {/* Repeat Settings */}
-      {message.repeatInterval > 0 && (
-        <div>
-          <span className="font-semibold">Repeat:</span> Every {message.repeatInterval} {message.repeatUnit}
-        </div>
-      )}
+                                  {/* Repeat Settings */}
+                                  {message.repeatInterval > 0 && (
+                                    <div>
+                                      <span className="font-semibold">Repeat:</span> Every {message.repeatInterval} {message.repeatUnit}
+                                    </div>
+                                  )}
 
-      {/* Sleep Settings */}
-      {message.activateSleep && (
-        <>
-          <div>
-            <span className="font-semibold">Sleep After:</span> {message.sleepAfterMessages} messages
-          </div>
-          <div>
-            <span className="font-semibold">Sleep Duration:</span> {message.sleepDuration} minutes
-          </div>
-        </>
-      )}
+                                  {/* Sleep Settings */}
+                                  {message.activateSleep && (
+                                    <>
+                                      <div>
+                                        <span className="font-semibold">Sleep After:</span> {message.sleepAfterMessages} messages
+                                      </div>
+                                      <div>
+                                        <span className="font-semibold">Sleep Duration:</span> {message.sleepDuration} minutes
+                                      </div>
+                                    </>
+                                  )}
 
-      {/* Active Hours */}
-      <div className="col-span-2">
-        <span className="font-semibold">Active Hours:</span> {message.activeHours?.start} - {message.activeHours?.end}
-      </div>
+                                  {/* Active Hours */}
+                                  <div className="col-span-2">
+                                    <span className="font-semibold">Active Hours:</span> {message.activeHours?.start} - {message.activeHours?.end}
+                                  </div>
 
-      {/* Infinite Loop */}
-      {message.infiniteLoop && (
-        <div className="col-span-2 text-indigo-600 dark:text-indigo-400 flex items-center">
-          <Lucide icon="RefreshCw" className="w-4 h-4 mr-1" />
-          Messages will loop indefinitely
-        </div>
-      )}
-    </div>
-  </div>
-</div>
+                                  {/* Infinite Loop */}
+                                  {message.infiniteLoop && (
+                                    <div className="col-span-2 text-indigo-600 dark:text-indigo-400 flex items-center">
+                                      <Lucide icon="RefreshCw" className="w-4 h-4 mr-1" />
+                                      Messages will loop indefinitely
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
                             <div className="flex items-center text-xs text-gray-600 dark:text-gray-400">
                               <Lucide icon="Users" className="w-4 h-4 mr-1" />
                               <div className="ml-5 max-h-20 overflow-y-auto">

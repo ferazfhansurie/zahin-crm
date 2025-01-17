@@ -381,15 +381,16 @@ function Main() {
           quotaLeads: userData.quotaLeads || 0,
           invoiceNumber: userData.invoiceNumber || null,
           
-          // Only include phone and weightage fields that exist in phoneNames
+          // First, set the base phone and weightage fields
+          phone: 1, // Set default phone to 1 for the first phone
+          weightage: Number(userData.weightage) || 0, // Use weightage1 for the first phone
+          
+          // Then include additional phone and weightage fields
           ...(Object.keys(phoneNames).reduce((acc, index) => {
             const phoneIndex = parseInt(index);
-            // Only create fields if they exist in phoneNames
-            if (phoneNames[phoneIndex]) {
-              // For index 0, use 'phone' and 'weightage'
-              // For others, use 'phone2', 'phone3', etc.
-              const phoneField = phoneIndex === 0 ? 'phone' : `phone${phoneIndex}`;
-              const weightageField = phoneIndex === 0 ? 'weightage' : `weightage${phoneIndex}`;
+            if (phoneIndex > 1) { // Only handle phone2 and above here
+              const phoneField = `phone${phoneIndex}`;
+              const weightageField = `weightage${phoneIndex}`;
               
               acc[phoneField] = phoneIndex;
               acc[weightageField] = Number(userData[weightageField as keyof typeof userData]) || 0;
