@@ -3660,11 +3660,29 @@ const resetForm = () => {
               }
 
               // Format phone number
-              row.phone = row.phone.replace(/\D/g, '');
-              if (!row.phone.startsWith('60')) {
-                row.phone = '60' + row.phone;
+              // Remove all non-numeric characters including any existing '+' prefix
+              let phoneNumber = row.phone.replace(/\D/g, '');
+              
+              // Handle different phone number formats
+              if (phoneNumber.startsWith('0')) {
+                // Remove leading 0 if present
+                phoneNumber = phoneNumber.substring(1);
               }
 
+              // Check if country code is already present
+              if (!phoneNumber.match(/^[1-9]\d{1,3}/)) {
+                // If no country code is present, default to Malaysia (60)
+                phoneNumber = '60' + phoneNumber;
+              }
+
+              // Validate phone number length (minimum 8 digits after country code)
+              if (phoneNumber.length < 10) { // country code (2-3 digits) + phone number (8+ digits)
+                console.warn(`Invalid phone number length for contact: ${row.contactName}`);
+                return null;
+              }
+
+              // Add '+' prefix to the formatted phone number
+              row.phone = '+' + phoneNumber;
               return row;
             })
             .filter((row): row is NonNullable<typeof row> => row !== null);
