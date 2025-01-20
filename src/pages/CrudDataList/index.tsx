@@ -3976,30 +3976,43 @@ const getFilteredScheduledMessages = () => {
                           </Tab.List>
                           <Tab.Panels className="mt-2 max-h-[300px] overflow-y-auto">
                             <Tab.Panel>
-                              {tagList.map((tag) => (
-                                <div key={tag.id} className={`flex items-center justify-between m-2 p-2 text-sm w-full rounded-md ${selectedTagFilters.includes(tag.name) ? 'bg-primary dark:bg-primary text-white' : ''}`}>
-                                  <div 
-                                    className="flex items-center cursor-pointer"
-                                    onClick={() => handleTagFilterChange(tag.name)}
-                                  >
-                                    {tag.name}
+                              {tagList
+                                .sort((a, b) => {
+                                  // Check if either tag starts with a number
+                                  const aStartsWithNumber = /^\d/.test(a.name);
+                                  const bStartsWithNumber = /^\d/.test(b.name);
+                                  
+                                  // If one starts with number and other doesn't, number comes first
+                                  if (aStartsWithNumber && !bStartsWithNumber) return -1;
+                                  if (!aStartsWithNumber && bStartsWithNumber) return 1;
+                                  
+                                  // Otherwise sort alphabetically
+                                  return a.name.localeCompare(b.name);
+                                })
+                                .map((tag) => (
+                                  <div key={tag.id} className={`flex items-center justify-between m-2 p-2 text-sm w-full rounded-md ${selectedTagFilters.includes(tag.name) ? 'bg-primary dark:bg-primary text-white' : ''}`}>
+                                    <div 
+                                      className="flex items-center cursor-pointer"
+                                      onClick={() => handleTagFilterChange(tag.name)}
+                                    >
+                                      {tag.name}
+                                    </div>
+                                    <button
+                                      className={`px-2 py-1 text-xs rounded ${
+                                        excludedTags.includes(tag.name)
+                                          ? 'bg-red-500 text-white'
+                                          : 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-300'
+                                      }`}
+                                      onClick={() => 
+                                        excludedTags.includes(tag.name)
+                                          ? handleRemoveExcludedTag(tag.name)
+                                          : handleExcludeTag(tag.name)
+                                      }
+                                    >
+                                      {excludedTags.includes(tag.name) ? 'Excluded' : 'Exclude'}
+                                    </button>
                                   </div>
-                                  <button
-                                    className={`px-2 py-1 text-xs rounded ${
-                                      excludedTags.includes(tag.name)
-                                        ? 'bg-red-500 text-white'
-                                        : 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-300'
-                                    }`}
-                                    onClick={() => 
-                                      excludedTags.includes(tag.name)
-                                        ? handleRemoveExcludedTag(tag.name)
-                                        : handleExcludeTag(tag.name)
-                                    }
-                                  >
-                                    {excludedTags.includes(tag.name) ? 'Excluded' : 'Exclude'}
-                                  </button>
-                                </div>
-                              ))}
+                                ))}
                             </Tab.Panel>
                             <Tab.Panel>
                               {employeeList.map((employee) => (
