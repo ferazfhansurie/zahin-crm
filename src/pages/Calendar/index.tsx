@@ -2716,16 +2716,18 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
             {viewType === 'calendar' ? 'Slots View' : 'Calendar View'}
           </button>
         </div>
-             {/* Add new Appointment Requests button */}
-             <div className="w-full mb-4 sm:w-auto sm:mr-2 lg:mb-0 lg:mr-4">
-          <button
-            className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
-            onClick={() => navigate('/appointment-requests')}
-          >
-            <Lucide icon="ClipboardList" className="w-4 h-4 mr-2 inline-block" />
-            Appointment Requests
-          </button>
-        </div>
+        {/* Add new Appointment Requests button */}
+        {companyId === '053' && (
+          <div className="w-full mb-4 sm:w-auto sm:mr-2 lg:mb-0 lg:mr-4">
+            <button
+              className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
+              onClick={() => navigate('/appointment-requests')}
+            >
+              <Lucide icon="ClipboardList" className="w-4 h-4 mr-2 inline-block" />
+              Appointment Requests
+            </button>
+          </div>
+        )}
         {/* Employee selection dropdown */}
         <div className="w-full mb-4 sm:w-1/4 sm:mr-2 lg:w-auto lg:mb-0 lg:mr-4">
           {employees.length > 0 && (
