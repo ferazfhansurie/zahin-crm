@@ -445,19 +445,7 @@ function LoadingPage() {
           : new Date(0);
       return dateB.getTime() - dateA.getTime();
     });
-    // Cache the contacts
-    setLoadingPhase('caching');
-    localStorage.setItem('contacts', LZString.compress(JSON.stringify(allContacts)));
-    sessionStorage.setItem('contactsFetched', 'true');
-    sessionStorage.setItem('contactsCacheTimestamp', Date.now().toString());
 
-    setContacts(allContacts);
-    setContactsFetched(true);
-
-    // Cache messages for first 100 contacts
-    await fetchAndCacheMessages(allContacts, companyId, user);
-    
-    setLoadingPhase('complete');
 
     // After contacts are loaded, fetch chats
     await fetchChatsData();

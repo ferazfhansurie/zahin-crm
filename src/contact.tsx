@@ -94,6 +94,28 @@ export const ContactsProvider = ({ children }: { children: ReactNode }) => {
     try {
       setIsLoading(true);
       
+      // Only store essential contact data
+      const essentialContactData = (contact: Contact) => ({
+        chat_id: contact.chat_id,
+        contactName: contact.contactName,
+        conversation_id: contact.conversation_id,
+        id: contact.id,
+        last_message: contact.last_message ? {
+          from: contact.last_message.from,
+          from_me: contact.last_message.from_me,
+          text: contact.last_message.text,
+          timestamp: contact.last_message.timestamp,
+          createdAt: contact.last_message.createdAt,
+          type: contact.last_message.type
+        } : undefined,
+        phone: contact.phone,
+        pinned: contact.pinned,
+        tags: contact.tags,
+        unreadCount: contact.unreadCount,
+        assignedTo: contact.assignedTo,
+        phoneIndex: contact.phoneIndex
+      });
+
       const storedContacts = localStorage.getItem('contacts');
       if (storedContacts) {
         const parsedContacts = JSON.parse(LZString.decompress(storedContacts)!);
@@ -156,8 +178,11 @@ export const ContactsProvider = ({ children }: { children: ReactNode }) => {
             : new Date(0);
         return dateB.getTime() - dateA.getTime();
       });
-      setContacts(allContacts);
-      localStorage.setItem('contacts', LZString.compress(JSON.stringify(allContacts)));
+
+      // Sort and store only essential data
+      const essentialContacts = allContacts.map(essentialContactData);
+      setContacts(essentialContacts);
+      localStorage.setItem('contacts', LZString.compress(JSON.stringify(essentialContacts)));
   
     } catch (error) {
       console.error('Error fetching contacts:', error);
