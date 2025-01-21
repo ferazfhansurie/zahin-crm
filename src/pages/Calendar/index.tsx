@@ -2947,7 +2947,9 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
           <div className="p-5 box intro-y">
             {viewType === 'calendar' ? (
               <CalendarErrorBoundary>
-                <FullCalendar {...calendarOptions} ref={calendarRef} />
+                <div className="calendar-container" style={{ height: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+                  <FullCalendar {...calendarOptions} ref={calendarRef} />
+                </div>
               </CalendarErrorBoundary>
             ) : (
               <GridView />
