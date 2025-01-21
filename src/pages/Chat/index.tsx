@@ -8812,11 +8812,11 @@ ${context}
           <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-2xl w-full">
             <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-200">Send Video</h2>
             {selectedVideo.size > 20 * 1024 * 1024 ? (
-              <>
-                {setVideoModalOpen(false)}
-                {toast.error('The video file is too big. Please select a file smaller than 20MB.')}
-              </>
-            ) : (
+              <div onLoad={() => {
+                setVideoModalOpen(false);
+                toast.error('The video file is too big. Please select a file smaller than 20MB.');
+              }} />
+            ): (
               <>
                 <video
                   src={URL.createObjectURL(selectedVideo)}
