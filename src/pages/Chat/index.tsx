@@ -155,6 +155,7 @@ interface Message {
   reactions?: { emoji: string; from_name: string }[];
   name?:string;
   isPrivateNote?: boolean;
+  call_log?: any;
 }
 interface Employee {
   id: string;
@@ -2728,6 +2729,13 @@ useEffect(() => {
                     case 'product_items':
                         formattedMessage.product_items = message.product_items ? message.product_items : undefined;
                         break;
+                    case 'call_log':
+                        formattedMessage.call_log = {
+                            status: message.call_log?.status || 'missed',
+                            duration: message.call_log?.duration,
+                            timestamp: message.call_log?.timestamp || message.timestamp,
+                        };
+                        break;
                     case 'action':
                         formattedMessage.action = message.action ? message.action : undefined;
                         break;
@@ -2972,6 +2980,13 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
             break;
           case 'product_items':
             formattedMessage.product_items = message.product_items ? message.product_items : undefined;
+            break;
+          case 'call_log':
+            formattedMessage.call_log = {
+              status: message.call_log?.status || 'missed',
+              duration: message.call_log?.duration,
+              timestamp: message.call_log?.timestamp || message.timestamp,
+            };
             break;
           case 'action':
             formattedMessage.action = message.action ? message.action : undefined;
@@ -6132,6 +6147,28 @@ const toggleBot = async () => {
       toast.error("An error occurred while setting the reminder. Please try again.");
     }
   };
+
+  const formatDuration = (seconds: number): string => {
+    if (!seconds) return '0s';
+    
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+  
+    const parts = [];
+    
+    if (hours > 0) {
+      parts.push(`${hours}h`);
+    }
+    if (minutes > 0) {
+      parts.push(`${minutes}m`);
+    }
+    if (remainingSeconds > 0 || parts.length === 0) {
+      parts.push(`${remainingSeconds}s`);
+    }
+  
+    return parts.join(' ');
+  };
   
   const handleGenerateAIResponse = async () => {
     if (messages.length === 0) return;
@@ -7833,28 +7870,28 @@ ${context}
                             )}
                         </div>
                       )}
-{message.type === 'order' && message.order && (
-  <div className="p-0 message-content">
-    <div className="flex items-center space-x-3 bg-emerald-800 rounded-lg p-2">
-      <img
-        src={`data:image/jpeg;base64,${message.order.thumbnail}`}
-        alt="Order"
-        className="w-12 h-12 rounded-lg object-cover"
-        onError={(e) => {
-          console.error("Error loading order image:", e.currentTarget.src);
-          e.currentTarget.src = logoImage;
-        }}
-      />
-      <div className="text-white">
-        <div className="flex items-center">
-          <Lucide icon="ShoppingCart" className="w-4 h-4 mr-1" />
-          <span className="text-sm">{message.order.itemCount} item</span>
-        </div>
-        <p className="text-sm opacity-90">MYR {(message.order.totalAmount1000 / 1000).toFixed(2)}</p>
-      </div>
-    </div>
-  </div>
-)}
+                      {message.type === 'order' && message.order && (
+                        <div className="p-0 message-content">
+                          <div className="flex items-center space-x-3 bg-emerald-800 rounded-lg p-2">
+                            <img
+                              src={`data:image/jpeg;base64,${message.order.thumbnail}`}
+                              alt="Order"
+                              className="w-12 h-12 rounded-lg object-cover"
+                              onError={(e) => {
+                                console.error("Error loading order image:", e.currentTarget.src);
+                                e.currentTarget.src = logoImage;
+                              }}
+                            />
+                            <div className="text-white">
+                              <div className="flex items-center">
+                                <Lucide icon="ShoppingCart" className="w-4 h-4 mr-1" />
+                                <span className="text-sm">{message.order.itemCount} item</span>
+                              </div>
+                              <p className="text-sm opacity-90">MYR {(message.order.totalAmount1000 / 1000).toFixed(2)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       {message.type === 'video' && message.video && (
                         <div className="video-content p-0 message-content image-message">
                           <video
@@ -7877,34 +7914,34 @@ ${context}
                           <div className="caption text-gray-800 dark:text-gray-200">{message.gif.caption}</div>
                         </div>
                       )}
-             {(message.type === 'audio' || message.type === 'ptt') && (message.audio || message.ptt) && (
-              <div className="audio-content p-0 message-content image-message">
-                <audio 
-                  controls 
-                  className="rounded-lg message-image cursor-pointer"
-                  src={(() => {
-                    const audioData = message.audio?.data || message.ptt?.data;
-                    const mimeType = message.audio?.mimetype || message.ptt?.mimetype;
-                    if (audioData && mimeType) {
-                      const byteCharacters = atob(audioData);
-                      const byteNumbers = new Array(byteCharacters.length);
-                      for (let i = 0; i < byteCharacters.length; i++) {
-                        byteNumbers[i] = byteCharacters.charCodeAt(i);
-                      }
-                      const byteArray = new Uint8Array(byteNumbers);
-                      const blob = new Blob([byteArray], { type: mimeType });
-                      return URL.createObjectURL(blob);
-                    }
-                    return '';
-                  })()}
-                />
-                {(message.audio?.caption || message.ptt?.caption) && (
-                  <div className="caption text-gray-800 dark:text-gray-200 mt-2">
-                    {message.audio?.caption || message.ptt?.caption}
-                  </div>
-                )}
-              </div>
-            )}
+                      {(message.type === 'audio' || message.type === 'ptt') && (message.audio || message.ptt) && (
+                        <div className="audio-content p-0 message-content image-message">
+                          <audio 
+                            controls 
+                            className="rounded-lg message-image cursor-pointer"
+                            src={(() => {
+                              const audioData = message.audio?.data || message.ptt?.data;
+                              const mimeType = message.audio?.mimetype || message.ptt?.mimetype;
+                              if (audioData && mimeType) {
+                                const byteCharacters = atob(audioData);
+                                const byteNumbers = new Array(byteCharacters.length);
+                                for (let i = 0; i < byteCharacters.length; i++) {
+                                  byteNumbers[i] = byteCharacters.charCodeAt(i);
+                                }
+                                const byteArray = new Uint8Array(byteNumbers);
+                                const blob = new Blob([byteArray], { type: mimeType });
+                                return URL.createObjectURL(blob);
+                              }
+                              return '';
+                            })()}
+                          />
+                          {(message.audio?.caption || message.ptt?.caption) && (
+                            <div className="caption text-gray-800 dark:text-gray-200 mt-2">
+                              {message.audio?.caption || message.ptt?.caption}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {message.type === 'voice' && message.voice && (
                         <div className="voice-content p-0 message-content image-message w-auto h-auto">
                           <audio controls src={message.voice.link} className="rounded-lg message-image cursor-pointer" />
@@ -7983,21 +8020,21 @@ ${context}
                           />
                         </div>
                       )}
-                   {message.type === 'location' && message.location && (
-  <div className="location-content p-0 message-content image-message">
-    <button
-      className="text-white bg-blue-500 hover:bg-blue-600 rounded-md px-3 py-1"
-      onClick={() => window.open(`https://www.google.com/maps?q=${message.location?.latitude},${message.location?.longitude}`, '_blank')}
-    >
-      Open Location in Google Maps
-    </button>
-    {message.location?.description && (
-      <div className="text-xs text-white mt-1">
-        {message.location.description}
-      </div>
-    )}
-  </div>
-)}
+                      {message.type === 'location' && message.location && (
+                        <div className="location-content p-0 message-content image-message">
+                          <button
+                            className="text-white bg-blue-500 hover:bg-blue-600 rounded-md px-3 py-1"
+                            onClick={() => window.open(`https://www.google.com/maps?q=${message.location?.latitude},${message.location?.longitude}`, '_blank')}
+                          >
+                            Open Location in Google Maps
+                          </button>
+                          {message.location?.description && (
+                            <div className="text-xs text-white mt-1">
+                              {message.location.description}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {message.type === 'poll' && message.poll && (
                         <div className="poll-content p-0 message-content image-message">
                           <div className="text-sm text-gray-800 dark:text-gray-200">Poll: {message.poll.title}</div>
@@ -8018,7 +8055,31 @@ ${context}
                           )}
                         </div>
                       )}
-
+                      {message.type === 'call_log' && (
+                        <div className="call-logs-content p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                            <div className="flex items-center space-x-2 mb-2">
+                                {message.call_log?.status === 'missed' ? (
+                                    <Lucide icon="PhoneMissed" className="w-5 h-5 text-red-500" />
+                                ) : message.call_log?.status === 'outgoing' ? (
+                                    <Lucide icon="PhoneOutgoing" className="w-5 h-5 text-green-500" />
+                                ) : (
+                                    <Lucide icon="PhoneIncoming" className="w-5 h-5 text-blue-500" />
+                                )}
+                                <span className="font-medium text-gray-800 dark:text-gray-200 capitalize">
+                                    {message.call_log?.status || 'Missed'} Call
+                                </span>
+                            </div>
+                            
+                            <div className="text-sm text-gray-600 dark:text-gray-400">
+                                {message.call_log?.duration ? (
+                                    <span>Duration: {formatDuration(message.call_log.duration)}</span>
+                                ) : (
+                                    <span>Call not answered</span>
+                                )}
+                            </div>
+                        </div>
+                      )}
+                      
                       {showReactionPicker && reactionMessage?.id === message.id && (
                         <ReactionPicker
                           onSelect={(emoji) => handleReaction(message, emoji)}
@@ -8113,6 +8174,7 @@ ${context}
                 )}
                 {replyToMessage.type === 'poll' && <div className="text-gray-800 dark:text-gray-200">Poll: {replyToMessage.poll?.title}</div>}
                 {replyToMessage.type === 'hsm' && <div className="text-gray-800 dark:text-gray-200">HSM: {replyToMessage.hsm?.title}</div>}
+                {replyToMessage.type === 'call_log' && <div className="text-gray-800 dark:text-gray-200">Call Logs: {replyToMessage.call_log?.title}</div>}
               </div>
             </div>
             <button onClick={() => setReplyToMessage(null)}>
