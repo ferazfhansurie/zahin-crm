@@ -35,6 +35,14 @@ function Main() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
+
+  const [employeeId, setEmployeeId] = useState("");
+  const [notes, setNotes] = useState("");
+  const [quotaLeads, setQuotaLeads] = useState(0);
+  const [invoiceNumber, setInvoiceNumber] = useState<string | null>(null);
+  const [weightage, setWeightage] = useState(0);
+
+  
   const [registerResult, setRegisterResult] = useState<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<'blaster' | 'enterprise' | null>(null);
   const [verificationCode, setVerificationCode] = useState("");
@@ -187,8 +195,13 @@ function Main() {
         companyId: newCompanyId,
         phoneNumber: phoneNumber,
         plan: selectedPlan,
-        trialStartDate: new Date().toISOString(),
-        trialEndDate: new Date(new Date().setDate(new Date().getDate() + 30)).toISOString(),
+
+
+        employeeId: employeeId || null,
+        notes: notes || null,
+        quotaLeads: quotaLeads || 0,
+        invoiceNumber: invoiceNumber || null,
+        weightage: weightage || 0,
       });
 
       // Save user data under the new company's employee collection
@@ -196,7 +209,13 @@ function Main() {
         name: name,
         email: user.email!,
         role: "1",
-        phoneNumber: phoneNumber // Add phone number
+        phoneNumber: formatPhoneNumber(phoneNumber),
+
+        employeeId: employeeId || null,
+        notes: notes || null,
+        quotaLeads: quotaLeads || 0,
+        invoiceNumber: invoiceNumber || null,
+        weightage: weightage || 0,
       });
    
       if (!user) {
