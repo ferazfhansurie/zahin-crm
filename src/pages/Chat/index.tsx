@@ -4243,12 +4243,12 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
     }
 
     // Send notification to all admins
-    for (const admin of adminUsers) {
-      if (admin.phoneNumber) {
-        const adminMessage = `Admin notification: A new contact has been assigned to ${assignedEmployee.name}:\n\nName: ${contact.contactName || contact.firstName || 'N/A'}\nPhone: ${contact.phone}`;
-        await sendWhatsAppMessage(admin.phoneNumber, adminMessage);
-      }
-    }
+    // for (const admin of adminUsers) {
+    //   if (admin.phoneNumber) {
+    //     const adminMessage = `Admin notification: A new contact has been assigned to ${assignedEmployee.name}:\n\nName: ${contact.contactName || contact.firstName || 'N/A'}\nPhone: ${contact.phone}`;
+    //     await sendWhatsAppMessage(admin.phoneNumber, adminMessage);
+    //   }
+    // }
 
     // Mark notification as sent
     await setDoc(notificationRef, {
