@@ -4140,11 +4140,13 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
       await sendWhatsAppMessage(assignedEmployee.phoneNumber, employeeMessage);
     }
 
-    // Send notification to all admins
-    for (const admin of adminUsers) {
-      if (admin.phoneNumber) {
-        const adminMessage = `Admin notification: A new contact has been assigned to ${assignedEmployee.name}:\n\nName: ${contact.contactName || contact.firstName || 'N/A'}\nPhone: ${contact.phone}`;
-        await sendWhatsAppMessage(admin.phoneNumber, adminMessage);
+    // Send notification to all admins, except for companyId '042'
+    if (companyId !== '042') {
+      for (const admin of adminUsers) {
+        if (admin.phoneNumber) {
+          const adminMessage = `Admin notification: A new contact has been assigned to ${assignedEmployee.name}:\n\nName: ${contact.contactName || contact.firstName || 'N/A'}\nPhone: ${contact.phone}`;
+          await sendWhatsAppMessage(admin.phoneNumber, adminMessage);
+        }
       }
     }
 
@@ -8074,7 +8076,7 @@ ${context}
                                 {message.call_log?.duration ? (
                                     <span>Duration: {formatDuration(message.call_log.duration)}</span>
                                 ) : (
-                                    <span>Call not answered</span>
+                                    <span>Call ended</span>
                                 )}
                             </div>
                         </div>
