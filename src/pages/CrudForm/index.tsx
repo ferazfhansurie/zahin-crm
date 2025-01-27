@@ -111,7 +111,7 @@ function Main() {
     notes: "",
     quotaLeads: 0,
     invoiceNumber: null,
-    phone: -1,
+    phone: 0,
     imageUrl: "",
     weightage: 0,
   });
