@@ -3626,7 +3626,7 @@ const resetForm = () => {
       const validContacts = csvContacts.map(contact => {
         const baseContact: any = {
           customFields: {},
-          tags: [],
+          tags: [...selectedImportTags], // Add selected import tags here
           updatedAt: Timestamp.now(),
           updatedBy: user.email,
           createdAt: Timestamp.now(),
@@ -3673,6 +3673,9 @@ const resetForm = () => {
           baseContact.customFields[header] = value;
         }
       });
+
+      baseContact.tags = [...new Set(baseContact.tags)];
+
 
       return baseContact;
     });
