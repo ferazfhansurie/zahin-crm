@@ -1127,7 +1127,108 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
 
     setAddModalOpen(true);
   };
+  const scheduleMessages = async (phoneNumber: string, appointmentTime: Date) => {
+    const currentTime = new Date();
+    if (appointmentTime < currentTime) {
+      console.log('Appointment is in the past, skipping message scheduling');
+      return;
+    }
+    try {
+      const user = auth.currentUser;
+      if (!user?.email) return;
+  
+      // Get company data for API configuration
+      const docUserRef = doc(firestore, 'user', user.email);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) return;
+  
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+  
+      const companyRef = doc(firestore, 'companies', companyId);
+      const companySnapshot = await getDoc(companyRef);
+      if (!companySnapshot.exists()) return;
+  
+      const companyData = companySnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      const isV2 = companyData.v2 || false;
+      const whapiToken = companyData.whapiToken || '';
+  
+      // Format phone number for WhatsApp
+      const formattedPhone = phoneNumber.replace(/\D/g, '') + "@c.us";
+  
+      // Format appointment time
+      const formattedTime = appointmentTime.toLocaleString('en-US', {
+        hour: 'numeric',
+        minute: 'numeric',
+        hour12: true,
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric'
+      });
+  
+      // Prepare messages
+      const messages = [
+        {
+          text: `Peringatan: Temujanji anda dengan BAROKAH AIRCOND akan bermula dalam masa 1 jam pada ${formattedTime}. \nKami akan memberikan perkhidmatan yang terbaik untuk anda! 😊`,
+          time: new Date(appointmentTime.getTime() - 60 * 60 * 1000) // 1 hour before
+        },
+        {
+          text: `TERIMA KASIH di atas kepecayaan cik menggunakan perkidmatan BAROKAH AIRCOND\n
 
+Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpuas hati dengan perkhidmatan dari Barokah Aircond?`,
+          time: new Date(appointmentTime.getTime() + 3 * 60 * 60 * 1000) // 3 hours after
+        }
+      ];
+  
+      // Schedule both messages
+      for (const message of messages) {
+        const scheduledMessageData = {
+          chatIds: [formattedPhone],
+          phoneIndex: 0,
+          message: message.text,
+          companyId,
+          v2: isV2,
+          whapiToken: isV2 ? null : whapiToken,
+          scheduledTime: {
+            seconds: Math.floor(message.time.getTime() / 1000),
+            nanoseconds: 0
+          },
+          status: "scheduled",
+          createdAt: {
+            seconds: Math.floor(Date.now() / 1000),
+            nanoseconds: 0
+          },
+          batchQuantity: 1,
+          messages: [],
+          messageDelays: [],
+          repeatInterval: null,
+          repeatUnit: null,
+          minDelay: 0,
+          maxDelay: 0,
+          activateSleep: false,
+          sleepAfterMessages: null,
+          sleepDuration: null,
+          activeHours: {
+            start: null,
+            end: null
+          },
+          infiniteLoop: false,
+          numberOfBatches: 1
+        };
+  
+        await axios.post(`${baseUrl}/api/schedule-message/${companyId}`, scheduledMessageData);
+      }
+  
+      toast.success('Reminder and feedback messages scheduled successfully');
+  
+    } catch (error) {
+      console.error('Error scheduling messages:', error);
+      toast.error('Failed to schedule messages');
+      throw error; // Re-throw to handle in calling function
+    }
+  };
+  
   const handleAddAppointment = async () => {
     const firstEmployeeId = selectedEmployeeIds[0];
     const secondEmployeeId = selectedEmployeeIds[1];
@@ -1167,9 +1268,28 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       details: currentEvent.extendedProps?.details || '',
       meetLink: currentEvent.extendedProps?.meetLink || '',
     };
+    const phoneRegex = /(?:\/|\\)?(\d{10,11})/;
+    const match = combinedTitle.match(phoneRegex);
+    let phoneNumber = match ? match[1] : '';
+    
+    // If number doesn't start with 6, add it
+    if (phoneNumber && !phoneNumber.startsWith('6')) {
+      phoneNumber = '6' + phoneNumber;
+    }
 
     const newAppointment = await createAppointment(newEvent);
     if (newAppointment) {
+      if (phoneNumber) {
+        try {
+          await scheduleMessages(
+            phoneNumber,
+            new Date(newAppointment.startTime)
+          );
+        } catch (error) {
+          console.error('Error scheduling reminder:', error);
+          toast.error('Appointment created but failed to schedule reminder');
+        }
+      }
       // Update the calendar immediately
       if (calendarRef.current) {
         const calendarApi = (calendarRef.current as any).getApi();
