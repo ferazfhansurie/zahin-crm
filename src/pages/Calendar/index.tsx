@@ -2717,7 +2717,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
           </button>
         </div>
         {/* Add new Appointment Requests button */}
-        {companyId === '053' && (
+        {companyId === '0153' && (
           <div className="w-full mb-4 sm:w-auto sm:mr-2 lg:mb-0 lg:mr-4">
             <button
               className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
