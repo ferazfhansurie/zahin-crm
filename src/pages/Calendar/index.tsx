@@ -20,6 +20,7 @@ import CreatableSelect from 'react-select/creatable';
 import React from "react";
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
+import { Switch } from "@headlessui/react";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCc0oSHlqlX7fLeqqonODsOIC3XA8NI7hc",
@@ -120,41 +121,17 @@ interface Tag {
   name: string;
 }
 
-// Add these new types at the top of the file
 interface ReminderSettings {
-  enabled: boolean;
-  message24h: string;
-  message3h: string;
-  message1h: string;
-  messageAfter: string;
-}
-
-// Add these interfaces at the top of your file
-interface ReminderOption {
-  type: '24h' | '3h' | '1h' | 'after';
-  enabled: boolean;
-  message: string;
-}
-
-interface AppointmentReminders {
-  enabled: boolean;
-  options: ReminderOption[];
-  sentReminders: Record<string, boolean>;
-}
-
-// Add the ScheduledMessage interface (similar to CrudDataList)
-interface ScheduledReminder {
-  id?: string;
-  chatIds: string[];
-  message: string;
-  scheduledTime: Timestamp;
-  appointmentId: string; // Add this to link reminder to appointment
-  status: 'scheduled' | 'sent' | 'failed';
-  createdAt: Timestamp;
-  sentAt?: Timestamp;
-  error?: string;
-  v2?: boolean;
-  whapiToken?: string;
+  beforeAppointment: {
+    enabled: boolean;
+    time: number;
+    message: string;
+  };
+  dayOf: {
+    enabled: boolean;
+    time: number;
+    message: string;
+  };
 }
 
 function Main() {
@@ -190,6 +167,21 @@ function Main() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [employeeExpenses, setEmployeeExpenses] = useState<Record<string, { minyak: number; toll: number }>>({});
   const navigate = useNavigate();
+  const [isCalendarConfigOpen, setIsCalendarConfigOpen] = useState(false);
+  const [isReminderSettingsOpen, setIsReminderSettingsOpen] = useState(false);
+  const [reminderSettings, setReminderSettings] = useState<ReminderSettings>({
+    beforeAppointment: {
+      enabled: true,
+      time: 24,
+      message: "Hi {name}, this is a reminder for your appointment tomorrow at {time}."
+    },
+    dayOf: {
+      enabled: true,
+      time: 2,
+      message: "Hi {name}, this is a reminder for your appointment today at {time}."
+    }
+  });
+  
   class ErrorBoundary extends Component<{ children: ReactNode; onError: (error: Error) => void }> {
     componentDidCatch(error: Error, errorInfo: ErrorInfo) {
       this.props.onError(error);
@@ -207,8 +199,6 @@ function Main() {
     slotDuration: 30,
     daysAhead: 3,
   });
-  const [isCalendarConfigOpen, setIsCalendarConfigOpen] = useState(false);
-  const [scheduledReminders, setScheduledReminders] = useState<ScheduledReminder[]>([]);
 
   useEffect(() => {
     const fetchCompanyId = async () => {
@@ -226,8 +216,62 @@ function Main() {
   
     fetchCompanyId();
     fetchTags();
+    fetchReminderSettings();
+  }, [auth]);
+
+  const fetchReminderSettings = async () => {
+    try {
+      const auth = getAuth(app);
+      const user = auth.currentUser;
+      if (!user?.email) return;
+
+      const docUserRef = doc(firestore, 'user', user.email);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) return;
+
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+
+      const reminderSettingsRef = doc(firestore, `companies/${companyId}/config/reminders`);
+      const reminderSettingsSnapshot = await getDoc(reminderSettingsRef);
+
+      if (reminderSettingsSnapshot.exists()) {
+        const settings = reminderSettingsSnapshot.data() as ReminderSettings;
+        setReminderSettings(settings);
+      }
+    } catch (error) {
+      console.error('Error fetching reminder settings:', error);
+    }
+  };
+
+  const updateReminderSettings = async (settings: ReminderSettings) => {
+    try {
+      const auth = getAuth(app);
+      const user = auth.currentUser;
+      if (!user?.email) return;
+
+      const docUserRef = doc(firestore, 'user', user.email);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) return;
+
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+
+      const reminderSettingsRef = doc(firestore, `companies/${companyId}/config/reminders`);
+      await setDoc(reminderSettingsRef, settings);
+      setReminderSettings(settings);
+      setIsReminderSettingsOpen(false);
+    } catch (error) {
+      console.error('Error updating reminder settings:', error);
+      throw error;
+    }
+  };
+
+  // Add fetchReminderSettings to the useEffect
+  useEffect(() => {
+    fetchReminderSettings();
   }, []);
-  
+
   const fetchTags = async () => {
     
     if (companyId) {
@@ -771,187 +815,6 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       return false;
     }
   };
-
-  const scheduleReminder = async (appointment: Appointment, reminderType: string, message: string) => {
-    try {
-      const user = auth.currentUser;
-      if (!user?.email) return;
-
-      // Get user and company data
-      const docUserRef = doc(firestore, 'user', user.email);
-      const userDoc = await getDoc(docUserRef);
-      if (!userDoc.exists()) return;
-
-      const userData = userDoc.data();
-      const companyId = userData.companyId;
-
-      // Get company configuration
-      const companyRef = doc(firestore, 'companies', companyId);
-      const companyDoc = await getDoc(companyRef);
-      if (!companyDoc.exists()) throw new Error('No company document found');
-      
-      const companyData = companyDoc.data();
-      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
-      const isV2 = companyData.v2 || false;
-      const whapiToken = companyData.whapiToken || '';
-
-      // Calculate scheduled time based on reminder type
-      let scheduledTime = new Date(appointment.startTime);
-      switch (reminderType) {
-        case '24h':
-          scheduledTime = subHours(scheduledTime, 24);
-          break;
-        case '3h':
-          scheduledTime = subHours(scheduledTime, 3);
-          break;
-        case '1h':
-          scheduledTime = subHours(scheduledTime, 1);
-          break;
-        case 'after':
-          scheduledTime = addHours(scheduledTime, 1);
-          break;
-      }
-
-      // Process contacts and create chat IDs
-      const chatIds = appointment.contacts
-        .map(contact => {
-          const phoneNumber = contact.phone?.replace(/\D/g, '');
-          return phoneNumber ? `${phoneNumber}@s.whatsapp.net` : null;
-        })
-        .filter((id): id is string => id !== null);
-
-      if (chatIds.length === 0) {
-        console.warn('No valid chat IDs found');
-        return;
-      }
-
-      // Create messages array with personalized messages for each contact
-      const messages = appointment.contacts.map(contact => {
-        const phoneNumber = contact.phone?.replace(/\D/g, '');
-        if (!phoneNumber) return null;
-
-        let messageTemplate = '';
-        const appointmentDate = format(new Date(appointment.startTime), 'MMMM dd, yyyy');
-        const appointmentTime = format(new Date(appointment.startTime), 'h:mm a');
-
-        switch (reminderType) {
-          case '24h':
-            messageTemplate = `Dear ${contact.name},\n\n` +
-              `This is a reminder for your appointment tomorrow:\n\n` +
-              `📅 ${appointment.title}\n` +
-              `📆 Date: ${appointmentDate}\n` +
-              `⏰ Time: ${appointmentTime}`;
-            break;
-          case '3h':
-            messageTemplate = `Dear ${contact.name},\n\n` +
-              `Your appointment is in 3 hours:\n\n` +
-              `📅 ${appointment.title}\n` +
-              `⏰ Time: ${appointmentTime}`;
-            break;
-          case '1h':
-            messageTemplate = `Dear ${contact.name},\n\n` +
-              `Your appointment is in 1 hour:\n\n` +
-              `📅 ${appointment.title}\n` +
-              `⏰ Time: ${appointmentTime}`;
-            break;
-          case 'after':
-            messageTemplate = `Dear ${contact.name},\n\n` +
-              `Thank you for your visit today.\n\n` +
-              `We hope you had a great experience with us!\n` +
-              `See you next time! 😊`;
-            break;
-        }
-
-        // Add meeting link if available (except for after-appointment message)
-        if (appointment.meetLink && reminderType !== 'after') {
-          messageTemplate += `\n\n🎥 Join Meeting: ${appointment.meetLink}`;
-        }
-
-        // Add custom message if provided
-        if (message && message.trim()) {
-          messageTemplate += `\n\n${message}`;
-        }
-
-        return {
-          chatId: `${phoneNumber}@s.whatsapp.net`,
-          message: messageTemplate
-        };
-      }).filter((msg): msg is { chatId: string; message: string } => msg !== null);
-
-      // Prepare reminder data
-      const reminderData = {
-        chatIds,
-        phoneIndex: userData.phone || 0,
-        message: messages[0]?.message || '', // Use first message as default
-        messages, // Array of personalized messages
-        batchQuantity: 10,
-        companyId,
-        createdAt: Timestamp.now(),
-        scheduledTime: Timestamp.fromDate(scheduledTime),
-        status: "scheduled",
-        v2: isV2,
-        whapiToken: isV2 ? null : whapiToken,
-        minDelay: 1,
-        maxDelay: 2,
-        activateSleep: false,
-        appointmentId: appointment.id,
-        reminderType,
-        appointmentDetails: {
-          title: appointment.title,
-          startTime: appointment.startTime,
-          endTime: appointment.endTime,
-          meetLink: appointment.meetLink || null
-        }
-      };
-
-      // Schedule the reminder via API
-      const response = await axios.post(
-        `${baseUrl}/api/schedule-message/${companyId}`,
-        reminderData,
-        {
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 10000
-        }
-      );
-
-      if (response.data?.id) {
-        // Save reminder to Firestore
-        const remindersRef = collection(firestore, `companies/${companyId}/scheduledReminders`);
-        const docRef = await addDoc(remindersRef, {
-          ...reminderData,
-          id: response.data.id
-        });
-
-        // Update appointment with reminder status
-        const appointmentRef = doc(firestore, `user/${user.email}/appointments/${appointment.id}`);
-        await updateDoc(appointmentRef, {
-          [`reminders.sentReminders.${reminderType}`]: true
-        });
-        // Update local state
-        setScheduledReminders(prev => [
-          ...prev,
-          {
-            ...reminderData,
-            id: docRef.id,
-            status: "scheduled" as "scheduled" | "sent" | "failed"
-          }
-        ]);
-        
-        toast.success(`Successfully scheduled ${reminderType} reminder`);
-        
-      }
-
-    } catch (error) {
-      console.error('Error scheduling reminder:', error);
-      if (axios.isAxiosError(error)) {
-        const errorMessage = error.response?.data?.error || 'Unknown server error';
-        toast.error(`Failed to schedule reminder: ${errorMessage}`);
-      } else {
-        toast.error('An unexpected error occurred while scheduling the reminder.');
-      }
-      throw error;
-    }
-  };
   
   const handleSaveAppointment = async () => {
     const { id, title, dateStr, startTimeStr, endTimeStr, extendedProps } = currentEvent;
@@ -1068,37 +931,6 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
     }
   };
 
-  const fetchScheduledReminders = async () => {
-    try {
-      const user = auth.currentUser;
-      if (!user?.email) return;
-  
-      const docUserRef = doc(firestore, 'user', user.email);
-      const userDoc = await getDoc(docUserRef);
-      if (!userDoc.exists()) return;
-  
-      const userData = userDoc.data();
-      const companyId = userData.companyId;
-  
-      const remindersRef = collection(firestore, `companies/${companyId}/scheduledReminders`);
-      const q = query(remindersRef, where("status", "==", "scheduled"));
-      const querySnapshot = await getDocs(q);
-  
-      const reminders = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as ScheduledReminder[];
-  
-      setScheduledReminders(reminders);
-    } catch (error) {
-      console.error('Error fetching scheduled reminders:', error);
-    }
-  };
-  
-  // Add useEffect to fetch reminders when component mounts
-  useEffect(() => {
-    fetchScheduledReminders();
-  }, []);
 
   const handleDateSelect = (selectInfo: any) => {
     const dateStr = format(new Date(selectInfo.startStr), 'yyyy-MM-dd');
@@ -2068,86 +1900,158 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
             </div>
           </div>
           
-          {/* <div className="mt-6 border-t pt-6">
-            <h3 className="text-lg font-medium mb-4 dark:text-white">Reminder Settings</h3>
-            
-            <div className="space-y-4">
-              <div className="flex items-center">
-                <input
-                  type="checkbox"
-                  id="enable-reminders"
-                  checked={reminderSettings.enabled}
-                  onChange={(e) => setReminderSettings({
-                    ...reminderSettings,
-                    enabled: e.target.checked
-                  })}
-                  className="mr-2"
-                />
-                <label htmlFor="enable-reminders">Enable appointment reminders</label>
-              </div>
-
-              {reminderSettings.enabled && (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium">24 Hour Reminder Message</label>
-                    <textarea
-                      value={reminderSettings.message24h}
-                      onChange={(e) => setReminderSettings({
-                        ...reminderSettings,
-                        message24h: e.target.value
-                      })}
-                      className="w-full mt-1 rounded-md border p-2"
-                      rows={2}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium">3 Hour Reminder Message</label>
-                    <textarea
-                      value={reminderSettings.message3h}
-                      onChange={(e) => setReminderSettings({
-                        ...reminderSettings,
-                        message3h: e.target.value
-                      })}
-                      className="w-full mt-1 rounded-md border p-2"
-                      rows={2}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium">1 Hour Reminder Message</label>
-                    <textarea
-                      value={reminderSettings.message1h}
-                      onChange={(e) => setReminderSettings({
-                        ...reminderSettings,
-                        message1h: e.target.value
-                      })}
-                      className="w-full mt-1 rounded-md border p-2"
-                      rows={2}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium">Post-Appointment Reminder Message</label>
-                    <textarea
-                      value={reminderSettings.messageAfter}
-                      onChange={(e) => setReminderSettings({
-                        ...reminderSettings,
-                        messageAfter: e.target.value
-                      })}
-                      className="w-full mt-1 rounded-md border p-2"
-                      rows={2}
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-          </div> */}
         </Dialog.Panel>
       </div>
     </Dialog>
   );
 
+  const renderReminderModal = () => (
+    <Dialog open={isReminderSettingsOpen} onClose={() => setIsReminderSettingsOpen(false)}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+        <Dialog.Panel className="w-full max-w-md p-6 bg-white rounded-md mt-10 dark:bg-gray-800">
+          <h2 className="text-lg font-medium mb-4 dark:text-white">Reminder Settings</h2>
+          <div className="space-y-4">
+            {/* Before Appointment Settings */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Before Appointment
+                </label>
+                <input
+                  type="checkbox"
+                  checked={reminderSettings.beforeAppointment.enabled}
+                  onChange={(e) => setReminderSettings({
+                    ...reminderSettings,
+                    beforeAppointment: {
+                      ...reminderSettings.beforeAppointment,
+                      enabled: e.target.checked
+                    }
+                  })}
+                  className="form-checkbox h-4 w-4 text-primary"
+                />
+              </div>
+              {reminderSettings.beforeAppointment.enabled && (
+                <>
+                  <div className="mb-2">
+                    <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
+                      Hours Before
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="72"
+                      value={reminderSettings.beforeAppointment.time}
+                      onChange={(e) => setReminderSettings({
+                        ...reminderSettings,
+                        beforeAppointment: {
+                          ...reminderSettings.beforeAppointment,
+                          time: parseInt(e.target.value)
+                        }
+                      })}
+                      className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
+                      Message Template
+                    </label>
+                    <textarea
+                      value={reminderSettings.beforeAppointment.message}
+                      onChange={(e) => setReminderSettings({
+                        ...reminderSettings,
+                        beforeAppointment: {
+                          ...reminderSettings.beforeAppointment,
+                          message: e.target.value
+                        }
+                      })}
+                      rows={3}
+                      className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Day of Appointment Settings */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Day of Appointment
+                </label>
+                <input
+                  type="checkbox"
+                  checked={reminderSettings.dayOf.enabled}
+                  onChange={(e) => setReminderSettings({
+                    ...reminderSettings,
+                    dayOf: {
+                      ...reminderSettings.dayOf,
+                      enabled: e.target.checked
+                    }
+                  })}
+                  className="form-checkbox h-4 w-4 text-primary"
+                />
+              </div>
+              {reminderSettings.dayOf.enabled && (
+                <>
+                  <div className="mb-2">
+                    <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
+                      Hours Before
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="72"
+                      value={reminderSettings.dayOf.time}
+                      onChange={(e) => setReminderSettings({
+                        ...reminderSettings,
+                        dayOf: {
+                          ...reminderSettings.dayOf,
+                          time: parseInt(e.target.value)
+                        }
+                      })}
+                      className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
+                      Message Template
+                    </label>
+                    <textarea
+                      value={reminderSettings.dayOf.message}
+                      onChange={(e) => setReminderSettings({
+                        ...reminderSettings,
+                        dayOf: {
+                          ...reminderSettings.dayOf,
+                          message: e.target.value
+                        }
+                      })}
+                      rows={3}
+                      className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="flex justify-end space-x-2">
+              <button
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 dark:bg-gray-600 dark:text-white dark:hover:bg-gray-500"
+                onClick={() => setIsReminderSettingsOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600"
+                onClick={() => updateReminderSettings(reminderSettings)}
+              >
+                Save Settings
+              </button>
+            </div>
+          </div>
+        </Dialog.Panel>
+      </div>
+    </Dialog>
+  );
+                
   // Add this logging function to help debug
   const debugLog = (message: string, data?: any) => {
     
@@ -2910,16 +2814,25 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
             className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
             onClick={() => setIsAddingPackage(true)}
           >
+            <Lucide icon="Package" className="w-4 h-4 mr-2 inline-block" />
             Add New Package
           </button>
           <button
             className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
             onClick={() => setIsCalendarConfigOpen(true)}
           >
+            <Lucide icon="Settings" className="w-4 h-4 mr-2 inline-block" />
             Calendar Settings
           </button>
+          <button
+            className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
+            onClick={() => setIsReminderSettingsOpen(true)}
+          >
+            <Lucide icon="Bell" className="w-4 h-4 mr-2 inline-block" />
+            Reminder Settings
+          </button>
         </div>
-
+        {/* Remove the separate reminder settings button div */}
         {/* Add New Appointment button */}
         <div className="w-full sm:w-1/4 sm:mr-2 lg:w-auto lg:mr-4">
           <Button
@@ -3853,6 +3766,7 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
       </Dialog>
 
       {renderCalendarConfigModal()}
+      {renderReminderModal()}
     </>
   );
 }
