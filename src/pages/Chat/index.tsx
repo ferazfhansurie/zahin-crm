@@ -184,9 +184,9 @@ interface QuickReply {
   id: string;
   keyword: string;
   text: string;
-  type:string;
-  document?: string | null;
-  image?: string | null;
+  type: string;
+  documents?: string[];
+  images?: string[];
 }
 interface ImageModalProps {
   isOpen: boolean;
@@ -538,6 +538,8 @@ function Main() {
   const [documentModalOpen, setDocumentModalOpen] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<File | null>(null);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [selectedDocuments, setSelectedDocuments] = useState<File[]>([]);
+  const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [quickReplyFilter, setQuickReplyFilter] = useState('');
   const [phoneNames, setPhoneNames] = useState<Record<number, string>>({});
   const [userPhone, setUserPhone] = useState<number | null>(null);
@@ -1617,16 +1619,16 @@ const closePDFModal = () => {
           keyword: doc.data().keyword || '',
           text: doc.data().text || '',
           type: 'all',
-          document: doc.data().document || null,
-          image: doc.data().image || null,
+          documents: doc.data().documents || [],
+          images: doc.data().images || [],
         })),
         ...userSnapshot.docs.map(doc => ({
           id: doc.id,
           keyword: doc.data().keyword || '',
           text: doc.data().text || '',
           type: 'self',
-          document: doc.data().document || null,
-          image: doc.data().image || null,
+          documents: doc.data().documents || [],
+          images: doc.data().images || [],
         }))
       ];
   
@@ -1681,8 +1683,8 @@ const fetchFileFromURL = async (url: string): Promise<File | null> => {
         type: newQuickReplyType,
         createdAt: serverTimestamp(),
         createdBy: user.email,
-        document: selectedDocument ? await uploadDocument(selectedDocument) : null, // URL stored
-        image: selectedImage ? await uploadImage(selectedImage) : null,
+        documents: selectedDocuments ? await Promise.all(selectedDocuments.map(uploadDocument)) : [],
+        images: selectedImages ? await Promise.all(selectedImages.map(uploadImage)) : [],
       };
   
       if (newQuickReplyType === 'self') {
@@ -1696,8 +1698,8 @@ const fetchFileFromURL = async (url: string): Promise<File | null> => {
       }
   
       setNewQuickReply('');
-      setSelectedDocument(null);
-      setSelectedImage(null);
+      setSelectedDocuments([]);
+      setSelectedImages([]);
       setNewQuickReplyKeyword('');
       setNewQuickReplyType('all');
       fetchQuickReplies();
@@ -1768,21 +1770,21 @@ const fetchFileFromURL = async (url: string): Promise<File | null> => {
   };
 
   const handleQRClick = (reply: QuickReply) => {
-    if (reply.image) {
-      setPastedImageUrl(reply.image);
+    if (reply.images?.length) {
+      setPastedImageUrl(reply.images);
       setImageModalOpen2(true);
     }
   
-    if (reply.document) {
-      fetchFileFromURL(reply.document).then(file => {
-        if (file) {
-          setSelectedDocument(file);
-          setDocumentModalOpen(true);
-        }
-      });
+    if (reply.documents?.length) {
+      // Handle first document for now, can be modified to handle multiple
+      const documentFile = new File([reply.documents[0]], "document", { type: reply.documents[0] });
+      setSelectedDocument(documentFile);
+      setDocumentModalOpen(true);
     }
   
-    setNewMessage(reply.text);
+    if (reply.text) {
+      setNewMessage(reply.text);
+    }
     setIsQuickRepliesOpen(false);
   };
 
@@ -4065,7 +4067,6 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
     }
     const companyData = docSnapshot.data();
      // New log
-    
      // New log
      // New log
 
@@ -4564,7 +4565,7 @@ const sortContacts = (contacts: Contact[]) => {
     );
   };
   
-  // Modify the handleSearchChange2 function
+  // Modify the handleSearchChange function
   const handleSearchChange2 = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery2(e.target.value);
   };
@@ -8122,7 +8123,7 @@ ${context}
                                   />
                                 )}
                                 {message.from_me && message.createdAt && new Date().getTime() - new Date(message.createdAt).getTime() < 15 * 60 * 1000 && userRole !== "3" && (
-                                  <button className="ml-2 mr-2 text-white hover:text-blue-500 dark:text-white dark:hover:text-blue-300 transition-colors duration-200" onClick={() => openEditMessage(message)}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M21.731 2.269a2.625 2.625 0 00-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 000-3.712zM19.513 8.199l-3.712-3.712-12.15 12.15a5.25 5.25 0 00-1.32 2.214l-.8 2.685a.75.75 0 00.933.933l2.685-.8a5.25 5.25 0 002.214-1.32L19.513 8.2z" /></svg></button>
+                                  <button className="ml-2 mr-2 text-white hover:text-blue-500 dark:text-white dark:hover:text-blue-300 transition-colors duration-200" onClick={() => openEditMessage(message)}><Lucide icon="Pencil" className="w-5 h-5" /></button>
                                 )}
                                 <input type="checkbox" className="mr-2 form-checkbox h-5 w-5 text-blue-500 transition duration-150 ease-in-out rounded-full" checked={selectedMessages.includes(message)} onChange={() => handleSelectMessage(message)} />
                               </>
@@ -8484,182 +8485,218 @@ ${context}
           />
           {isQuickRepliesOpen && (
             <div ref={quickRepliesRef} className="absolute bottom-full left-0 mb-2 w-full max-w-md bg-gray-100 dark:bg-gray-800 p-2 rounded-md shadow-lg mt-2 z-10">
-            <div className="flex justify-between mb-4">
-              <button
-                className={`px-4 py-2 rounded-lg ${
-                  activeQuickReplyTab === 'all'
-                    ? 'bg-primary text-white'
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
-                }`}
-                onClick={() => setActiveQuickReplyTab('all')}
-              >
-                All
-              </button>
-              <button
-                className={`px-4 py-2 rounded-lg ${
-                  activeQuickReplyTab === 'self'
-                    ? 'bg-primary text-white'
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
-                }`}
-                onClick={() => setActiveQuickReplyTab('self')}
-              >
-                Self
-              </button>
-            </div>
-            <div className="max-h-60 overflow-y-auto">
-              {quickReplies
-                .filter(reply => 
-                  activeQuickReplyTab === 'all' || reply.type === 'self'
-                )
-                .filter(reply => 
-                  reply.keyword.toLowerCase().includes(quickReplyFilter.toLowerCase()) ||
-                  reply.text.toLowerCase().includes(quickReplyFilter.toLowerCase())
-                )
-                .sort((a, b) => a.keyword.localeCompare(b.keyword))
-                .map(reply => (
-                  <div key={reply.id} className="flex items-center justify-between mb-2 dark:bg-gray-800">
-                    {editingReply?.id === reply.id ? (
-                      <>
-                        <input
-                          className="flex-grow px-2 py-1 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 mr-2"
-                          value={editingReply.keyword}
-                          onChange={(e) => setEditingReply({ ...editingReply, keyword: e.target.value })}
-                          style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
-                        />
-                        <textarea
-                          className="flex-grow px-2 py-1 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 mr-2"
-                          value={editingReply.text}
-                          onChange={(e) => setEditingReply({ ...editingReply, text: e.target.value })}
-                          placeholder="Text"
-                          rows={1}
-                        />
-                        <button className="p-2 m-1 !box" onClick={() => updateQuickReply(reply.id, editingReply.keyword, editingReply.text, editingReply.type as "all" | "self")}>
-                          <span className="flex items-center justify-center w-5 h-5">
-                            <Lucide icon="Save" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
-                          </span>
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                      <span className="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded-md text-gray-800 dark:text-gray-200 m-2">
-                        {reply.keyword}
-                      </span>
-                      <span
-                        className="px-2 py-1 flex-grow text-lg cursor-pointer text-gray-800 dark:text-gray-200"
-                        onClick={() => {
-                          handleQRClick(reply);
-                          let message = reply.text;
-                          if (reply.image) {
-                            const imageFile = new File([reply.image], "image.png", { type: "image/png" });
-                            const imageUrl = URL.createObjectURL(imageFile);
-                    
-                            setPastedImageUrl(reply.image);
-                            setDocumentCaption(reply.text);
-                            setImageModalOpen2(true);
+              <div className="flex justify-between mb-4">
+                <button
+                  className={`px-4 py-2 rounded-lg ${
+                    activeQuickReplyTab === 'all'
+                      ? 'bg-primary text-white'
+                      : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+                  }`}
+                  onClick={() => setActiveQuickReplyTab('all')}
+                >
+                  All
+                </button>
+                <button
+                  className={`px-4 py-2 rounded-lg ${
+                    activeQuickReplyTab === 'self'
+                      ? 'bg-primary text-white'
+                      : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+                  }`}
+                  onClick={() => setActiveQuickReplyTab('self')}
+                >
+                  Self
+                </button>
+              </div>
+              <div className="max-h-60 overflow-y-auto">
+                {quickReplies
+                  .filter(reply => 
+                    activeQuickReplyTab === 'all' || reply.type === 'self'
+                  )
+                  .filter(reply => 
+                    reply.keyword.toLowerCase().includes(quickReplyFilter.toLowerCase()) ||
+                    reply.text.toLowerCase().includes(quickReplyFilter.toLowerCase())
+                  )
+                  .sort((a, b) => a.keyword.localeCompare(b.keyword))
+                  .map(reply => (
+                    <div 
+                      key={reply.id} 
+                      className="flex items-center justify-between mb-2 dark:bg-gray-800 p-3 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 cursor-pointer transition-colors duration-200"
+                      onClick={() => {
+                        if (editingReply?.id !== reply.id) {
+                          if (reply.images?.length) {
+                            reply.images.forEach((img) => {
+                              setPastedImageUrl(img);
+                              setDocumentCaption(reply.text || '');
+                              setImageModalOpen2(true);
+                            });
                           }
-                          if (reply.document) {
-                            const documentFile = new File([reply.document], "document", { type: reply.document });
-                            setSelectedDocument(documentFile);
-                            setDocumentModalOpen(true);
-                            setDocumentCaption(reply.text);
+                          if (reply.documents?.length) {
+                            reply.documents.forEach((doc) => {
+                              const documentFile = new File([doc], "document", { type: doc });
+                              setSelectedDocument(documentFile);
+                              setDocumentModalOpen(true);
+                              setDocumentCaption(reply.text || '');
+                            });
                           }
-                          setNewMessage(message);
+                          if (reply.text) {
+                            setNewMessage(reply.text);
+                          }
                           setIsQuickRepliesOpen(false);
-                        }}
-                        style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
-                      >
-                        {reply.text}
-                      </span>
-                      {(typeof reply.document === 'string' && reply.document !== '') || (typeof reply.image === 'string' && reply.image !== '') ? (
+                        }
+                      }}
+                    >
+                      {editingReply?.id === reply.id ? (
                         <>
-                          {typeof reply.document === 'string' && reply.document !== '' && (
-                            <a href={reply.document} target="_blank" className="p-2 m-1 !box">
-                              <span className="flex items-center justify-center w-5 h-5">
-                                <Lucide icon="File" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
-                              </span>
-                            </a>
-                          )}
-                          {typeof reply.image === 'string' && reply.image !== '' && (
-                            <a href={reply.image} target="_blank" className="p-2 m-1 !box">
-                              <span className="flex items-center justify-center w-5 h-5">
-                                <Lucide icon="Image" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
-                              </span>
-                            </a>
-                          )}
+                          <input
+                            className="flex-grow px-2 py-1 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 mr-2"
+                            value={editingReply.keyword}
+                            onChange={(e) => setEditingReply({ ...editingReply, keyword: e.target.value })}
+                            style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <textarea
+                            className="flex-grow px-2 py-1 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 mr-2"
+                            value={editingReply.text || ''}
+                            onChange={(e) => setEditingReply({ ...editingReply, text: e.target.value })}
+                            placeholder="Text (optional)"
+                            rows={1}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <button 
+                            className="p-2 m-1 !box" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              updateQuickReply(reply.id, editingReply.keyword, editingReply.text || '', editingReply.type as "all" | "self");
+                            }}
+                          >
+                            <span className="flex items-center justify-center w-5 h-5">
+                              <Lucide icon="Save" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
+                            </span>
+                          </button>
                         </>
-                      ) : null}
-                      <div>
-                        <button className="p-2 m-1 !box" onClick={() => setEditingReply(reply)}>
-                          <span className="flex items-center justify-center w-5 h-5">
-                            <Lucide icon="Eye" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
-                          </span>
-                        </button>
-                        <button className="p-2 m-1 !box text-red-500 dark:text-red-400" onClick={() => deleteQuickReply(reply.id, reply.type as "all" | "self")}>
-                          <span className="flex items-center justify-center w-5 h-5">
-                            <Lucide icon="Trash" className="w-5 h-5" />
-                          </span>
-                        </button>
-                      </div>
-                    </>
+                      ) : (
+                        <>
+                          <div className="flex flex-col flex-grow">
+                            <span className="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded-md text-gray-800 dark:text-gray-200 mb-1 inline-block w-fit">
+                              {reply.keyword}
+                            </span>
+                            {reply.text && (
+                              <span
+                                className="px-2 py-1 text-gray-800 dark:text-gray-200"
+                                style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                              >
+                                {reply.text}
+                              </span>
+                            )}
+                            {/* Documents and Images Preview */}
+                            <div className="grid grid-cols-2 gap-2 mt-2">
+                              {(reply.documents?.length ?? 0) > 0 && (reply.documents as unknown as File[]).map((doc, index) => (
+                                <div key={index} className="relative group">
+                                  <a href={doc.name} target="_blank" className="p-2 bg-gray-100 dark:bg-gray-700 rounded-md flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-600" onClick={(e) => e.stopPropagation()}>
+                                    <Lucide icon="File" className="w-4 h-4 text-gray-800 dark:text-gray-200" />
+                                    <span className="text-sm text-gray-800 dark:text-gray-200">Doc {index + 1}</span>
+                                  </a>
+                                  <div className="absolute hidden group-hover:block bg-gray-800 text-white p-2 rounded-md -top-8 left-1/2 transform -translate-x-1/2 text-sm whitespace-nowrap">
+                                    View Document
+                                  </div>
+                                </div>
+                              ))}
+                              {(reply.images?.length ?? 0) > 0 && (reply.images as string[]).map((img, index) => (
+                                <div key={index} className="relative group">
+                                  <a href={img} target="_blank" className="block" onClick={(e) => e.stopPropagation()}>
+                                    <img 
+                                      src={img} 
+                                      alt={`Preview ${index + 1}`} 
+                                      className="w-16 h-16 object-cover rounded-md hover:opacity-90 transition-opacity"
+                                    />
+                                  </a>
+                                  <div className="absolute hidden group-hover:block bg-gray-800 text-white p-2 rounded-md -top-8 left-1/2 transform -translate-x-1/2 text-sm whitespace-nowrap">
+                                    View Image
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="flex items-center ml-2">
+                            <div className="relative group">
+                              <button className="p-2 m-1 !box" onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingReply(reply);
+                              }}>
+                                <span className="flex items-center justify-center w-5 h-5">
+                                  <Lucide icon="Pencil" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
+                                </span>
+                              </button>
+                              <div className="absolute hidden group-hover:block bg-gray-800 text-white p-2 rounded-md -top-8 left-1/2 transform -translate-x-1/2 text-sm whitespace-nowrap">
+                                Edit Reply
+                              </div>
+                            </div>
+                            <div className="relative group">
+                              <button className="p-2 m-1 !box text-red-500 dark:text-red-400" onClick={(e) => {
+                                e.stopPropagation();
+                                deleteQuickReply(reply.id, reply.type as "all" | "self");
+                              }}>
+                                <span className="flex items-center justify-center w-5 h-5">
+                                  <Lucide icon="Trash" className="w-5 h-5" />
+                                </span>
+                              </button>
+                              <div className="absolute hidden group-hover:block bg-gray-800 text-white p-2 rounded-md -top-8 left-1/2 transform -translate-x-1/2 text-sm whitespace-nowrap">
+                                Delete Reply
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ))}
+              </div>
+              <div className="flex items-center mb-4">
+                {(newMessage === '/' || isQuickRepliesOpen) && !quickReplyFilter && (
+                  <>
+                    <input
+                      className="flex-grow px-1 py-1 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 mr-2"
+                      placeholder="Add new keyword"
+                      value={newQuickReplyKeyword}
+                      onChange={(e) => setNewQuickReplyKeyword(e.target.value)}
+                      style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'Arial, sans-serif', fontSize: '14px' }}
+                    />
+                    <textarea
+                      className="flex-grow px-2 py-1 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200"
+                      placeholder="Add new quick reply"
+                      value={newQuickReply}
+                      onChange={(e) => setNewQuickReply(e.target.value)}
+                      rows={1}
+                      style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'Arial, sans-serif', fontSize: '14px' }}
+                    />
+                    <input
+                      type="file"
+                      className="hidden"
+                      id="quickReplyFile"
+                      multiple
+                      onChange={(e) => {
+                        const files = e.target.files ? Array.from(e.target.files) : [];
+                        setSelectedDocuments(files);
+                      }}
+                    />
+                    <label htmlFor="quickReplyFile" className="p-2 m-1 !box cursor-pointer">
+                      <span className="flex items-center justify-center w-5 h-5">
+                        <Lucide icon="File" className="w-5 h-5 text-gray-800 dark:text-gray-200" />  
+                      </span>
+                    </label>  
+                  </>
+                )}
+                <div className="flex flex-col ml-2">
+                  {!quickReplyFilter && (
+                    <button className="p-2 m-1 !box" onClick={addQuickReply}>
+                      <span className="flex items-center justify-center w-5 h-5">
+                        <Lucide icon="Plus" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
+                      </span>
+                    </button>
                   )}
                 </div>
-              ))}
+              </div>
             </div>
-            <div className="flex items-center mb-4">
-          {(newMessage === '/' || isQuickRepliesOpen) && !quickReplyFilter && (
-            <>
-              <input
-                className="flex-grow px-1 py-1 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 mr-2"
-                placeholder="Add new keyword"
-                value={newQuickReplyKeyword}
-                onChange={(e) => setNewQuickReplyKeyword(e.target.value)}
-                style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'Arial, sans-serif', fontSize: '14px' }}
-              />
-              <textarea
-                className="flex-grow px-2 py-1 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200"
-                placeholder="Add new quick reply"
-                value={newQuickReply}
-                onChange={(e) => setNewQuickReply(e.target.value)}
-                rows={1}
-                style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'Arial, sans-serif', fontSize: '14px' }}
-              />
-              <input
-                type="file"
-                className="hidden"
-                id="quickReplyFile"
-                onChange={(e) => setSelectedDocument(e.target.files ? e.target.files[0] : null)}
-              />
-              <label htmlFor="quickReplyFile" className="p-2 m-1 !box cursor-pointer">
-                <span className="flex items-center justify-center w-5 h-5">
-                  <Lucide icon="File" className="w-5 h-5 text-gray-800 dark:text-gray-200" />  
-                </span>
-              </label>  
-              {/* <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                id="quickReplyImage"
-                onChange={(e) => setSelectedImage(e.target.files ? e.target.files[0] : null)}
-              />
-              <label htmlFor="quickReplyImage" className="p-2 m-1 !box cursor-pointer">
-                <span className="flex items-center justify-center w-5 h-5">
-                  <Lucide icon="Image" className="w-5 h-5 text-gray-800 dark:text-gray-200" />  
-                </span>
-              </label>   */}
-            </>
           )}
-          <div className="flex flex-col ml-2">
-            {!quickReplyFilter && (
-              <button className="p-2 m-1 !box" onClick={addQuickReply}>
-                <span className="flex items-center justify-center w-5 h-5">
-                  <Lucide icon="Plus" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
-                </span>
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    )}
         </div>
         {isEmojiPickerOpen && (
           <div className="absolute bottom-20 left-2 z-10">

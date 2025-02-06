@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { getAuth } from "firebase/auth";
 import { getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, serverTimestamp } from "firebase/firestore";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -13,26 +13,48 @@ interface QuickReply {
     id: string;
     keyword: string;
     text: string;
-    type:string;
-    document?: string | null;
-    image?: string | null;
+    type: string;
+    documents?: string[] | null;
+    images?: string[] | null;
     showImage?: boolean;
     showDocument?: boolean;
+    createdAt?: any;
+    createdBy?: string;
 }
 
 const QuickRepliesPage: React.FC = () => {
   const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
   const [activeTab, setActiveTab] = useState<'all' | 'self'>('all');
   const [editingReply, setEditingReply] = useState<QuickReply | null>(null);
-  const [editingDocument, setEditingDocument] = useState<File | null>(null); // New
-  const [editingImage, setEditingImage] = useState<File | null>(null); // New
+  const [editingDocuments, setEditingDocuments] = useState<File[]>([]);
+  const [editingImages, setEditingImages] = useState<File[]>([]);
   const [newQuickReply, setNewQuickReply] = useState('');
   const [newQuickReplyKeyword, setNewQuickReplyKeyword] = useState('');
-  const [selectedDocument, setSelectedDocument] = useState<File | null>(null);
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [selectedDocuments, setSelectedDocuments] = useState<File[]>([]);
+  const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
   const [expandedItems, setExpandedItems] = useState<{ [key: string]: { image: boolean, document: boolean } }>({});
+  const [isLoading, setIsLoading] = useState(false);
+  const [previewUrls, setPreviewUrls] = useState<{ [key: string]: string }>({});
+  const [previewModal, setPreviewModal] = useState<{
+    isOpen: boolean;
+    type: 'image' | 'document';
+    url: string;
+    title: string;
+  }>({
+    isOpen: false,
+    type: 'image',
+    url: '',
+    title: ''
+  });
+
+  // Add new state for preview
+  const [selectedPreview, setSelectedPreview] = useState<{
+    type: 'image' | 'document' | null;
+    url: string;
+    title: string;
+  } | null>(null);
 
   const firebaseConfig = {
     apiKey: "AIzaSyCc0oSHlqlX7fLeqqonODsOIC3XA8NI7hc",
@@ -87,16 +109,16 @@ const QuickRepliesPage: React.FC = () => {
           keyword: doc.data().keyword || '',
           text: doc.data().text || '',
           type: 'all',
-          document: doc.data().document || null,
-          image: doc.data().image || null,
+          documents: doc.data().documents || null,
+          images: doc.data().images || null,
         })),
         ...userSnapshot.docs.map(doc => ({
           id: doc.id,
           keyword: doc.data().keyword || '',
           text: doc.data().text || '',
           type: 'self',
-          document: doc.data().document || null,
-          image: doc.data().image || null,
+          documents: doc.data().documents || null,
+          images: doc.data().images || null,
         }))
       ];
 
@@ -120,9 +142,108 @@ const QuickRepliesPage: React.FC = () => {
     return await getDownloadURL(storageRef); // Return the download URL
   };
 
-  const addQuickReply = async () => {
-    if (newQuickReply.trim() === '') return;
+  const handlePreviewClick = (type: 'image' | 'document', url: string, title: string) => {
+    setPreviewModal({
+      isOpen: true,
+      type,
+      url,
+      title
+    });
+  };
 
+  const getFileType = (fileName: string): 'image' | 'document' => {
+    const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+    const extension = fileName.split('.').pop()?.toLowerCase() || '';
+    return imageExtensions.includes(extension) ? 'image' : 'document';
+  };
+
+  const generatePreviewUrl = (file: File): string => {
+    if (getFileType(file.name) === 'image') {
+      return URL.createObjectURL(file);
+    }
+    // For PDFs and other documents that can be previewed
+    if (file.type === 'application/pdf' || file.type.startsWith('image/')) {
+      return URL.createObjectURL(file);
+    }
+    return '';
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type: 'document' | 'image') => {
+    const files = Array.from(e.target.files || []);
+    if (type === 'document') {
+      setSelectedDocuments(prev => [...prev, ...files]);
+      files.forEach(file => {
+        const url = generatePreviewUrl(file);
+        setPreviewUrls(prev => ({ ...prev, [file.name]: url }));
+      });
+    } else {
+      setSelectedImages(prev => [...prev, ...files]);
+      files.forEach(file => {
+        const url = generatePreviewUrl(file);
+        setPreviewUrls(prev => ({ ...prev, [file.name]: url }));
+      });
+    }
+  };
+
+  const removeFile = (fileName: string, type: 'document' | 'image') => {
+    if (type === 'document') {
+      setSelectedDocuments(prev => prev.filter(file => file.name !== fileName));
+    } else {
+      setSelectedImages(prev => prev.filter(file => file.name !== fileName));
+    }
+    URL.revokeObjectURL(previewUrls[fileName]);
+    setPreviewUrls(prev => {
+      const newUrls = { ...prev };
+      delete newUrls[fileName];
+      return newUrls;
+    });
+  };
+
+  const handleEditingFileSelect = (e: React.ChangeEvent<HTMLInputElement>, type: 'document' | 'image') => {
+    const files = Array.from(e.target.files || []);
+    if (type === 'document') {
+      setEditingDocuments(prev => [...prev, ...files]);
+      files.forEach(file => {
+        const url = URL.createObjectURL(file);
+        setPreviewUrls(prev => ({ ...prev, [file.name]: url }));
+      });
+    } else {
+      setEditingImages(prev => [...prev, ...files]);
+      files.forEach(file => {
+        const url = URL.createObjectURL(file);
+        setPreviewUrls(prev => ({ ...prev, [file.name]: url }));
+      });
+    }
+  };
+
+  const removeEditingFile = (fileName: string, type: 'document' | 'image') => {
+    if (type === 'document') {
+      setEditingDocuments(prev => prev.filter(file => file.name !== fileName));
+    } else {
+      setEditingImages(prev => prev.filter(file => file.name !== fileName));
+    }
+    URL.revokeObjectURL(previewUrls[fileName]);
+    setPreviewUrls(prev => {
+      const newUrls = { ...prev };
+      delete newUrls[fileName];
+      return newUrls;
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      // Cleanup preview URLs when component unmounts
+      Object.values(previewUrls).forEach(url => URL.revokeObjectURL(url));
+    };
+  }, []);
+
+  const addQuickReply = async () => {
+    if (newQuickReplyKeyword.trim() === '') {
+      toast.error('Keyword is required');
+      return;
+    }
+
+    setIsLoading(true);
     try {
       const user = auth.currentUser;
       if (!user) {
@@ -145,25 +266,52 @@ const QuickRepliesPage: React.FC = () => {
         type: activeTab,
         createdAt: serverTimestamp(),
         createdBy: user.email,
-        document: selectedDocument ? await uploadDocument(selectedDocument) : null,
-        image: selectedImage ? await uploadImage(selectedImage) : null,
+        documents: [],
+        images: [],
       };
 
+      let docRef;
       if (activeTab === 'self') {
-        const userQuickReplyRef = collection(firestore, `user/${user.email}/quickReplies`);
-        await addDoc(userQuickReplyRef, newQuickReplyData);
+        docRef = collection(firestore, `user/${user.email}/quickReplies`);
       } else {
-        const companyQuickReplyRef = collection(firestore, `companies/${companyId}/quickReplies`);
-        await addDoc(companyQuickReplyRef, newQuickReplyData);
+        docRef = collection(firestore, `companies/${companyId}/quickReplies`);
+      }
+
+      // First, add the quick reply with text only
+      const quickReplyRef = await addDoc(docRef, newQuickReplyData);
+
+      // Then, if there are attachments, update the document
+      if (selectedDocuments.length > 0 || selectedImages.length > 0) {
+        const updates: Partial<QuickReply> = {
+          documents: [],
+          images: [],
+        };
+        
+        if (selectedDocuments.length > 0) {
+          const documentUrls = await Promise.all(selectedDocuments.map(file => uploadDocument(file)));
+          updates.documents = documentUrls;
+        }
+        
+        if (selectedImages.length > 0) {
+          const imageUrls = await Promise.all(selectedImages.map(file => uploadImage(file)));
+          updates.images = imageUrls;
+        }
+
+        await updateDoc(quickReplyRef, updates);
       }
 
       setNewQuickReply('');
       setNewQuickReplyKeyword('');
-      setSelectedDocument(null);
-      setSelectedImage(null);
+      setSelectedDocuments([]);
+      setSelectedImages([]);
+      setPreviewUrls({});
+      toast.success('Quick reply added successfully');
       fetchQuickReplies();
     } catch (error) {
       console.error('Error adding quick reply:', error);
+      toast.error('Failed to add quick reply');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -198,20 +346,21 @@ const QuickRepliesPage: React.FC = () => {
         keyword,
       };
 
-      // Handle document upload if a new document is selected
-      if (editingDocument) {
-        updatedData.document = await uploadDocument(editingDocument);
+      if (editingDocuments.length > 0) {
+        const documentUrls = await Promise.all(editingDocuments.map(file => uploadDocument(file)));
+        updatedData.documents = documentUrls;
       }
 
-      // Handle image upload if a new image is selected
-      if (editingImage) {
-        updatedData.image = await uploadImage(editingImage);
+      if (editingImages.length > 0) {
+        const imageUrls = await Promise.all(editingImages.map(file => uploadImage(file)));
+        updatedData.images = imageUrls;
       }
 
       await updateDoc(quickReplyDoc, updatedData);
       setEditingReply(null);
-      setEditingDocument(null);
-      setEditingImage(null);
+      setEditingDocuments([]);
+      setEditingImages([]);
+      setPreviewUrls({});
       fetchQuickReplies();
     } catch (error) {
       console.error('Error updating quick reply:', error);
@@ -268,206 +417,370 @@ const QuickRepliesPage: React.FC = () => {
     <div className="flex flex-col h-screen overflow-hidden">
       <div className="flex-grow overflow-y-auto">
         <div className="p-5 min-h-full">
-          <h2 className="text-2xl font-bold mb-5">Quick Replies</h2>
-          <div className="mb-5 flex flex-col sm:flex-row justify-between items-start sm:items-center">
-            <div>
-              <button
-                className={`px-4 py-2 rounded-lg mr-2 ${
-                  activeTab === 'all'
-                    ? 'bg-primary text-white'
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
-                }`}
-                onClick={() => setActiveTab('all')}
-              >
-                All
-              </button>
-              <button
-                className={`px-4 py-2 rounded-lg ${
-                  activeTab === 'self'
-                    ? 'bg-primary text-white'
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
-                }`}
-                onClick={() => setActiveTab('self')}
-              >
-                Personal
-              </button>
-            </div>
-            <input
-              type="text"
-              placeholder="Search quick replies..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-            />
-          </div>
-          <div className="mb-5">
-            <input
-              className="w-full px-4 py-2 mb-2 border rounded-lg  bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-              placeholder="New keyword"
-              value={newQuickReplyKeyword}
-              onChange={(e) => setNewQuickReplyKeyword(e.target.value)}
-            />
-            <textarea
-              className="w-full px-4 py-2 mb-2 border rounded-lg  bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-              placeholder="New quick reply text"
-              value={newQuickReply}
-              onChange={(e) => setNewQuickReply(e.target.value)}
-              rows={3}
-            />
-            <div className="flex items-center mb-2">
-              <input
-                type="file"
-                id="quickReplyFile"
-                className="hidden"
-                onChange={(e) => setSelectedDocument(e.target.files ? e.target.files[0] : null)}
-              />
-              <label htmlFor="quickReplyFile" className="mr-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg cursor-pointer">
-                Attach Document
-              </label>
-              <input
-                type="file"
-                id="quickReplyImage"
-                accept="image/*"
-                className="hidden"
-                onChange={(e) => setSelectedImage(e.target.files ? e.target.files[0] : null)}
-              />
-              <label htmlFor="quickReplyImage" className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg cursor-pointer">
-                Attach Image
-              </label>
-            </div>
-            <button
-              className="px-4 py-2 bg-primary text-white rounded-lg"
-              onClick={addQuickReply}
-            >
-              Add Quick Reply
-            </button>
-          </div>
-          <div className="space-y-4">
-            {filteredQuickReplies.map(reply => (
-              <div key={reply.id} className="p-4 border rounded-lg">
-                {editingReply?.id === reply.id ? (
-                  <>
-                    <input
-                      className="w-full px-4 py-2 mb-2 border rounded-lg  bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                      value={editingReply.keyword}
-                      onChange={(e) => setEditingReply({ ...editingReply, keyword: e.target.value })}
-                    />
-                    <textarea
-                      className="w-full px-4 py-2 mb-2 border rounded-lg  bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                      value={editingReply.text}
-                      onChange={(e) => setEditingReply({ ...editingReply, text: e.target.value })}
-                      rows={3}
-                    />
-                    
-                    {/* New File Inputs for Editing */}
-                    <div className="flex items-center mb-2">
-                      <div className="flex-1">
-                        <input
-                          type="file"
-                          id="editQuickReplyFile"
-                          className="hidden"
-                          onChange={(e) => setEditingDocument(e.target.files ? e.target.files[0] : null)}
-                        />
-                        <label htmlFor="editQuickReplyFile" className="mr-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg cursor-pointer">
-                          {editingReply.document ? 'Replace Document' : 'Attach Document'}
-                        </label>
-                        <input
-                          type="file"
-                          id="editQuickReplyImage"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => setEditingImage(e.target.files ? e.target.files[0] : null)}
-                        />
-                        <label htmlFor="editQuickReplyImage" className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded-lg cursor-pointer">
-                          {editingReply.image ? 'Replace Image' : 'Attach Image'}
-                        </label>
-                      </div>
-                      <div className="flex-shrink-0 ml-4">
-                        <button
-                          className="ml-2 px-4 py-2 bg-green-500 text-white rounded-lg"
-                          onClick={() => updateQuickReply(reply.id, editingReply.keyword, editingReply.text, editingReply.type as "all" | "self")}
-                        >
-                          Save
-                        </button>
-                        <button
-                          className="ml-2 px-4 py-2 bg-gray-500 text-white rounded-lg"
-                          onClick={() => {
-                            setEditingReply(null);
-                            setEditingDocument(null);
-                            setEditingImage(null);
-                          }}
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex flex-col">
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="flex-grow">
-                        <h3 className="text-xl font-bold">{reply.keyword}</h3>
-                        <p className="text-base text-gray-600 dark:text-gray-300 mt-1">{reply.text}</p>
-                      </div>
-                      <div className="flex-shrink-0 ml-4">
-                        <button
-                          className="ml-2 px-4 py-2 bg-blue-500 text-white rounded-lg mr-2 text-sm"
-                          onClick={() => setEditingReply(reply)}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          className="ml-2 px-4 py-2 bg-red-500 text-white rounded-lg text-sm"
-                          onClick={() => deleteQuickReply(reply.id, reply.type as "all" | "self")}
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                    {reply.image && (
-              <div className="mt-2">
+          <div className="flex justify-between items-center mb-5">
+            <h2 className="text-2xl font-bold">Quick Replies</h2>
+            <div className="flex items-center space-x-4">
+              <div className="flex bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
                 <button
-                  onClick={() => toggleItem(reply.id, 'image')}
-                  className="text-blue-500 underline mb-2"
+                  className={`px-4 py-2 rounded-lg transition-all duration-200 ${
+                    activeTab === 'all'
+                      ? 'bg-primary text-white shadow-md'
+                      : 'hover:bg-gray-200 dark:hover:bg-gray-700'
+                  }`}
+                  onClick={() => setActiveTab('all')}
                 >
-                  {expandedItems[reply.id]?.image ? 'Hide Image' : 'Show Image'}
+                  All
                 </button>
-                {expandedItems[reply.id]?.image && (
-                  <img
-                    src={reply.image}
-                    alt="Quick Reply Image"
-                    className="rounded-lg cursor-pointer w-full h-full object-contain"
-                    onClick={() => window.open(reply.image ?? '', '_blank')}
-                  />
-                )}
-              </div>
-            )}
-            {reply.document && (
-              <div className="mt-2">
                 <button
-                  onClick={() => toggleItem(reply.id, 'document')}
-                  className="text-blue-500 underline mb-2"
+                  className={`px-4 py-2 rounded-lg transition-all duration-200 ${
+                    activeTab === 'self'
+                      ? 'bg-primary text-white shadow-md'
+                      : 'hover:bg-gray-200 dark:hover:bg-gray-700'
+                  }`}
+                  onClick={() => setActiveTab('self')}
                 >
-                  {expandedItems[reply.id]?.document ? 'Hide Document' : 'Show Document'}
+                  Personal
                 </button>
-                {expandedItems[reply.id]?.document && (
-                  <iframe
-                    src={reply.document}
-                    title="Document"
-                    className="border rounded cursor-pointer w-full"
-                    style={{ height: '100vh' }}
-                    onClick={() => window.open(reply.document ?? '', '_blank')}
-                  />
-                )}
               </div>
-            )}
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search quick replies..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-10 pr-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent"
+                />
+                <Lucide
+                  icon="Search"
+                  className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Add Quick Reply Form */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6">
+              <h3 className="text-lg font-semibold mb-4">Add New Quick Reply</h3>
+              <div className="space-y-4">
+                <input
+                  className="w-full px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent"
+                  placeholder="Keyword (required)"
+                  value={newQuickReplyKeyword}
+                  onChange={(e) => setNewQuickReplyKeyword(e.target.value)}
+                />
+                <textarea
+                  className="w-full px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent"
+                  placeholder="Message text (optional)"
+                  value={newQuickReply}
+                  onChange={(e) => setNewQuickReply(e.target.value)}
+                  rows={3}
+                />
+                <div className="flex items-center space-x-4">
+                  <div className="flex-1 flex space-x-4">
+                    <div>
+                      <input
+                        type="file"
+                        id="quickReplyFile"
+                        className="hidden"
+                        multiple
+                        onChange={(e) => handleFileSelect(e, 'document')}
+                      />
+                      <label
+                        htmlFor="quickReplyFile"
+                        className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                      >
+                        <Lucide icon="File" className="w-5 h-5 mr-2" />
+                        Documents
+                      </label>
+                    </div>
+                    <div>
+                      <input
+                        type="file"
+                        id="quickReplyImage"
+                        accept="image/*"
+                        className="hidden"
+                        multiple
+                        onChange={(e) => handleFileSelect(e, 'image')}
+                      />
+                      <label
+                        htmlFor="quickReplyImage"
+                        className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                      >
+                        <Lucide icon="Image" className="w-5 h-5 mr-2" />
+                        Images
+                      </label>
+                    </div>
+                  </div>
+                  <button
+                    className={`px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors flex items-center ${
+                      isLoading ? 'opacity-50 cursor-not-allowed' : ''
+                    }`}
+                    onClick={addQuickReply}
+                    disabled={isLoading}
+                  >
+                    {isLoading ? (
+                      <>
+                        <Lucide icon="Loader" className="w-5 h-5 mr-2 animate-spin" />
+                        Adding...
+                      </>
+                    ) : (
+                      <>
+                        <Lucide icon="Plus" className="w-5 h-5 mr-2" />
+                        Add
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Preview Section */}
+                {(selectedDocuments.length > 0 || selectedImages.length > 0) && (
+                  <div className="mt-4">
+                    <h4 className="text-sm font-medium text-gray-500 mb-2">Attachments</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {[...selectedImages, ...selectedDocuments].map((file) => (
+                        <div key={file.name} className="relative group">
+                          <div 
+                            className="flex items-center p-2 bg-gray-50 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                            onClick={() => handlePreviewClick(getFileType(file.name), previewUrls[file.name], file.name)}
+                          >
+                            <Lucide 
+                              icon={getFileType(file.name) === 'image' ? 'Image' : 'File'} 
+                              className="w-5 h-5 mr-2 text-gray-500"
+                            />
+                            <span className="text-sm truncate max-w-[150px]">{file.name}</span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeFile(file.name, getFileType(file.name));
+                              }}
+                              className="ml-2 p-1 hover:bg-gray-200 dark:hover:bg-gray-500 rounded-full"
+                            >
+                              <Lucide icon="X" className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
-            ))}
+            </div>
+
+            {/* Quick Replies List */}
+            <div className="space-y-4">
+              {filteredQuickReplies.map(reply => (
+                <div key={reply.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 hover:shadow-lg transition-shadow">
+                  {editingReply?.id === reply.id ? (
+                    <div className="space-y-4">
+                      <input
+                        className="w-full px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent"
+                        value={editingReply.keyword}
+                        onChange={(e) => setEditingReply({ ...editingReply, keyword: e.target.value })}
+                        placeholder="Keyword (required)"
+                      />
+                      <textarea
+                        className="w-full px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent"
+                        value={editingReply.text}
+                        onChange={(e) => setEditingReply({ ...editingReply, text: e.target.value })}
+                        placeholder="Message text (optional)"
+                        rows={3}
+                      />
+                      <div className="flex items-center space-x-4">
+                        <div className="flex-1 flex space-x-4">
+                          <div>
+                            <input
+                              type="file"
+                              id={`editFile-${reply.id}`}
+                              className="hidden"
+                              multiple
+                              onChange={(e) => handleEditingFileSelect(e, 'document')}
+                            />
+                            <label
+                              htmlFor={`editFile-${reply.id}`}
+                              className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                            >
+                              <Lucide icon="File" className="w-5 h-5 mr-2" />
+                              Documents
+                            </label>
+                          </div>
+                          <div>
+                            <input
+                              type="file"
+                              id={`editImage-${reply.id}`}
+                              accept="image/*"
+                              className="hidden"
+                              multiple
+                              onChange={(e) => handleEditingFileSelect(e, 'image')}
+                            />
+                            <label
+                              htmlFor={`editImage-${reply.id}`}
+                              className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                            >
+                              <Lucide icon="Image" className="w-5 h-5 mr-2" />
+                              Images
+                            </label>
+                          </div>
+                        </div>
+                        <div className="flex space-x-2">
+                          <button
+                            className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
+                            onClick={() => updateQuickReply(reply.id, editingReply.keyword, editingReply.text, editingReply.type as "all" | "self")}
+                          >
+                            Save
+                          </button>
+                          <button
+                            className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
+                            onClick={() => {
+                              setEditingReply(null);
+                              setEditingDocuments([]);
+                              setEditingImages([]);
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Preview Section for Editing */}
+                      {(editingDocuments.length > 0 || editingImages.length > 0) && (
+                        <div className="mt-4">
+                          <h4 className="text-sm font-medium text-gray-500 mb-2">New Attachments</h4>
+                          <div className="flex flex-wrap gap-2">
+                            {[...editingImages, ...editingDocuments].map((file) => (
+                              <div key={file.name} className="relative group">
+                                <div 
+                                  className="flex items-center p-2 bg-gray-50 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                                  onClick={() => handlePreviewClick(getFileType(file.name), previewUrls[file.name], file.name)}
+                                >
+                                  <Lucide 
+                                    icon={getFileType(file.name) === 'image' ? 'Image' : 'File'} 
+                                    className="w-5 h-5 mr-2 text-gray-500"
+                                  />
+                                  <span className="text-sm truncate max-w-[150px]">{file.name}</span>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      removeEditingFile(file.name, getFileType(file.name));
+                                    }}
+                                    className="ml-2 p-1 hover:bg-gray-200 dark:hover:bg-gray-500 rounded-full"
+                                  >
+                                    <Lucide icon="X" className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex-grow">
+                          <div className="flex items-center space-x-2 mb-2">
+                            <span className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-medium">
+                              {reply.keyword}
+                            </span>
+                            <span className="text-gray-500 dark:text-gray-400 text-sm">
+                              {reply.createdBy && `Added by ${reply.createdBy}`}
+                            </span>
+                          </div>
+                          {reply.text && (
+                            <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">
+                              {reply.text}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex space-x-2">
+                          <button
+                            className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                            onClick={() => setEditingReply(reply)}
+                          >
+                            <Lucide icon="PencilLine" className="w-5 h-5" />
+                          </button>
+                          <button
+                            className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                            onClick={() => deleteQuickReply(reply.id, reply.type as "all" | "self")}
+                          >
+                            <Lucide icon="Trash" className="w-5 h-5" />
+                          </button>
+                        </div>
+                      </div>
+                      {/* Attachments Section */}
+                      {((reply.images && reply.images.length > 0) || (reply.documents && reply.documents.length > 0)) && (
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {reply.images?.map((image, index) => (
+                            <div
+                              key={`image-${index}`}
+                              className="relative group cursor-pointer"
+                              onClick={() => handlePreviewClick('image', image, `Image ${index + 1}`)}
+                            >
+                              <img
+                                src={image}
+                                alt={`Quick Reply Image ${index + 1}`}
+                                className="w-20 h-20 object-cover rounded-lg hover:opacity-90 transition-opacity"
+                              />
+                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-lg">
+                                <Lucide icon="ZoomIn" className="w-6 h-6 text-white" />
+                              </div>
+                            </div>
+                          ))}
+                          {reply.documents?.map((document, index) => (
+                            <div
+                              key={`document-${index}`}
+                              className="flex items-center p-2 bg-gray-50 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                              onClick={() => handlePreviewClick('document', document, `Document ${index + 1}`)}
+                            >
+                              <Lucide icon="File" className="w-5 h-5 mr-2 text-gray-500" />
+                              <span className="text-sm">Document {index + 1}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Preview Modal */}
+      {previewModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 max-w-4xl w-full max-h-[90vh] overflow-hidden relative">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">{previewModal.title}</h3>
+              <button
+                onClick={() => setPreviewModal(prev => ({ ...prev, isOpen: false }))}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+              >
+                <Lucide icon="X" className="w-6 h-6" />
+              </button>
+            </div>
+            <div className="overflow-auto" style={{ maxHeight: 'calc(90vh - 100px)' }}>
+              {previewModal.type === 'image' ? (
+                <img
+                  src={previewModal.url}
+                  alt={previewModal.title}
+                  className="w-full h-auto"
+                />
+              ) : (
+                <iframe
+                  src={previewModal.url}
+                  title={previewModal.title}
+                  className="w-full h-[80vh]"
+                  frameBorder="0"
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ToastContainer position="bottom-right" />
     </div>
   );
 };

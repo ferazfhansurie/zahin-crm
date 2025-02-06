@@ -2909,7 +2909,7 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
               setAddModalOpen(true);
             }}
           >
-            <Lucide icon="FilePenLine" className="w-4 h-4 mr-2" /> Add New Appointment
+            <Lucide icon="FilePenLine" className="w-4 h-4 mr-2" /> Add Appointment
           </Button>
         </div>
 
