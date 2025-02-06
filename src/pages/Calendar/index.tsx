@@ -21,6 +21,7 @@ import React from "react";
 import { toast } from 'react-toastify';
 import { useNavigate } from 'react-router-dom';
 import { Switch } from "@headlessui/react";
+import Modal from "@/components/Base/Modal";
 
 const firebaseConfig = {
   apiKey: "AIzaSyCc0oSHlqlX7fLeqqonODsOIC3XA8NI7hc",
@@ -122,16 +123,13 @@ interface Tag {
 }
 
 interface ReminderSettings {
-  beforeAppointment: {
+  reminders: Array<{
     enabled: boolean;
     time: number;
+    timeUnit: 'minutes' | 'hours' | 'days';
+    type: 'before' | 'after';
     message: string;
-  };
-  dayOf: {
-    enabled: boolean;
-    time: number;
-    message: string;
-  };
+  }>;
 }
 
 function Main() {
@@ -170,16 +168,7 @@ function Main() {
   const [isCalendarConfigOpen, setIsCalendarConfigOpen] = useState(false);
   const [isReminderSettingsOpen, setIsReminderSettingsOpen] = useState(false);
   const [reminderSettings, setReminderSettings] = useState<ReminderSettings>({
-    beforeAppointment: {
-      enabled: true,
-      time: 24,
-      message: "Hi {name}, this is a reminder for your appointment tomorrow at {time}."
-    },
-    dayOf: {
-      enabled: true,
-      time: 2,
-      message: "Hi {name}, this is a reminder for your appointment today at {time}."
-    }
+    reminders: []
   });
   
   class ErrorBoundary extends Component<{ children: ReactNode; onError: (error: Error) => void }> {
@@ -1399,95 +1388,120 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
     }
   };
 
-  const getPackageName = (status: string) => {
-    switch (status) {
-      case 'trial1':
-        return 'Trial - Private';
-      case 'trial2':
-        return 'Trial - Duo';
-      case 'privDrop':
-        return 'Private - Drop In';
-      case 'priv4':
-        return 'Private - 4 Sessions';
-      case 'priv10':
-        return 'Private - 10 Sessions';
-      case 'priv20':
-        return 'Private - 20 Sessions';
-      case 'DuoDrop':
-        return 'Duo - Drop In';
-      case 'duo4':
-        return 'Duo - 4 Sessions';
-      case 'duo10':
-        return 'Duo - 10 Sessions';
-      case 'duo20':
-        return 'Duo - 20 Sessions';
-      default:
-        return null;
-    }
+  const getPackageName = (packageId: string): string => {
+    const pkg = packages.find(p => p.id === packageId);
+    return pkg ? pkg.name : packageId;
   };
 
   const renderEventContent = (eventInfo: any) => {
-    // Check if this is a Google Calendar event
-    if (eventInfo.event.source?.googleCalendarId) {
-      return (
-        <div className="flex-grow text-center text-normal font-medium" 
-          style={{ 
-            backgroundColor: '#E1F5FE', // Light blue background
-            color: '#0288D1', // Darker blue text
-            padding: '5px', 
-            borderRadius: '5px',
-            border: '1px dashed #0288D1', // Dashed border
-            opacity: '0.9',
-            fontSize: '0.9em' // Slightly smaller text
-          }}>
-          <div className="flex items-center justify-center">
-            <i className="mr-1">📅</i> {/* Calendar emoji */}
-            <span>{eventInfo.event.title}</span>
-          </div>
-        </div>
-      );
-    }
+    const { event } = eventInfo;
+    const { extendedProps } = event;
+    const startTime = format(new Date(event.start), 'HH:mm');
+    const endTime = event.end ? format(new Date(event.end), 'HH:mm') : '';
+    const status = extendedProps.appointmentStatus || '';
+    const contacts = extendedProps.contacts || [];
+    const isMobile = window.innerWidth < 768;
 
-    // For regular appointments
-    const staffIds = eventInfo.event.extendedProps?.staff || [];
-    const staffColors = employees
-      .filter(employee => staffIds.includes(employee.id))
-      .map(employee => employee.color);
+    // Define status-based colors with type
+    const statusColors: Record<string, { bg: string; text: string }> = {
+      new: { bg: '#e3f2fd', text: '#1565c0' },
+      confirmed: { bg: '#e8f5e9', text: '#2e7d32' },
+      cancelled: { bg: '#ffebee', text: '#c62828' },
+      showed: { bg: '#f3e5f5', text: '#6a1b9a' },
+      noshow: { bg: '#fff3e0', text: '#ef6c00' },
+      rescheduled: { bg: '#e0f2f1', text: '#00695c' },
+      lost: { bg: '#fafafa', text: '#424242' },
+      closed: { bg: '#eceff1', text: '#37474f' }
+    };
 
-    let backgroundStyle: BackgroundStyle = { backgroundColor: '#51484f' }; // Default color
-
-    if (staffColors.length === 1) {
-      backgroundStyle = { backgroundColor: staffColors[0] };
-    } else if (staffColors.length === 2) {
-      backgroundStyle = { 
-        background: `linear-gradient(to right, ${staffColors[0]} 0%, ${staffColors[0]} 33%, ${staffColors[1]} 66%, ${staffColors[1]} 100%)`
-      };
-    } else if (staffColors.length > 2) {
-      backgroundStyle = { backgroundColor: '#FFD700' }; // Distinct color for more than 2 colors
-    }
+    const statusColor = statusColors[status.toLowerCase()] || { bg: '#f5f5f5', text: '#333333' };
 
     return (
-      <div className="flex-grow text-center text-normal font-medium" 
-        style={{ 
-          ...backgroundStyle, 
-          color: 'white', 
-          padding: '5px', 
-          borderRadius: '5px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.12)', // Subtle shadow for regular appointments
+      <div
+        className={`event-content ${status.toLowerCase()}`}
+        style={{
+          backgroundColor: statusColor.bg,
+          padding: '6px 8px',
+          borderRadius: '8px',
+          height: '100%',
+          overflow: 'hidden',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '4px',
+          fontSize: isMobile ? '11px' : '12px',
+          border: `1px solid ${statusColor.text}20`,
+          boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+          transition: 'all 0.2s ease',
+          cursor: 'pointer'
+        }}
+      >
+        <div style={{ 
+          fontWeight: 600,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          color: statusColor.text,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '4px'
         }}>
-        <i>{eventInfo.event.title}</i>
-        {eventInfo.event.extendedProps?.tags && eventInfo.event.extendedProps.tags.length > 0 && (
-          <div className="text-xs mt-1">
-            {eventInfo.event.extendedProps.tags.map((tag: Tag) => (
-              <span key={tag.id} className="bg-gray-200 text-gray-800 px-1 rounded mr-1">
-                {tag.name}
-              </span>
-            ))}
+          <span style={{ 
+            width: '8px', 
+            height: '8px', 
+            borderRadius: '50%', 
+            backgroundColor: statusColor.text,
+            display: 'inline-block'
+          }}></span>
+          {startTime} - {endTime}
+        </div>
+        <div style={{ 
+          fontWeight: 500,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          color: statusColor.text
+        }}>
+          {contacts.map((c: any) => c.name).join(', ')}
+        </div>
+        {!isMobile && extendedProps.details && (
+          <div style={{
+            fontSize: '11px',
+            color: `${statusColor.text}99`,
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            fontStyle: 'italic'
+          }}>
+            {extendedProps.details}
           </div>
+        )}
+        {extendedProps.package && (
+          <div style={{
+            fontSize: '10px',
+            backgroundColor: `${statusColor.text}15`,
+            padding: '2px 8px',
+            borderRadius: '12px',
+            alignSelf: 'flex-start',
+            color: statusColor.text,
+            fontWeight: 500
+          }}>
+            {getPackageName(extendedProps.package)}
+          </div>
+        )}
+        {extendedProps.meetLink && (
+          <div style={{
+            position: 'absolute',
+            top: '6px',
+            right: '6px',
+            width: '6px',
+            height: '6px',
+            borderRadius: '50%',
+            backgroundColor: '#2196f3'
+          }}></div>
         )}
       </div>
     );
-  };
+  }
 
   const selectedEmployee = employees.find(employee => employee.id === selectedEmployeeId);
 
@@ -1908,139 +1922,170 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
   const renderReminderModal = () => (
     <Dialog open={isReminderSettingsOpen} onClose={() => setIsReminderSettingsOpen(false)}>
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
-        <Dialog.Panel className="w-full max-w-md p-6 bg-white rounded-md mt-10 dark:bg-gray-800">
-          <h2 className="text-lg font-medium mb-4 dark:text-white">Reminder Settings</h2>
-          <div className="space-y-4">
-            {/* Before Appointment Settings */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Before Appointment
-                </label>
-                <input
-                  type="checkbox"
-                  checked={reminderSettings.beforeAppointment.enabled}
-                  onChange={(e) => setReminderSettings({
-                    ...reminderSettings,
-                    beforeAppointment: {
-                      ...reminderSettings.beforeAppointment,
-                      enabled: e.target.checked
-                    }
-                  })}
-                  className="form-checkbox h-4 w-4 text-primary"
-                />
-              </div>
-              {reminderSettings.beforeAppointment.enabled && (
-                <>
-                  <div className="mb-2">
-                    <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
-                      Hours Before
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="72"
-                      value={reminderSettings.beforeAppointment.time}
-                      onChange={(e) => setReminderSettings({
-                        ...reminderSettings,
-                        beforeAppointment: {
-                          ...reminderSettings.beforeAppointment,
-                          time: parseInt(e.target.value)
-                        }
-                      })}
-                      className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
-                      Message Template
-                    </label>
-                    <textarea
-                      value={reminderSettings.beforeAppointment.message}
-                      onChange={(e) => setReminderSettings({
-                        ...reminderSettings,
-                        beforeAppointment: {
-                          ...reminderSettings.beforeAppointment,
-                          message: e.target.value
-                        }
-                      })}
-                      rows={3}
-                      className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    />
-                  </div>
-                </>
-              )}
-            </div>
+        <Dialog.Panel className="w-full max-w-2xl p-6 bg-white rounded-lg shadow-xl mt-10 dark:bg-gray-800">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold dark:text-white">Reminder Settings</h2>
+            <button
+              onClick={() => setIsReminderSettingsOpen(false)}
+              className="text-gray-400 hover:text-gray-500 dark:hover:text-gray-300"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
 
-            {/* Day of Appointment Settings */}
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Day of Appointment
-                </label>
-                <input
-                  type="checkbox"
-                  checked={reminderSettings.dayOf.enabled}
-                  onChange={(e) => setReminderSettings({
-                    ...reminderSettings,
-                    dayOf: {
-                      ...reminderSettings.dayOf,
-                      enabled: e.target.checked
-                    }
-                  })}
-                  className="form-checkbox h-4 w-4 text-primary"
-                />
+          <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2">
+            {reminderSettings?.reminders?.map((reminder: any, index: number) => (
+              <div key={index} className="p-5 border rounded-lg dark:border-gray-700 bg-white dark:bg-gray-750 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center space-x-3">
+                    <span className="flex items-center justify-center w-8 h-8 text-sm font-semibold text-white bg-primary rounded-full">
+                      {index + 1}
+                    </span>
+                    <h3 className="text-lg font-medium text-gray-700 dark:text-gray-300">
+                      Reminder {index + 1}
+                    </h3>
+                  </div>
+                  <div className="flex items-center space-x-4">
+                    <div className="flex items-center">
+                      <label className="mr-2 text-sm text-gray-600 dark:text-gray-400">Enable</label>
+                      <input
+                        type="checkbox"
+                        checked={reminder.enabled}
+                        onChange={(e) => {
+                          const newReminders = [...(reminderSettings?.reminders || [])];
+                          newReminders[index].enabled = e.target.checked;
+                          setReminderSettings({ reminders: newReminders });
+                        }}
+                        className="form-checkbox h-5 w-5 text-primary rounded border-gray-300 focus:ring-primary"
+                      />
+                    </div>
+                    <button
+                      onClick={() => {
+                        const newReminders = reminderSettings.reminders.filter((_, i) => i !== index);
+                        setReminderSettings({ reminders: newReminders });
+                      }}
+                      className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-full transition-colors duration-200"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+
+                {reminder.enabled && (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                          Time
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          value={reminder.time}
+                          onChange={(e) => {
+                            const newReminders = [...(reminderSettings?.reminders || [])];
+                            newReminders[index].time = parseInt(e.target.value);
+                            setReminderSettings({ reminders: newReminders });
+                          }}
+                          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                          Unit
+                        </label>
+                        <select
+                          value={reminder.timeUnit}
+                          onChange={(e) => {
+                            const newReminders = [...(reminderSettings?.reminders || [])];
+                            newReminders[index].timeUnit = e.target.value as 'minutes' | 'hours' | 'days';
+                            setReminderSettings({ reminders: newReminders });
+                          }}
+                          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        >
+                          <option value="minutes">Minutes</option>
+                          <option value="hours">Hours</option>
+                          <option value="days">Days</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                          When to Send
+                        </label>
+                        <select
+                          value={reminder.type}
+                          onChange={(e) => {
+                            const newReminders = [...(reminderSettings?.reminders || [])];
+                            newReminders[index].type = e.target.value as 'before' | 'after';
+                            setReminderSettings({ reminders: newReminders });
+                          }}
+                          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        >
+                          <option value="before">Before Appointment</option>
+                          <option value="after">After Appointment</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        Message Template
+                      </label>
+                      <div className="relative">
+                        <textarea
+                          value={reminder.message}
+                          onChange={(e) => {
+                            const newReminders = [...(reminderSettings?.reminders || [])];
+                            newReminders[index].message = e.target.value;
+                            setReminderSettings({ reminders: newReminders });
+                          }}
+                          rows={3}
+                          className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:ring-primary focus:border-primary dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                          placeholder="Enter your message here. Use {time}, {unit}, and {when} as placeholders."
+                        />
+                        <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                          Available placeholders: {"{time}"}, {"{unit}"}, {"{when}"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-              {reminderSettings.dayOf.enabled && (
-                <>
-                  <div className="mb-2">
-                    <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
-                      Hours Before
-                    </label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="72"
-                      value={reminderSettings.dayOf.time}
-                      onChange={(e) => setReminderSettings({
-                        ...reminderSettings,
-                        dayOf: {
-                          ...reminderSettings.dayOf,
-                          time: parseInt(e.target.value)
-                        }
-                      })}
-                      className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-gray-600 dark:text-gray-400 mb-1">
-                      Message Template
-                    </label>
-                    <textarea
-                      value={reminderSettings.dayOf.message}
-                      onChange={(e) => setReminderSettings({
-                        ...reminderSettings,
-                        dayOf: {
-                          ...reminderSettings.dayOf,
-                          message: e.target.value
-                        }
-                      })}
-                      rows={3}
-                      className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-            <div className="flex justify-end space-x-2">
+            ))}
+          </div>
+
+          <div className="mt-6 space-y-4">
+            <button
+              className="w-full px-4 py-3 text-sm font-medium text-white bg-primary rounded-lg hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 transition-colors duration-200 flex items-center justify-center space-x-2"
+              onClick={() => {
+                const newReminders = [...(reminderSettings?.reminders || []), {
+                  enabled: true,
+                  time: 24,
+                  timeUnit: 'hours' as const,
+                  type: 'before' as const,
+                  message: "You have an upcoming appointment {time} {unit} {when}."
+                }];
+                setReminderSettings({ reminders: newReminders });
+              }}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clipRule="evenodd" />
+              </svg>
+              <span>Add New Reminder</span>
+            </button>
+
+            <div className="flex justify-end space-x-3">
               <button
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 dark:bg-gray-600 dark:text-white dark:hover:bg-gray-500"
+                className="px-6 py-2.5 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 dark:bg-gray-700 dark:text-white dark:hover:bg-gray-600 transition-colors duration-200"
                 onClick={() => setIsReminderSettingsOpen(false)}
               >
                 Cancel
               </button>
               <button
-                className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600"
+                className="px-6 py-2.5 text-sm font-medium text-white bg-primary rounded-lg hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 transition-colors duration-200"
                 onClick={() => updateReminderSettings(reminderSettings)}
               >
                 Save Settings
@@ -2187,9 +2232,10 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
     ],
     initialView: view,
     headerToolbar: {
-      left: 'prev,next today',
-      center: 'title',
-      right: 'dayGridMonth,timeGridWeek,timeGridDay'
+      left: 'title',
+      center: '',
+      right: 'today prev,next'
+
     },
     editable: true, // Enable event editing
     eventClick: handleEventClick, // Add this to handle event clicks
@@ -2199,24 +2245,24 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
     googleCalendarApiKey: import.meta.env.VITE_GOOGLE_CALENDAR_API_KEY,
     eventSources: [
       {
-        events: filteredAppointments.map(appointment => ({
-          id: appointment.id,
-          title: appointment.title,
-          start: new Date(appointment.startTime),
-          end: new Date(appointment.endTime),
+    events: filteredAppointments.map(appointment => ({
+      id: appointment.id,
+      title: appointment.title,
+      start: new Date(appointment.startTime),
+      end: new Date(appointment.endTime),
           backgroundColor: appointment.color || '#51484f',
           borderColor: 'transparent',
-          extendedProps: {
-            address: appointment.address,
-            appointmentStatus: appointment.appointmentStatus,
-            staff: appointment.staff,
+      extendedProps: {
+        address: appointment.address,
+        appointmentStatus: appointment.appointmentStatus,
+        staff: appointment.staff,
             package: packages.find(p => p.id === appointment.packageId) || null,
-            dateAdded: appointment.dateAdded,
-            contacts: appointment.contacts,
-            tags: appointment.tags || [],
-            details: appointment.details || '',
-            meetLink: appointment.meetLink || '',
-          }
+        dateAdded: appointment.dateAdded,
+        contacts: appointment.contacts,
+        tags: appointment.tags || [],
+        details: appointment.details || '',
+        meetLink: appointment.meetLink || '',
+      }
         }))
       },
       ...(config.calendarId && config.calendarId.trim() !== '' && validateCalendarId(config.calendarId) ? [{
@@ -2736,8 +2782,11 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
             className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600"
             onClick={() => setViewType(viewType === 'calendar' ? 'grid' : 'calendar')}
           >
-            <Lucide icon={viewType === 'calendar' ? 'TableProperties' : 'Calendar'} className="w-4 h-4 mr-2 inline-block" />
-            {viewType === 'calendar' ? 'Slots View' : 'Calendar View'}
+            <Lucide
+              icon={viewType === 'calendar' ? 'Calendar' : 'TableProperties'}
+              className="w-4 h-4 mb-0.5 mr-2 inline-block"
+            />
+            {viewType === 'calendar' ? 'Calendar' : 'Slots'}
           </button>
         </div>
         {/* Add new Appointment Requests button */}
@@ -2811,11 +2860,11 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
         {/* Add New Package and Calendar Settings buttons */}
         <div className="w-full mb-4 sm:w-1/4 sm:mr-2 lg:w-auto lg:mb-0 lg:mr-4 flex gap-2">
           <button
-            className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
+            className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 flex items-center"
             onClick={() => setIsAddingPackage(true)}
           >
-            <Lucide icon="Package" className="w-4 h-4 mr-2 inline-block" />
-            Add New Package
+            <Lucide icon="Package" className="w-4 h-4 mr-2" />
+            <span>Add Package</span>
           </button>
           <button
             className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
@@ -2871,106 +2920,137 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
       <div className="grid grid-cols-1 md:grid-cols-12 gap-5 mt-5">
         {/* Appointments list */}
         <div className={`${isMobile ? 'order-1' : ''} md:col-span-4 xl:col-span-4 2xl:col-span-3`}>
-          <div className="p-5 box intro-y" style={{ maxHeight: '700px', overflowY: 'auto' }}>
-            <div className="flex justify-between items-center h-10 intro-y gap-4">
-              <h2 className="text-3xl sm:text-xl md:text-2xl font-bold dark:text-white">
-                Appointments
-              </h2>
-              <div className="flex flex-wrap">
-                <span className="flex items-center text-xs font-medium text-gray-500 dark:text-gray-300 me-3 mb-1"><span className="flex w-2.5 h-2.5 bg-gray-500 rounded-full me-1.5 flex-shrink-0"></span>New</span>
-                <span className="flex items-center text-xs font-medium text-gray-500 dark:text-gray-300 me-3 mb-1"><span className="flex w-2.5 h-2.5 bg-green-500 rounded-full me-1.5 flex-shrink-0"></span>Showed</span>
-                <span className="flex items-center text-xs font-medium text-gray-500 dark:text-gray-300 me-3 mb-1"><span className="flex w-2.5 h-2.5 bg-red-500 rounded-full me-1.5 flex-shrink-0"></span>Canceled</span>
-                <span className="flex items-center text-xs font-medium text-gray-500 dark:text-gray-300 me-3 mb-1"><span className="flex w-2.5 h-2.5 bg-blue-700 rounded-full me-1.5 flex-shrink-0"></span>Closed</span>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm h-full">
+            <div className="p-5">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
+                  Appointments
+                </h2>
+                <div className="flex flex-wrap gap-2">
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+                    <span className="w-2 h-2 bg-gray-500 rounded-full mr-1.5"></span>
+                    New
+                  </span>
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
+                    <span className="w-2 h-2 bg-green-500 rounded-full mr-1.5"></span>
+                    Showed
+                  </span>
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300">
+                    <span className="w-2 h-2 bg-red-500 rounded-full mr-1.5"></span>
+                    Canceled
+                  </span>
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+                    <span className="w-2 h-2 bg-blue-700 rounded-full mr-1.5"></span>
+                    Closed
+                  </span>
+                </div>
               </div>
-            </div>
-            <div className="mt-4 mb-2 border-t border-b border-slate-200/60 dark:border-gray-600">
-              {filteredAppointments.length > 0 ? (
-                filteredAppointments.map((appointment, index) => (
-                  <div key={index} className="relative" onClick={() => handleAppointmentClick(appointment)}>
-                    <div className="flex m-2 p-2 -mx-3 transition duration-300 ease-in-out rounded-md cursor-pointer event hover:bg-slate-200 dark:hover:bg-gray-600">
-                      <div className={`w-2 mr-3 rounded-sm ${getStatusColor(appointment.appointmentStatus)}`} style={{ height: 'auto' }}></div>
-                      <div className="pr-2 item-center w-full">
-                        <div className="flex justify-between">
-                          <div>
-                            <div className="truncate event__title text-lg font-semibold dark:text-white text-start capitalize">{appointment.title}</div>
-                        <div className="text-xs flex flex-wrap mt-1">
-                          {appointment.staff.map((employeeId) => {
-                            const employee = employees.find(e => e.id === employeeId);
-                            return employee ? (
-                              <span key={employee.id} className="text-xs px-1 rounded mr-1 mb-1 text-start capitalize" style={{ backgroundColor: employee.color, color: '#fff' }}>
-                                {employee.name}
-                              </span>
-                            ) : null;
-                          })}
+
+              <div className="space-y-3 max-h-[calc(100vh-12rem)] overflow-y-auto pr-2">
+                {filteredAppointments.length > 0 ? (
+                  filteredAppointments.map((appointment, index) => (
+                    <div 
+                      key={index} 
+                      onClick={() => handleAppointmentClick(appointment)}
+                      className="group relative bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-primary dark:hover:border-primary transition-all duration-200 cursor-pointer"
+                    >
+                      <div className="flex p-4">
+                        <div className={`w-1 rounded-full ${getStatusColor(appointment.appointmentStatus)} mr-4`}></div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-start mb-2">
+                            <h3 className="text-lg font-medium text-gray-900 dark:text-white truncate pr-4">
+                              {appointment.title}
+                            </h3>
+                            <div className="text-right text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                              {new Date(appointment.startTime).toLocaleString('en-US', {
+                                weekday: 'short',
+                                month: 'short',
+                                day: 'numeric'
+                              })}
+                              <div>
+                                {new Date(appointment.startTime).toLocaleString('en-US', {
+                                  hour: 'numeric',
+                                  minute: 'numeric',
+                                  hour12: true
+                                })} - {new Date(appointment.endTime).toLocaleString('en-US', {
+                                  hour: 'numeric',
+                                  minute: 'numeric',
+                                  hour12: true
+                                })}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-1.5 mb-2">
+                            {appointment.staff.map((employeeId) => {
+                              const employee = employees.find(e => e.id === employeeId);
+                              return employee ? (
+                                <span 
+                                  key={employee.id} 
+                                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize"
+                                  style={{ backgroundColor: employee.color, color: '#fff' }}
+                                >
+                                  {employee.name}
+                                </span>
+                              ) : null;
+                            })}
+                          </div>
+
                           {appointment.tags && appointment.tags.length > 0 && (
-                            <>
+                            <div className="flex flex-wrap gap-1.5 mb-2">
                               {appointment.tags.slice(0, 2).map(tag => (
-                                <span key={tag.id} className="bg-blue-200 text-blue-800 text-xs px-1 rounded mr-1 mb-1">
+                                <span key={tag.id} className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
                                   {tag.name}
                                 </span>
                               ))}
                               {appointment.tags.length > 2 && (
-                                <span className="bg-blue-200 text-blue-800 text-xs px-1 rounded mr-1 mb-1">
-                                  +{appointment.tags.length - 2} more
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+                                  +{appointment.tags.length - 2}
                                 </span>
                               )}
-                            </>
+                            </div>
                           )}
-                        </div>
-                        {packages.find(p => p.id === appointment.packageId) && packages.find(p => p.id === appointment.packageId)?.name !== 'No Packages' && (
-                          <div className="text-slate-500 text-xs dark:text-gray-300 items-center font-medium">
-                                {packages.find(p => p.id === appointment.packageId)?.name} package
+
+                          {packages.find(p => p.id === appointment.packageId) && packages.find(p => p.id === appointment.packageId)?.name !== 'No Packages' && (
+                            <div className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300">
+                                {packages.find(p => p.id === appointment.packageId)?.name}
                                 {(packages.find(p => p.id === appointment.packageId)?.sessions ?? 0) > 0 && 
                                   ` (${packages.find(p => p.id === appointment.packageId)?.sessions ?? 0} sessions)`}
-                              </div>
-                            )}
-                        <div className="text-slate-500 text-xs dark:text-gray-300 flex flex-wrap items-center">
-                          {appointment.contacts.map(contact => (
-                            <div key={contact.id} className="flex items-center mb-1">
-                              <span className="text-gray-800 dark:text-gray-200 text-lg">•</span>
-                              <span className="text-gray-800 dark:text-gray-200 text-xs px-1 rounded items-center">
-                                {contact.name}
-                                {contact.session > 0 && ` | Session ${contact.session}`}
                               </span>
                             </div>
-                          ))}
-                        </div>
-                        {appointment.details && (
-                          <div className="mt-1 text-sm text-gray-500 dark:text-gray-400 truncate">
-                            {appointment.details}
+                          )}
+
+                          <div className="space-y-1">
+                            {appointment.contacts.map(contact => (
+                              <div key={contact.id} className="text-sm text-gray-600 dark:text-gray-400">
+                                <span className="font-medium">{contact.name}</span>
+                                {contact.session > 0 && 
+                                  <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+                                    Session {contact.session}
+                                  </span>
+                                }
+                              </div>
+                            ))}
                           </div>
-                        )}
-                          </div>
-                          <div className="text-slate-500 text-xs mt-0.5 dark:text-gray-300 text-right">
-                            <div>
-                              {new Date(appointment.startTime).toLocaleString('en-US', {
-                                weekday: 'long',
-                                month: 'long',
-                                day: 'numeric'
-                              })}
+
+                          {appointment.details && (
+                            <div className="mt-2 text-sm text-gray-500 dark:text-gray-400 line-clamp-2">
+                              {appointment.details}
                             </div>
-                            <div>
-                              {new Date(appointment.startTime).toLocaleString('en-US', {
-                                hour: 'numeric',
-                                minute: 'numeric',
-                                hour12: true
-                              })} - {new Date(appointment.endTime).toLocaleString('en-US', {
-                                hour: 'numeric',
-                                minute: 'numeric',
-                                hour12: true
-                              })}
-                            </div>
-                          </div>
+                          )}
                         </div>
                       </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <div className="text-gray-400 dark:text-gray-500 text-lg">
+                      No appointments yet
+                    </div>
                   </div>
-                ))
-              ) : (
-                <div className="p-3 text-center text-slate-500 dark:text-gray-400">
-                  No appointments yet
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>
