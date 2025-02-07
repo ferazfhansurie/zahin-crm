@@ -185,8 +185,14 @@ interface QuickReply {
   keyword: string;
   text: string;
   type: string;
-  documents?: string[];
-  images?: string[];
+  documents?: {
+    name: string;
+    type: string;
+    size: number;
+    url: string;
+    lastModified: number;
+  }[] | null;
+  images?: string[] | null;
 }
 interface ImageModalProps {
   isOpen: boolean;
@@ -1777,9 +1783,21 @@ const fetchFileFromURL = async (url: string): Promise<File | null> => {
   
     if (reply.documents?.length) {
       // Handle first document for now, can be modified to handle multiple
-      const documentFile = new File([reply.documents[0]], "document", { type: reply.documents[0] });
-      setSelectedDocument(documentFile);
-      setDocumentModalOpen(true);
+      const document = reply.documents[0];
+      fetch(document.url)
+        .then(response => response.blob())
+        .then(blob => {
+          const documentFile = new File([blob], document.name, { 
+            type: document.type,
+            lastModified: document.lastModified 
+          });
+          setSelectedDocument(documentFile);
+          setDocumentModalOpen(true);
+        })
+        .catch(error => {
+          console.error('Error handling document:', error);
+          toast.error('Failed to load document');
+        });
     }
   
     if (reply.text) {
@@ -7649,7 +7667,7 @@ ${context}
               (userData?.company !== "Revotrend" || 
                 (userData?.phone === undefined || 
                 phoneCount === undefined || 
-                phoneCount === 0 ||
+                phoneCount === 0 || 
                 message.phoneIndex === undefined || 
                 message.phoneIndex === null || 
                 message.phoneIndex.toString() === userData?.phone.toString())))
@@ -8532,10 +8550,21 @@ ${context}
                           }
                           if (reply.documents?.length) {
                             reply.documents.forEach((doc) => {
-                              const documentFile = new File([doc], "document", { type: doc });
-                              setSelectedDocument(documentFile);
-                              setDocumentModalOpen(true);
-                              setDocumentCaption(reply.text || '');
+                              fetch(doc.url)
+                                .then(response => response.blob())
+                                .then(blob => {
+                                  const documentFile = new File([blob], doc.name, { 
+                                    type: doc.type,
+                                    lastModified: doc.lastModified 
+                                  });
+                                  setSelectedDocument(documentFile);
+                                  setDocumentModalOpen(true);
+                                  setDocumentCaption(reply.text || '');
+                                })
+                                .catch(error => {
+                                  console.error('Error handling document:', error);
+                                  toast.error('Failed to load document');
+                                });
                             });
                           }
                           if (reply.text) {
@@ -8590,11 +8619,11 @@ ${context}
                             )}
                             {/* Documents and Images Preview */}
                             <div className="grid grid-cols-2 gap-2 mt-2">
-                              {(reply.documents?.length ?? 0) > 0 && (reply.documents as unknown as File[]).map((doc, index) => (
+                              {reply.documents && reply.documents.length > 0 && reply.documents.map((doc, index) => (
                                 <div key={index} className="relative group">
-                                  <a href={doc.name} target="_blank" className="p-2 bg-gray-100 dark:bg-gray-700 rounded-md flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-600" onClick={(e) => e.stopPropagation()}>
+                                  <a href={doc.url} target="_blank" className="p-2 bg-gray-100 dark:bg-gray-700 rounded-md flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-600" onClick={(e) => e.stopPropagation()}>
                                     <Lucide icon="File" className="w-4 h-4 text-gray-800 dark:text-gray-200" />
-                                    <span className="text-sm text-gray-800 dark:text-gray-200">Doc {index + 1}</span>
+                                    <span className="text-sm text-gray-800 dark:text-gray-200">{doc.name}</span>
                                   </a>
                                   <div className="absolute hidden group-hover:block bg-gray-800 text-white p-2 rounded-md -top-8 left-1/2 transform -translate-x-1/2 text-sm whitespace-nowrap">
                                     View Document

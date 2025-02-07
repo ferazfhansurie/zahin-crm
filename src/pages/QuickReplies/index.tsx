@@ -14,7 +14,13 @@ interface QuickReply {
     keyword: string;
     text: string;
     type: string;
-    documents?: string[] | null;
+    documents?: {
+        name: string;
+        type: string;
+        size: number;
+        url: string;
+        lastModified: number;
+    }[] | null;
     images?: string[] | null;
     showImage?: boolean;
     showDocument?: boolean;
@@ -128,11 +134,18 @@ const QuickRepliesPage: React.FC = () => {
     }
   };
 
-  const uploadDocument = async (file: File): Promise<string> => {
-    const storage = getStorage(); // Correctly initialize storage
-    const storageRef = ref(storage, `quickReplies/${file.name}`); // Use the initialized storage
+  const uploadDocument = async (file: File): Promise<{ name: string; type: string; size: number; url: string; lastModified: number }> => {
+    const storage = getStorage();
+    const storageRef = ref(storage, `quickReplies/${file.name}`);
     await uploadBytes(storageRef, file);
-    return await getDownloadURL(storageRef);
+    const url = await getDownloadURL(storageRef);
+    return {
+        name: file.name,
+        type: file.type,
+        size: file.size,
+        url: url,
+        lastModified: file.lastModified
+    };
   };
 
   const uploadImage = async (file: File): Promise<string> => {
@@ -288,8 +301,8 @@ const QuickRepliesPage: React.FC = () => {
         };
         
         if (selectedDocuments.length > 0) {
-          const documentUrls = await Promise.all(selectedDocuments.map(file => uploadDocument(file)));
-          updates.documents = documentUrls;
+          const documentData = await Promise.all(selectedDocuments.map(file => uploadDocument(file)));
+          updates.documents = documentData;
         }
         
         if (selectedImages.length > 0) {
@@ -347,8 +360,8 @@ const QuickRepliesPage: React.FC = () => {
       };
 
       if (editingDocuments.length > 0) {
-        const documentUrls = await Promise.all(editingDocuments.map(file => uploadDocument(file)));
-        updatedData.documents = documentUrls;
+        const documentData = await Promise.all(editingDocuments.map(file => uploadDocument(file)));
+        updatedData.documents = documentData;
       }
 
       if (editingImages.length > 0) {
@@ -730,10 +743,15 @@ const QuickRepliesPage: React.FC = () => {
                             <div
                               key={`document-${index}`}
                               className="flex items-center p-2 bg-gray-50 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
-                              onClick={() => handlePreviewClick('document', document, `Document ${index + 1}`)}
+                              onClick={() => handlePreviewClick('document', document.url, document.name)}
                             >
                               <Lucide icon="File" className="w-5 h-5 mr-2 text-gray-500" />
-                              <span className="text-sm">Document {index + 1}</span>
+                              <div className="flex flex-col">
+                                <span className="text-sm font-medium">{document.name}</span>
+                                <span className="text-xs text-gray-500">
+                                    {(document.size / 1024 / 1024).toFixed(2)} MB • {document.type}
+                                </span>
+                              </div>
                             </div>
                           ))}
                         </div>
