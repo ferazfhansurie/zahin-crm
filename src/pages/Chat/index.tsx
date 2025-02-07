@@ -1775,35 +1775,50 @@ const fetchFileFromURL = async (url: string): Promise<File | null> => {
     }
   };
 
-  const handleQRClick = (reply: QuickReply) => {
-    if (reply.images?.length) {
-      setPastedImageUrl(reply.images);
-      setImageModalOpen2(true);
+  const handleQRClick = async (reply: QuickReply) => {
+    try {
+      // Handle images one at a time
+      if (reply.images?.length) {
+        setPastedImageUrl(reply.images);
+        setDocumentCaption(reply.text || '');
+        setImageModalOpen2(true);
+      }
+
+      // Handle documents one at a time
+      if (reply.documents?.length) {
+        for (const doc of reply.documents) {
+          try {
+            const response = await fetch(doc.url);
+            const blob = await response.blob();
+            const documentFile = new File([blob], doc.name, {
+              type: doc.type,
+              lastModified: doc.lastModified
+            });
+            setSelectedDocument(documentFile);
+            setDocumentModalOpen(true);
+            await new Promise<void>(resolve => {
+              const interval = setInterval(() => {
+                if (!documentModalOpen) {
+                  clearInterval(interval);
+                  resolve();
+                }
+              }, 100);
+            });
+          } catch (error) {
+            console.error('Error handling document:', error);
+            toast.error(`Failed to process document: ${doc.name}`);
+          }
+        }
+      }
+
+      if (reply.text) {
+        setNewMessage(reply.text);
+      }
+      setIsQuickRepliesOpen(false);
+    } catch (error) {
+      console.error('Error in handleQRClick:', error);
+      toast.error('Failed to process quick reply');
     }
-  
-    if (reply.documents?.length) {
-      // Handle first document for now, can be modified to handle multiple
-      const document = reply.documents[0];
-      fetch(document.url)
-        .then(response => response.blob())
-        .then(blob => {
-          const documentFile = new File([blob], document.name, { 
-            type: document.type,
-            lastModified: document.lastModified 
-          });
-          setSelectedDocument(documentFile);
-          setDocumentModalOpen(true);
-        })
-        .catch(error => {
-          console.error('Error handling document:', error);
-          toast.error('Failed to load document');
-        });
-    }
-  
-    if (reply.text) {
-      setNewMessage(reply.text);
-    }
-    setIsQuickRepliesOpen(false);
   };
 
 
@@ -3358,7 +3373,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
       from_me: true,
       type: 'text',
       from_name: contact.last_message?.from_name || '',
-      phoneIndex: phoneIndex,
+      phoneIndex,
       // Add any other required fields with appropriate default values
     };
   
@@ -5657,24 +5672,19 @@ interface Template {
     }
   };
   
-  const sendImage = async (imageUrl: string | null, caption: string) => {
-    
-    
+  const sendImage = async (imageUrl: string, caption: string) => {
     setLoading(true);
     try {
-      if (imageUrl) {
-        const response = await fetch(imageUrl);
-        const blob = await response.blob();
-        const file = new File([blob], 'image.jpg', { type: blob.type });
-        
-        const uploadedImageUrl = await uploadFile(file);
-        if (uploadedImageUrl) {
-          await sendImageMessage(selectedChatId!, uploadedImageUrl, caption);
-        }
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const file = new File([blob], 'image.jpg', { type: blob.type });
+      
+      const uploadedImageUrl = await uploadFile(file);
+      if (uploadedImageUrl) {
+        await sendImageMessage(selectedChatId!, uploadedImageUrl, caption);
       }
     } catch (error) {
       console.error('Error sending image:', error);
-     // toast.error('Failed to send image. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -8542,11 +8552,9 @@ ${context}
                       onClick={() => {
                         if (editingReply?.id !== reply.id) {
                           if (reply.images?.length) {
-                            reply.images.forEach((img) => {
-                              setPastedImageUrl(img);
-                              setDocumentCaption(reply.text || '');
-                              setImageModalOpen2(true);
-                            });
+                            setPastedImageUrl(reply.images);
+                            setDocumentCaption(reply.text || '');
+                            setImageModalOpen2(true);
                           }
                           if (reply.documents?.length) {
                             reply.documents.forEach((doc) => {
@@ -9146,17 +9154,15 @@ ${context}
         imageUrl={pastedImageUrl} 
         onSend={async (urls, caption) => {
           if (Array.isArray(urls)) {
-            // Get the original files from the input
-            const fileInput = document.getElementById('imageUpload') as HTMLInputElement;
-            if (fileInput && fileInput.files) {
-              for (let i = 0; i < fileInput.files.length; i++) {
-                const file = fileInput.files[i];
-                const url = URL.createObjectURL(file);
-                await sendImage(url, caption);
-              }
+            // Handle multiple images
+            for (let i = 0; i < urls.length; i++) {
+              const isLastImage = i === urls.length - 1;
+              // Only send caption with the last image
+              await sendImage(urls[i], isLastImage ? caption : '');
             }
-          } else {
-            sendImage(urls, caption);
+          } else if (urls) {
+            // Handle single image
+            await sendImage(urls, caption);
           }
           setImageModalOpen2(false);
         }}
@@ -9294,7 +9300,7 @@ interface ImageModalProps2 {
   isOpen: boolean;
   onClose: () => void;
   imageUrl: string | string[] | null;
-  onSend: (url: string | string[], caption: string) => void;  // Update to handle array
+  onSend: (url: string | string[] | null, caption: string) => void;
   initialCaption?: string;
 }
 
@@ -9306,10 +9312,10 @@ const ImageModal2: React.FC<ImageModalProps2> = ({ isOpen, onClose, imageUrl, on
     setCaption(initialCaption || "" );
   }, [initialCaption]);
 
-
   const handleSendClick = () => {
+    if (!imageUrl) return;
+    onSend(imageUrl, caption || '');
     setCaption('');
-    onSend(imageUrl || '', caption || ''); // Provide empty string fallback for imageUrl and caption
     onClose(); // Close the modal after sending
   };
 
