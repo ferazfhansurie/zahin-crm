@@ -841,6 +841,9 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       }
       const companyId = userDocSnap.data().companyId;
   
+      // Ensure appointmentStatus is set and normalized
+      const appointmentStatus = (extendedProps.appointmentStatus || 'new').toLowerCase();
+  
       // Create appointment object with reminder settings
       const updatedAppointment: Partial<Appointment> = {
         id,
@@ -848,7 +851,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         startTime,
         endTime,
         address: extendedProps.address || '',
-        appointmentStatus: extendedProps.appointmentStatus || '',
+        appointmentStatus,
         staff: extendedProps.staff || [],
         color: color,
         tags: extendedProps.tags || [],
@@ -906,10 +909,12 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         }
       }
   
-      // Update the appointments state
-      setAppointments(appointments.map(appointment =>
-        appointment.id === id ? cleanAppointment : appointment
-      ));
+      // Update the appointments state with the normalized status
+      setAppointments(prevAppointments =>
+        prevAppointments.map(appointment =>
+          appointment.id === id ? cleanAppointment : appointment
+        )
+      );
   
       // Close the modal
       setEditModalOpen(false);
@@ -1235,6 +1240,13 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
   
 
   const handleStatusFilterChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    console.log('Status Filter Changed:', {
+      newStatus: event.target.value,
+      currentAppointments: appointments.map(a => ({
+        id: a.id,
+        status: a.appointmentStatus
+      }))
+    });
     setFilterStatus(event.target.value);
   };
 
@@ -1243,11 +1255,28 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
   };
 
   const filteredAppointments = appointments.filter(appointment => {
-    return (
-      (filterStatus ? appointment.appointmentStatus === filterStatus : true) &&
-      (filterDate ? format(new Date(appointment.startTime), 'yyyy-MM-dd') === filterDate : true) &&
-      (selectedEmployeeId ? appointment.staff.includes(selectedEmployeeId) : true)
-    );
+    // Case-insensitive status matching
+    const statusMatch = !filterStatus || 
+      appointment.appointmentStatus?.toLowerCase() === filterStatus.toLowerCase();
+    
+    // Date matching
+    const dateMatch = !filterDate || 
+      format(new Date(appointment.startTime), 'yyyy-MM-dd') === filterDate;
+    
+    // Employee matching
+    const employeeMatch = !selectedEmployeeId || 
+      (appointment.staff && appointment.staff.includes(selectedEmployeeId));
+    
+    console.log('Filtering Appointment:', {
+      id: appointment.id,
+      appointmentStatus: appointment.appointmentStatus,
+      filterStatus,
+      statusMatch,
+      dateMatch,
+      employeeMatch
+    });
+    
+    return statusMatch && dateMatch && employeeMatch;
   });
 
   const handleAppointmentClick = async (appointment: Appointment) => {
@@ -1404,14 +1433,14 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
 
     // Define status-based colors with type
     const statusColors: Record<string, { bg: string; text: string }> = {
-      new: { bg: '#e3f2fd', text: '#1565c0' },
+      new: { bg: '#F3F4F6', text: '#6B7280' },
       confirmed: { bg: '#e8f5e9', text: '#2e7d32' },
       cancelled: { bg: '#ffebee', text: '#c62828' },
       showed: { bg: '#f3e5f5', text: '#6a1b9a' },
       noshow: { bg: '#fff3e0', text: '#ef6c00' },
       rescheduled: { bg: '#e0f2f1', text: '#00695c' },
       lost: { bg: '#fafafa', text: '#424242' },
-      closed: { bg: '#eceff1', text: '#37474f' }
+      closed: { bg: '#DBE9FE', text: '#1C4ED8' }
     };
 
     const statusColor = statusColors[status.toLowerCase()] || { bg: '#f5f5f5', text: '#333333' };
