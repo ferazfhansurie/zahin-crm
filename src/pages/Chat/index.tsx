@@ -453,6 +453,7 @@ function Main() {
   const otherFirstMessageClass = `${otherMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl mt-4`;
   const otherMiddleMessageClass = `${otherMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl`;
   const otherLastMessageClass = `${otherMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl mb-4`;
+  const privateNoteClass = `${baseMessageClass} bg-yellow-500 dark:bg-yellow-900 self-start text-left mt-1 ml-2 group rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl`;
   const [messageMode, setMessageMode] = useState('reply');
   const myMessageTextClass = "text-white"
   const otherMessageTextClass = "text-black dark:text-white"
@@ -4328,8 +4329,6 @@ useEffect(() => {
 }, [filteredContacts, paginatedContacts, activeTags]);
 
 useEffect(() => {
-
-
   let filtered = contacts;
 
   // Apply role-based filtering
@@ -7747,7 +7746,7 @@ ${context}
                       data-message-id={message.id}
                       className={`p-2 mr-6 mb-5${
                         message.type === 'privateNote'
-                          ? "bg-yellow-600 text-black rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl self-end ml-auto text-left mb-1 group"
+                          ? privateNoteClass
                           : messageClass
                       }relative`}
                       style={{
@@ -7851,7 +7850,7 @@ ${context}
                         </span>
                       )} */}
                       {message.type === 'privateNote' && (
-                        <div className="inline-block whitespace-pre-wrap break-words text-white">
+                        <div className="inline-block whitespace-pre-wrap break-words text-gray-800 dark:text-gray-200">
                           {(() => {
                             const text = typeof message.text === 'string' ? message.text : message.text?.body || 'No content';
                             const parts = text.split(/(@\w+)/g);
