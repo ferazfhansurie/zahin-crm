@@ -23,6 +23,44 @@ const firebaseConfig = {
   measurementId: "G-2C9J1RY67L"
 };
 
+interface UserData {
+  name: string;
+  email: string;
+  role: string;
+  employeeId: string;
+  phoneNumber: string;
+  group?: string;
+  quotaLeads?: number;
+  invoiceNumber?: string | null;
+  weightage?: number;
+  password?: string;
+  notes?: string;
+  imageUrl?: string;
+  phone?: number;
+  phone2?: number;
+  phone3?: number;
+  weightage2?: number;
+  weightage3?: number;
+  companyId?: string;
+}
+
+const initialUserData: UserData = {
+  name: "",
+  email: "",
+  role: "2", // Default to Sales Agent
+  employeeId: "",
+  phoneNumber: "",
+  group: "",
+  quotaLeads: 0,
+  invoiceNumber: null,
+  weightage: 0,
+  password: "",
+  notes: "",
+  imageUrl: "",
+  phone: 0,
+  companyId: "",
+};
+
 function Main() {
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
@@ -80,40 +118,21 @@ function Main() {
     }
   }, [companyId]);
 
-  const [userData, setUserData] = useState<{
-    name: string;
-    phoneNumber: string;
-    email: string;
-    password: string;
-    role: string;
-    companyId: string;
-    group: string;
-    employeeId: string;
-    notes: string;
-    quotaLeads: number;
-    invoiceNumber: string | null;
-    phone: number;
-    phone2?: number;
-    phone3?: number;
-    imageUrl: string;
-    weightage: number;
-    weightage2?: number;
-    weightage3?: number;
-  }>({
+  const [userData, setUserData] = useState<UserData>({
     name: "",
-    phoneNumber: "",
     email: "",
-    password: "",
-    role: "",
-    companyId: "",
-    group: "",
+    role: "2",
     employeeId: "",
-    notes: "",
+    phoneNumber: "",
+    group: "",
     quotaLeads: 0,
     invoiceNumber: null,
-    phone: 0,
-    imageUrl: "",
     weightage: 0,
+    password: "",
+    notes: "",
+    imageUrl: "",
+    phone: 0,
+    companyId: "",
   });
 
   useEffect(() => {
@@ -131,21 +150,17 @@ function Main() {
               name: firebaseUserData.name || "",
               phoneNumber: firebaseUserData.phoneNumber ? firebaseUserData.phoneNumber.split('+6')[1] ?? "" : "",
               email: contact.id,
-              password: "",
               role: firebaseUserData.role || "",
-              companyId: firebaseUserData.companyId || "",
-              group: firebaseUserData.group || "",
               employeeId: firebaseUserData.employeeId || "",
-              notes: firebaseUserData.notes || "",
+              group: firebaseUserData.group || "",
               quotaLeads: firebaseUserData.quotaLeads || 0,
               invoiceNumber: firebaseUserData.invoiceNumber || null,
-              phone: firebaseUserData.phone,
-              phone2: firebaseUserData.phone2,
-              phone3: firebaseUserData.phone3,
-              imageUrl: firebaseUserData.imageUrl || "",
               weightage: firebaseUserData.weightage,
-              weightage2: firebaseUserData.weightage2,
-              weightage3: firebaseUserData.weightage3
+              password: firebaseUserData.password || "",
+              notes: firebaseUserData.notes || "",
+              imageUrl: firebaseUserData.imageUrl || "",
+              phone: firebaseUserData.phone || 0,
+              companyId: firebaseUserData.companyId || "",
             };
 
             
@@ -791,7 +806,21 @@ function Main() {
               disabled={isFieldDisabled("invoiceNumber")}
             />
           </div>
-    
+          {companyId === "042" && (
+            <div>
+              <FormLabel htmlFor="weightage">Weightage</FormLabel>
+              <FormInput
+                id="weightage"
+                name="weightage"
+                type="number"
+                value={userData.weightage}
+                onChange={(e) => setUserData(prev => ({ ...prev, weightage: parseInt(e.target.value) || 0 }))}
+                placeholder="Weightage"
+                min="0"
+                disabled={isFieldDisabled("weightage")}
+              />
+            </div>
+          )}
         </div>
         <div className="mt-4">
           <FormLabel htmlFor="notes">Notes</FormLabel>

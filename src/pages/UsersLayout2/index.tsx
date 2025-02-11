@@ -86,8 +86,13 @@ function Main() {
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState<string>('');
 
-  const [sortField, setSortField] = useState<string>('role');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [sortConfig, setSortConfig] = useState<{
+    key: string;
+    direction: 'asc' | 'desc' | null;
+  }>({
+    key: '',
+    direction: null
+  });
 
   const [roleFilter, setRoleFilter] = useState<string>('all');
 
@@ -447,30 +452,87 @@ const getRoleName = (role: string) => {
   }
 };
 
-const handleSort = (field: string) => {
-  if (sortField === field) {
-    setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-  } else {
-    setSortField(field);
-    setSortDirection('asc');
+const handleSort = (key: string) => {
+  let direction: 'asc' | 'desc' | null = 'asc';
+  
+  if (sortConfig.key === key) {
+    if (sortConfig.direction === 'asc') {
+      direction = 'desc';
+    } else if (sortConfig.direction === 'desc') {
+      direction = null;
+    }
   }
+  
+  setSortConfig({ key, direction });
 };
 
-const paginatedEmployees = filteredEmployees
-  .sort((a, b) => {
-    if (sortDirection === 'asc') {
-      if (sortField === 'quotaLeads') {
-        return (a[sortField] || 0) - (b[sortField] || 0);
-      }
-      return String(a[sortField as keyof Employee] || '').localeCompare(String(b[sortField as keyof Employee] || ''));
-    } else {
-      if (sortField === 'quotaLeads') {
-        return (b[sortField] || 0) - (a[sortField] || 0);
-      }
-      return String(b[sortField as keyof Employee] || '').localeCompare(String(a[sortField as keyof Employee] || ''));
+const resetSort = () => {
+  setSortConfig({ key: '', direction: null });
+};
+
+const sortedEmployees = useMemo(() => {
+  if (!sortConfig.direction || !sortConfig.key) {
+    return filteredEmployees;
+  }
+
+  return [...filteredEmployees].sort((a, b) => {
+    if (sortConfig.key === 'employeeId') {
+      const aId = a.employeeId || '';
+      const bId = b.employeeId || '';
+      return sortConfig.direction === 'asc' 
+        ? aId.localeCompare(bId)
+        : bId.localeCompare(aId);
     }
-  })
-  .slice(currentPage * itemsPerPage, (currentPage + 1) * itemsPerPage);
+    
+    if (sortConfig.key === 'name') {
+      return sortConfig.direction === 'asc'
+        ? a.name.localeCompare(b.name)
+        : b.name.localeCompare(a.name);
+    }
+
+    if (sortConfig.key === 'phoneNumber') {
+      const aPhone = a.phoneNumber || '';
+      const bPhone = b.phoneNumber || '';
+      return sortConfig.direction === 'asc'
+        ? aPhone.localeCompare(bPhone)
+        : bPhone.localeCompare(aPhone);
+    }
+
+    if (sortConfig.key === 'quotaLeads') {
+      const aQuota = a.quotaLeads || 0;
+      const bQuota = b.quotaLeads || 0;
+      return sortConfig.direction === 'asc'
+        ? aQuota - bQuota
+        : bQuota - aQuota;
+    }
+
+    if (sortConfig.key === 'weightage') {
+      const aWeightage = a.weightage || 0;
+      const bWeightage = b.weightage || 0;
+      return sortConfig.direction === 'asc'
+        ? aWeightage - bWeightage
+        : bWeightage - aWeightage;
+    }
+
+    return 0;
+  });
+}, [filteredEmployees, sortConfig]);
+
+const paginatedEmployees = sortedEmployees.slice(
+  currentPage * itemsPerPage,
+  (currentPage + 1) * itemsPerPage
+);
+
+const getSortIcon = (key: string) => {
+  if (sortConfig.key === key) {
+    if (sortConfig.direction === 'asc') {
+      return <Lucide icon="ChevronUp" className="w-4 h-4 ml-1" />;
+    } else if (sortConfig.direction === 'desc') {
+      return <Lucide icon="ChevronDown" className="w-4 h-4 ml-1" />;
+    }
+  }
+  return <Lucide icon="ArrowUpDown" className="w-4 h-4 ml-1 opacity-20" />;
+};
 
 const handleFieldUpdate = async (employeeId: string, field: string, value: string | number) => {
   try {
@@ -536,7 +598,7 @@ const formatPhoneForWhatsApp = (phone: string) => {
         )}
       </div>
       <div className="flex-grow p-5">
-        <div className="sticky top-0 bg-gray-100 dark:bg-gray-900 z-10 py-2">
+        <div className="sticky top-0 bg-gray-100 dark:bg-gray-900 z-[49] py-2">
           <div className="flex flex-wrap items-center mt-2 intro-y sm:flex-nowrap">
             <Link to="settings">
               <Button variant="primary" className="mr-2 shadow-md">
@@ -544,55 +606,86 @@ const formatPhoneForWhatsApp = (phone: string) => {
                 Settings
               </Button>
             </Link>
+            <Button 
+              variant="outline-secondary" 
+              onClick={resetSort}
+              className="mr-2"
+            >
+              <Lucide icon="RotateCcw" className="w-4 h-4 mr-2" />
+              Reset Sort
+            </Button>
            
            
          
-            {/* Add a dropdown to show phone names */}
+            <Menu className="mr-2 relative">
+              <Menu.Button as={Button} variant="outline-secondary" className="bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
+                {selectedGroup || "Select a group"} <Lucide icon="ChevronDown" className="w-4 h-4 ml-2" />
+              </Menu.Button>
+              <Menu.Items className="absolute z-[51] mt-2 w-56 origin-top-right rounded-md bg-white dark:bg-gray-800 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+                <Menu.Item>
+                  {({ active }) => (
+                    <button
+                      onClick={() => setSelectedGroup('')}
+                      className={`${
+                        active ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100' : 'text-gray-700 dark:text-gray-300'
+                      } w-full text-left px-4 py-2 text-sm ${!selectedGroup ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                    >
+                      All Groups
+                    </button>
+                  )}
+                </Menu.Item>
+                {groups.map(group => (
+                  <Menu.Item key={group}>
+                    {({ active }) => (
+                      <button
+                        onClick={() => setSelectedGroup(group)}
+                        className={`${
+                          active ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100' : 'text-gray-700 dark:text-gray-300'
+                        } w-full text-left px-4 py-2 text-sm ${selectedGroup === group ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                      >
+                        {group}
+                      </button>
+                    )}
+                  </Menu.Item>
+                ))}
+              </Menu.Items>
+            </Menu>
             {phoneCount >= 2 && (
-              <Menu className="mr-2">
+              <Menu className="mr-2 relative">
                 <Menu.Button as={Button} variant="outline-secondary" className="bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
                   Phone Numbers <Lucide icon="ChevronDown" className="w-4 h-4 ml-2" />
                 </Menu.Button>
-                <Menu.Items className="w-64 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg rounded-lg mt-2">
+                <Menu.Items className="absolute z-[51] mt-2 w-64 origin-top-right rounded-md bg-white dark:bg-gray-800 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
                   {Object.entries(phoneNames).map(([index, phoneName]) => (
-                    <Menu.Item key={index} className="px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-                      <div className="flex items-center justify-between w-full">
-                        <div className="flex flex-col">
-                          <span className="font-medium">
-                            {companyData?.[`phone${index}`] || `Phone ${index}`}
-                          </span>
-                          <span className="text-xs text-gray-500 dark:text-gray-400">{phoneName || `Phone ${index}`}</span>
+                    <Menu.Item key={index}>
+                      {({ active }) => (
+                        <div className={`px-4 py-2 ${active ? 'bg-gray-100 dark:bg-gray-700' : ''}`}>
+                          <div className="flex items-center justify-between w-full">
+                            <div className="flex flex-col">
+                              <span className="font-medium text-gray-900 dark:text-gray-100">
+                                {companyData?.[`phone${index}`] || `Phone ${index}`}
+                              </span>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                {phoneName || `Phone ${index}`}
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => {
+                                const newName = prompt(`Enter new name for ${phoneName || `Phone ${index}`}`, phoneName);
+                                if (newName) updatePhoneName(parseInt(index), newName);
+                              }}
+                              className="text-blue-500 hover:text-blue-700"
+                            >
+                              <Lucide icon="Pencil" className="w-4 h-4" />
+                            </button>
+                          </div>
                         </div>
-                        <button
-                          onClick={() => {
-                            const newName = prompt(`Enter new name for ${phoneName || `Phone ${index}`}`, phoneName);
-                            if (newName) updatePhoneName(parseInt(index), newName);
-                          }}
-                          className="text-blue-500 hover:text-blue-700"
-                        >
-                          <Lucide icon="Pencil" className="w-4 h-4" />
-                        </button>
-                      </div>
+                      )}
                     </Menu.Item>
                   ))}
                 </Menu.Items>
               </Menu>
             )}
-            <Menu className="mr-2">
-              <Menu.Button as={Button} variant="outline-secondary" className="bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">
-                {selectedGroup || "Select a group"} <Lucide icon="ChevronDown" className="w-4 h-4" />
-              </Menu.Button>
-              <Menu.Items className="w-40 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-lg rounded-lg mt-2">
-                <Menu.Item as="button" onClick={() => setSelectedGroup('')} className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-                  Select All
-                </Menu.Item>
-                {groups.map(group => (
-                  <Menu.Item as="button" key={group} onClick={() => setSelectedGroup(group)} className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
-                    {group}
-                  </Menu.Item>
-                ))}
-              </Menu.Items>
-            </Menu>
             <div className="w-full mt-3 sm:w-auto sm:mt-0 sm:ml-auto md:ml-0">
               <div className="relative w-56 text-slate-500">
                 <FormInput
@@ -647,12 +740,7 @@ const formatPhoneForWhatsApp = (phone: string) => {
                   >
                     <div className="flex items-center">
                       ID
-                      {sortField === 'employeeId' && (
-                        <Lucide 
-                          icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
-                          className="w-4 h-4 ml-1"
-                        />
-                      )}
+                      {getSortIcon('employeeId')}
                     </div>
                   </th>
                   <th 
@@ -662,34 +750,30 @@ const formatPhoneForWhatsApp = (phone: string) => {
                   >
                     <div className="flex items-center">
                       Name
-                      {sortField === 'name' && (
-                        <Lucide 
-                          icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
-                          className="w-4 h-4 ml-1"
-                        />
-                      )}
+                      {getSortIcon('name')}
                     </div>
                   </th>
                   <th 
                     scope="col" 
                     className="p-4 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
+                    onClick={() => handleSort('phoneNumber')}
                   >
                     <div className="flex items-center">
                       Contact
+                      {getSortIcon('phoneNumber')}
                     </div>
                   </th>
                   <th 
                     scope="col" 
                     className="p-4 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
-                    onClick={() => handleSort('role')}
                   >
                     <div className="flex items-center">
                       <Menu as="div" className="relative inline-block text-left">
                         <Menu.Button className="flex items-center w-full">
-                          Role
+                          ROLE
                           <Lucide icon="ChevronDown" className="w-4 h-4 ml-1" />
                         </Menu.Button>
-                        <Menu.Items className="absolute right-0 z-10 mt-2 w-56 origin-top-right rounded-md bg-white dark:bg-gray-800 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+                        <Menu.Items className="absolute right-0 z-[51] mt-2 w-56 origin-top-right rounded-md bg-white dark:bg-gray-800 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
                           <div className="py-1">
                             <Menu.Item>
                               {({ active }) => (
@@ -731,15 +815,10 @@ const formatPhoneForWhatsApp = (phone: string) => {
                   >
                     <div className="flex items-center justify-end pr-4">
                       Quota
-                      {sortField === 'quotaLeads' && (
-                        <Lucide 
-                          icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
-                          className="w-4 h-4 ml-1"
-                        />
-                      )}
+                      {getSortIcon('quotaLeads')}
                     </div>
                   </th>
-                  {phoneCount > 1 && (
+                  {companyId === "042" && (
                     <th 
                       scope="col" 
                       className="p-4 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
@@ -747,12 +826,7 @@ const formatPhoneForWhatsApp = (phone: string) => {
                     >
                       <div className="flex items-center justify-end pr-4">
                         Weightage
-                        {sortField === 'weightage' && (
-                          <Lucide 
-                            icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
-                            className="w-4 h-4 ml-1"
-                          />
-                        )}
+                        {getSortIcon('weightage')}
                       </div>
                     </th>
                   )}
@@ -864,7 +938,7 @@ const formatPhoneForWhatsApp = (phone: string) => {
                         </div>
                       )}
                     </td>
-                    {phoneCount > 1 && (
+                    {companyId === "042" && (
                       <td className="p-4 text-right pr-4">
                         {editingUser === employee.id && editingField === 'weightage' ? (
                           <FormInput
