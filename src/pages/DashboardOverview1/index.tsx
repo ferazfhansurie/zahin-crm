@@ -168,6 +168,16 @@ function EmployeeSearch({
   );
 }
 
+// Add this before the Main function
+interface DashboardCard {
+  id: string;
+  title: string;
+  content: any;
+  filter?: string;
+  setFilter?: (value: any) => void;
+  filterControls?: React.ReactNode;
+}
+
 function Main() {
 
   interface Contact {
@@ -261,6 +271,8 @@ interface Tag {
   const [employeeSearchQuery, setEmployeeSearchQuery] = useState("");
   const [monthlyTokens, setMonthlyTokens] = useState<number>(0);
   const [monthlyPrice, setMonthlyPrice] = useState<number>(0);
+  const [hubspotLeads, setHubspotLeads] = useState<number>(0);
+  const [hubspotLeadsHistory, setHubspotLeadsHistory] = useState<{ date: string; count: number }[]>([]);
   const [monthlySpendData, setMonthlySpendData] = useState<{ labels: string[], datasets: any[] }>({ labels: [], datasets: [] });
   const filteredEmployees = useMemo(() => {
     return employees.filter(employee => 
@@ -449,15 +461,15 @@ interface Tag {
         return;
       }
   
-      companyId = dataUser.companyId;
+      setCompanyId(dataUser.companyId);
       role = dataUser.role;
   
-      if (!companyId) {
+      if (!dataUser.companyId) {
         
         return;
       }
   
-      const docRef = doc(firestore, 'companies', companyId);
+      const docRef = doc(firestore, 'companies', dataUser.companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
         
@@ -470,7 +482,7 @@ interface Tag {
       }
   
       // Fetch the number of contacts with replies
-      const contactsRef = collection(firestore, 'companies', companyId, 'contacts');
+      const contactsRef = collection(firestore, 'companies', dataUser.companyId, 'contacts');
       const contactsSnapshot = await getDocs(contactsRef);
       
       let contactsWithReplies = 0;
@@ -506,6 +518,8 @@ interface Tag {
     fetchCompanyData();
   }, []);
 
+  const [companyId, setCompanyId] = useState<string>('');
+
   async function fetchCompanyData() {
     const user = auth.currentUser;
  
@@ -513,45 +527,33 @@ interface Tag {
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        
         return;
       }
      
       const userData = docUserSnapshot.data();
-      const companyId = userData.companyId;
+      const fetchedCompanyId = userData.companyId;
+      setCompanyId(fetchedCompanyId);
 
-    
-      const docRef = doc(firestore, 'companies', companyId);
+      const docRef = doc(firestore, 'companies', fetchedCompanyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        
         return;
       }
       const companyData = docSnapshot.data();
- 
-
-      // Assuming refreshAccessToken is defined elsewhere
-      
-
-
     } catch (error) {
       console.error('Error fetching company data:', error);
     }
-
   }
 
   async function fetchEmployees() {
     const auth = getAuth(app);
     const user = auth.currentUser;
     try {
-      // Get current user's company ID
-      const docUserRef = doc(firestore, 'user', user?.email!);
-      const docUserSnapshot = await getDoc(docUserRef);
-      if (!docUserSnapshot.exists()) {
+      // Get current user's company ID from state
+      if (!companyId) {
+        console.error('Company ID not set');
         return;
       }
-      const dataUser = docUserSnapshot.data();
-      companyId = dataUser.companyId;
 
       // Get all employees
       const employeeRef = collection(firestore, `companies/${companyId}/employee`);
@@ -1442,6 +1444,90 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
     };
   };
 
+  // Add this new function to fetch Hubspot leads data
+  const fetchHubspotLeads = async () => {
+    if (!companyId) return;
+    
+    try {
+      console.log('Fetching Hubspot leads for company:', companyId);
+      
+      // Get the hubspot collection
+      const hubspotRef = collection(firestore, 'companies', companyId, 'hubspot');
+      const hubspotSnapshot = await getDocs(hubspotRef);
+
+      const leadsHistory: { date: string; count: number }[] = [];
+      let latestCount = 0;
+
+      console.log('Found Hubspot documents:', hubspotSnapshot.size);
+
+      hubspotSnapshot.forEach((doc) => {
+        const data = doc.data();
+        console.log('Processing document:', { id: doc.id, data });
+        
+        // Only add valid data
+        if (doc.id && typeof data.count === 'number') {
+          leadsHistory.push({
+            date: doc.id,
+            count: data.count
+          });
+
+          // Update latest count if this is the most recent document
+          if (!latestCount || doc.id > leadsHistory[leadsHistory.length - 2]?.date) {
+            latestCount = data.count;
+          }
+        }
+      });
+
+      // Sort by date
+      leadsHistory.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      console.log('Setting Hubspot data:', { latestCount, leadsHistory });
+
+      setHubspotLeads(latestCount);
+      setHubspotLeadsHistory(leadsHistory);
+    } catch (error) {
+      console.error('Error fetching Hubspot leads:', error);
+      setError('Failed to load Hubspot leads data');
+    }
+  };
+
+  // Remove the separate useEffect for Hubspot leads
+  useEffect(() => {
+    if (companyId === '042') {
+      fetchHubspotLeads();
+    }
+  }, [companyId]);
+
+  // Update the notifications useEffect
+  useEffect(() => {
+    if (!auth.currentUser?.email) return;
+
+    const unsubscribeNotifications = onSnapshot(
+      doc(firestore, "user", auth.currentUser.email), 
+      (doc) => {
+        const data = doc.data();
+        if (data?.notifications) {
+          setNotifications(data.notifications);
+        }
+      },
+      (error) => {
+        console.error('Error fetching notifications:', error);
+      }
+    );
+
+    const unsubscribeMessage = onMessage(messaging, (payload) => {
+      setNotifications((prevNotifications) => [
+        ...prevNotifications,
+        payload.notification,
+      ]);
+    });
+
+    return () => {
+      unsubscribeNotifications();
+      unsubscribeMessage();
+    };
+  }, []);
+
   // Add new interfaces and states
   interface Contact {
     id: string;
@@ -1678,7 +1764,7 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
   };
 
   // Add this new function to fetch assignments data
-  const dashboardCards = [
+  const dashboardCards: DashboardCard[] = [
     {
       id: 'kpi',
       title: 'Key Performance Indicators',
@@ -1699,23 +1785,12 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
         { label: "Conversion Rate", value: `${closedContacts > 0 ? ((closedContacts / totalContacts) * 100).toFixed(2) : 0}%` },
       ],
     },
-    // {
-    //   id: 'leads',
-    //   title: 'Leads Overview',
-    //   content: [
-    //     { label: "Total", value: totalContacts },
-    //     { label: "Today", value: todayContacts },
-    //     { label: "This Week", value: weekContacts },
-    //     { label: "This Month", value: monthContacts },
-    //   ]
-    // },
     {
       id: 'contacts-over-time',
       title: 'Contacts Over Time',
       content: totalContactsChartData,
       filter: contactsTimeFilter,
       setFilter: setContactsTimeFilter,
-      // Add the tag filter UI here
       filterControls: (
         <div className="flex gap-2">
           <FormSelect
@@ -1757,6 +1832,111 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
         closedContactsChartOptions
       }
     },
+    ...(companyId === '042' ? [{
+      id: 'hubspot-leads',
+      title: 'Hubspot Leads',
+      content: (
+        <div className="h-full">
+          <div className="mb-4 text-center">
+            <div className="text-3xl font-bold text-blue-500 dark:text-blue-400">
+              {loading ? (
+                <LoadingIcon icon="spinning-circles" className="w-8 h-8 mx-auto" />
+              ) : (
+                hubspotLeads
+              )}
+            </div>
+            <div className="text-sm text-gray-600 dark:text-gray-400">
+              Total Hubspot Leads
+            </div>
+          </div>
+          <div className="h-64">
+            {loading ? (
+              <div className="flex items-center justify-center h-full">
+                <LoadingIcon icon="spinning-circles" className="w-8 h-8" />
+              </div>
+            ) : hubspotLeadsHistory && hubspotLeadsHistory.length > 0 ? (
+              <Line
+                data={{
+                  labels: hubspotLeadsHistory.map(item => format(new Date(item.date), 'MMM dd, yyyy')),
+                  datasets: [{
+                    label: 'Hubspot Leads',
+                    data: hubspotLeadsHistory.map(item => item.count),
+                    borderColor: 'rgb(59, 130, 246)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    tension: 0.1,
+                    fill: true
+                  }]
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  scales: {
+                    y: {
+                      beginAtZero: true,
+                      title: {
+                        display: true,
+                        text: 'Number of Leads',
+                        color: 'rgb(75, 85, 99)',
+                      },
+                      ticks: {
+                        color: 'rgb(107, 114, 128)',
+                        stepSize: 1,
+                      },
+                    },
+                    x: {
+                      title: {
+                        display: true,
+                        text: 'Date',
+                        color: 'rgb(75, 85, 99)',
+                      },
+                      ticks: {
+                        color: 'rgb(107, 114, 128)',
+                        maxRotation: 45,
+                        minRotation: 45
+                      },
+                    },
+                  },
+                  plugins: {
+                    legend: {
+                      display: false,
+                    },
+                    tooltip: {
+                      mode: 'index' as const,
+                      intersect: false,
+                      callbacks: {
+                        title: (tooltipItems) => {
+                          const date = new Date(hubspotLeadsHistory[tooltipItems[0].dataIndex].date);
+                          return format(date, 'MMMM dd, yyyy');
+                        },
+                        label: (context) => {
+                          return `Leads: ${context.parsed.y}`;
+                        }
+                      }
+                    },
+                  },
+                }}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-500">
+                No Hubspot leads data available
+              </div>
+            )}
+          </div>
+          {hubspotLeadsHistory && hubspotLeadsHistory.length > 0 && (
+            <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
+              <div className="flex justify-between">
+                <span>First Record:</span>
+                <span>{format(new Date(hubspotLeadsHistory[0].date), 'MMM dd, yyyy')}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Latest Record:</span>
+                <span>{format(new Date(hubspotLeadsHistory[hubspotLeadsHistory.length - 1].date), 'MMM dd, yyyy')}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )
+    }] : []),
     {
       id: 'blast-messages',
       title: 'Scheduled Messages Analytics',
@@ -2121,6 +2301,95 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
     await fetchEmployees();
   };
 
+  // Make sure to call fetchEmployees after companyId is set
+  useEffect(() => {
+    if (companyId) {
+      fetchEmployees();
+    }
+  }, [companyId]);
+
+  // Add useEffect to fetch Hubspot leads when companyId changes
+  useEffect(() => {
+    console.log('CompanyId changed:', companyId);
+    if (companyId === '042') {
+      console.log('Calling fetchHubspotLeads for company 042');
+      fetchHubspotLeads();
+    }
+  }, [companyId]);
+
+  // Add monitoring for Hubspot data changes
+  useEffect(() => {
+    console.log('Hubspot data updated:', {
+      hubspotLeads,
+      hubspotLeadsHistory,
+      hasHistory: hubspotLeadsHistory.length > 0
+    });
+  }, [hubspotLeads, hubspotLeadsHistory]);
+
+  // Add this near the top of the component
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Update the initialization useEffect
+  useEffect(() => {
+    let isMounted = true;
+    let unsubscribeUser: (() => void) | null = null;
+
+    const initializeDashboard = async () => {
+      if (!auth.currentUser?.email) return;
+      
+      try {
+        setLoading(true);
+        // Get user data first
+        const docUserRef = doc(firestore, 'user', auth.currentUser.email);
+        unsubscribeUser = onSnapshot(docUserRef, async (docSnapshot) => {
+          if (!isMounted) return;
+          
+          if (docSnapshot.exists()) {
+            const userData = docSnapshot.data();
+            const fetchedCompanyId = userData.companyId;
+            setCompanyId(fetchedCompanyId);
+            
+            // Only fetch other data after we have the company ID
+            if (fetchedCompanyId) {
+              await Promise.all([
+                fetchEmployees(),
+                fetchContactsData(),
+                fetchBlastMessageData()
+              ]);
+
+              // Fetch company-specific data
+              if (fetchedCompanyId === '042') {
+                await fetchHubspotLeads();
+              }
+              if (fetchedCompanyId === '072') {
+                await fetchAssignmentsData();
+              }
+            }
+          }
+        });
+        
+        setIsInitialized(true);
+      } catch (error) {
+        console.error('Error initializing dashboard:', error);
+        setError('Failed to load dashboard data');
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    initializeDashboard();
+
+    // Cleanup function
+    return () => {
+      isMounted = false;
+      if (unsubscribeUser) {
+        unsubscribeUser();
+      }
+    };
+  }, []);
+
   return (
     <div className="flex flex-col w-full h-full overflow-x-hidden overflow-y-auto">
       <div className="flex-grow p-4 space-y-6">
@@ -2156,6 +2425,106 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
                     <div className="h-full">
                       {('datasets' in card.content) && (
                         <Bar data={card.content} options={totalContactsChartOptions} />
+                      )}
+                    </div>
+                  ) : card.id === 'hubspot-leads' ? (
+                    <div className="h-full">
+                      <div className="mb-4 text-center">
+                        <div className="text-3xl font-bold text-blue-500 dark:text-blue-400">
+                          {loading ? (
+                            <LoadingIcon icon="spinning-circles" className="w-8 h-8 mx-auto" />
+                          ) : (
+                            hubspotLeads
+                          )}
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          Total Hubspot Leads
+                        </div>
+                      </div>
+                      <div className="h-64">
+                        {loading ? (
+                          <div className="flex items-center justify-center h-full">
+                            <LoadingIcon icon="spinning-circles" className="w-8 h-8" />
+                          </div>
+                        ) : hubspotLeadsHistory && hubspotLeadsHistory.length > 0 ? (
+                          <Line
+                            data={{
+                              labels: hubspotLeadsHistory.map(item => format(new Date(item.date), 'MMM dd, yyyy')),
+                              datasets: [{
+                                label: 'Hubspot Leads',
+                                data: hubspotLeadsHistory.map(item => item.count),
+                                borderColor: 'rgb(59, 130, 246)',
+                                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                tension: 0.1,
+                                fill: true
+                              }]
+                            }}
+                            options={{
+                              responsive: true,
+                              maintainAspectRatio: false,
+                              scales: {
+                                y: {
+                                  beginAtZero: true,
+                                  title: {
+                                    display: true,
+                                    text: 'Number of Leads',
+                                    color: 'rgb(75, 85, 99)',
+                                  },
+                                  ticks: {
+                                    color: 'rgb(107, 114, 128)',
+                                    stepSize: 1,
+                                  },
+                                },
+                                x: {
+                                  title: {
+                                    display: true,
+                                    text: 'Date',
+                                    color: 'rgb(75, 85, 99)',
+                                  },
+                                  ticks: {
+                                    color: 'rgb(107, 114, 128)',
+                                    maxRotation: 45,
+                                    minRotation: 45
+                                  },
+                                },
+                              },
+                              plugins: {
+                                legend: {
+                                  display: false,
+                                },
+                                tooltip: {
+                                  mode: 'index' as const,
+                                  intersect: false,
+                                  callbacks: {
+                                    title: (tooltipItems) => {
+                                      const date = new Date(hubspotLeadsHistory[tooltipItems[0].dataIndex].date);
+                                      return format(date, 'MMMM dd, yyyy');
+                                    },
+                                    label: (context) => {
+                                      return `Leads: ${context.parsed.y}`;
+                                    }
+                                  }
+                                },
+                              },
+                            }}
+                          />
+                        ) : (
+                          <div className="flex items-center justify-center h-full text-gray-500">
+                            No Hubspot leads data available
+                          </div>
+                        )}
+                      </div>
+                      {hubspotLeadsHistory && hubspotLeadsHistory.length > 0 && (
+                        <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
+                          <div className="flex justify-between">
+                            <span>First Record:</span>
+                            <span>{format(new Date(hubspotLeadsHistory[0].date), 'MMM dd, yyyy')}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span>Latest Record:</span>
+                            <span>{format(new Date(hubspotLeadsHistory[hubspotLeadsHistory.length - 1].date), 'MMM dd, yyyy')}</span>
+                          </div>
+                        </div>
                       )}
                     </div>
                   ) : card.id === 'employee-assignments' ? (
