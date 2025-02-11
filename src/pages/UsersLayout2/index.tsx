@@ -56,6 +56,8 @@ interface Employee {
   phoneNumber?: string;
   phoneNames?: { [key: number]: string };
   imageUrl?: string;
+  quotaLeads?: number;
+  weightage?: number;
 }
 
 function Main() {
@@ -79,6 +81,15 @@ function Main() {
   const [selectedGroup, setSelectedGroup] = useState<string>('');
   const [phoneNames, setPhoneNames] = useState<{ [key: number]: string }>({});
   const [companyData, setCompanyData] = useState<any>(null);
+
+  const [editingUser, setEditingUser] = useState<string | null>(null);
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState<string>('');
+
+  const [sortField, setSortField] = useState<string>('role');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+
+  const [roleFilter, setRoleFilter] = useState<string>('all');
 
   const toggleModal = (id?:string) => {
     setIsModalOpen(!isModalOpen);
@@ -264,7 +275,9 @@ function Main() {
           name: data.name,
           employeeId: data.employeeId,
           phoneNumber: data.phoneNumber,
-          role: data.role
+          role: data.role,
+          quotaLeads: data.quotaLeads || 0,
+          weightage: data.weightage || 0,
         } as Employee);
       });
 
@@ -393,15 +406,118 @@ const filteredEmployees = useMemo(() => {
     filtered = filtered.filter(employee => employee.group === selectedGroup);
   }
 
+  if (roleFilter !== 'all') {
+    filtered = filtered.filter(employee => employee.role === roleFilter);
+  }
+
   return filtered;
-}, [employeeList, searchTerm, selectedGroup]);
+}, [employeeList, searchTerm, selectedGroup, roleFilter]);
+
+const getRoleColor = (role: string) => {
+  switch (role) {
+    case "1":
+      return "text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800";
+    case "2":
+      return "text-indigo-700 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800";
+    case "3":
+      return "text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800";
+    case "4":
+      return "text-violet-700 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800";
+    case "5":
+      return "text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800";
+    default:
+      return "text-gray-700 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800";
+  }
+};
+
+const getRoleName = (role: string) => {
+  switch (role) {
+    case "1":
+      return "Admin";
+    case "2":
+      return "Sales Agent";
+    case "3":
+      return "Observer";
+    case "4":
+      return "Manager";
+    case "5":
+      return "Supervisor";
+    default:
+      return "Other";
+  }
+};
+
+const handleSort = (field: string) => {
+  if (sortField === field) {
+    setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+  } else {
+    setSortField(field);
+    setSortDirection('asc');
+  }
+};
 
 const paginatedEmployees = filteredEmployees
   .sort((a, b) => {
-    const roleOrder = { "1": 0, "2": 1, "3": 2, "4": 3, "5": 4 };
-    return roleOrder[a.role as keyof typeof roleOrder] - roleOrder[b.role as keyof typeof roleOrder];
+    if (sortDirection === 'asc') {
+      if (sortField === 'quotaLeads') {
+        return (a[sortField] || 0) - (b[sortField] || 0);
+      }
+      return String(a[sortField as keyof Employee] || '').localeCompare(String(b[sortField as keyof Employee] || ''));
+    } else {
+      if (sortField === 'quotaLeads') {
+        return (b[sortField] || 0) - (a[sortField] || 0);
+      }
+      return String(b[sortField as keyof Employee] || '').localeCompare(String(a[sortField as keyof Employee] || ''));
+    }
   })
   .slice(currentPage * itemsPerPage, (currentPage + 1) * itemsPerPage);
+
+const handleFieldUpdate = async (employeeId: string, field: string, value: string | number) => {
+  try {
+    const docRef = doc(firestore, `companies/${companyId}/employee/${employeeId}`);
+    const userRef = doc(firestore, 'user', employeeId);
+    
+    // Create update object
+    const updateData: { [key: string]: any } = {
+      [field]: field === 'quotaLeads' || field === 'weightage' ? parseInt(value.toString()) : value,
+      updatedAt: new Date().toISOString()
+    };
+
+    // Update both employee and user collections
+    await Promise.all([
+      updateDoc(docRef, updateData),
+      updateDoc(userRef, updateData)
+    ]);
+
+    // Update local state
+    setEmployeeList(prevList =>
+      prevList.map(emp =>
+        emp.id === employeeId
+          ? { ...emp, [field]: updateData[field] }
+          : emp
+      )
+    );
+
+    toast.success(`${field.charAt(0).toUpperCase() + field.slice(1)} updated successfully`);
+    
+    // Reset editing state
+    setEditingUser(null);
+    setEditingField(null);
+    
+    // Refresh employee list to ensure consistency
+    await fetchEmployees();
+  } catch (error) {
+    console.error(`Error updating ${field}:`, error);
+    toast.error(`Failed to update ${field}`);
+  }
+};
+
+const formatPhoneForWhatsApp = (phone: string) => {
+  // Remove any non-digit characters
+  const cleanPhone = phone.replace(/\D/g, '');
+  // Ensure it starts with country code
+  return cleanPhone.startsWith('6') ? cleanPhone : `6${cleanPhone}`;
+};
 
   return (
     <div className="flex flex-col h-full overflow-auto">
@@ -422,12 +538,12 @@ const paginatedEmployees = filteredEmployees
       <div className="flex-grow p-5">
         <div className="sticky top-0 bg-gray-100 dark:bg-gray-900 z-10 py-2">
           <div className="flex flex-wrap items-center mt-2 intro-y sm:flex-nowrap">
-          <Link to="settings">
-  <Button variant="primary" className="mr-2 shadow-md">
-    <Lucide icon="Settings" className="w-4 h-4 mr-2" />
-    Settings
-  </Button>
-</Link>
+            <Link to="settings">
+              <Button variant="primary" className="mr-2 shadow-md">
+                <Lucide icon="Settings" className="w-4 h-4 mr-2" />
+                Settings
+              </Button>
+            </Link>
            
            
          
@@ -519,85 +635,332 @@ const paginatedEmployees = filteredEmployees
             </div>
           </div>
         </div>
-        <div className="mt-5">
-          {paginatedEmployees.map((employee, index) => (
-            <div key={index} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 mb-2 p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center flex-1">
-                  {/* Avatar/Initial Section */}
-                  <div className="flex-shrink-0">
-                    {employee.imageUrl ? (
-                      <img
-                        src={employee.imageUrl}
-                        alt={employee.name}
-                        className="w-14 h-14 rounded-full"
-                      />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-purple-200 dark:bg-purple-800 flex items-center justify-center">
-                        <span className="text-lg font-medium text-purple-700 dark:text-purple-200">
-                          {employee.name.charAt(0).toUpperCase()}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* User Info Section */}
-                  <div className="ml-4 flex-1">
+        <div className="mt-5 intro-y">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+              <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-400">
+                <tr>
+                  <th 
+                    scope="col" 
+                    className="p-4 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
+                    onClick={() => handleSort('employeeId')}
+                  >
                     <div className="flex items-center">
-                      <div className="font-medium">
-                        <span className="text-blue-500 dark:text-blue-300">{employee.employeeId}</span> <span className="text-gray-900 dark:text-gray-100 capitalize">{employee.name}</span>
+                      ID
+                      {sortField === 'employeeId' && (
+                        <Lucide 
+                          icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
+                          className="w-4 h-4 ml-1"
+                        />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    scope="col" 
+                    className="p-4 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
+                    onClick={() => handleSort('name')}
+                  >
+                    <div className="flex items-center">
+                      Name
+                      {sortField === 'name' && (
+                        <Lucide 
+                          icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
+                          className="w-4 h-4 ml-1"
+                        />
+                      )}
+                    </div>
+                  </th>
+                  <th 
+                    scope="col" 
+                    className="p-4 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
+                  >
+                    <div className="flex items-center">
+                      Contact
+                    </div>
+                  </th>
+                  <th 
+                    scope="col" 
+                    className="p-4 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
+                    onClick={() => handleSort('role')}
+                  >
+                    <div className="flex items-center">
+                      <Menu as="div" className="relative inline-block text-left">
+                        <Menu.Button className="flex items-center w-full">
+                          Role
+                          <Lucide icon="ChevronDown" className="w-4 h-4 ml-1" />
+                        </Menu.Button>
+                        <Menu.Items className="absolute right-0 z-10 mt-2 w-56 origin-top-right rounded-md bg-white dark:bg-gray-800 shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none">
+                          <div className="py-1">
+                            <Menu.Item>
+                              {({ active }) => (
+                                <button
+                                  onClick={() => setRoleFilter('all')}
+                                  className={`${
+                                    active ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100' : 'text-gray-700 dark:text-gray-300'
+                                  } w-full text-left px-4 py-2 text-sm ${roleFilter === 'all' ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                                >
+                                  All Roles
+                                </button>
+                              )}
+                            </Menu.Item>
+                            {["1", "2", "3", "4", "5"].map((roleValue) => (
+                              <Menu.Item key={roleValue}>
+                                {({ active }) => (
+                                  <button
+                                    onClick={() => setRoleFilter(roleValue)}
+                                    className={`${
+                                      active ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100' : 'text-gray-700 dark:text-gray-300'
+                                    } w-full text-left px-4 py-2 text-sm ${roleFilter === roleValue ? 'bg-gray-100 dark:bg-gray-700' : ''}`}
+                                  >
+                                    <div className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getRoleColor(roleValue)}`}>
+                                      {getRoleName(roleValue)}
+                                    </div>
+                                  </button>
+                                )}
+                              </Menu.Item>
+                            ))}
+                          </div>
+                        </Menu.Items>
+                      </Menu>
+                    </div>
+                  </th>
+                  <th 
+                    scope="col" 
+                    className="p-4 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
+                    onClick={() => handleSort('quotaLeads')}
+                  >
+                    <div className="flex items-center justify-end pr-4">
+                      Quota
+                      {sortField === 'quotaLeads' && (
+                        <Lucide 
+                          icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
+                          className="w-4 h-4 ml-1"
+                        />
+                      )}
+                    </div>
+                  </th>
+                  {phoneCount > 1 && (
+                    <th 
+                      scope="col" 
+                      className="p-4 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600"
+                      onClick={() => handleSort('weightage')}
+                    >
+                      <div className="flex items-center justify-end pr-4">
+                        Weightage
+                        {sortField === 'weightage' && (
+                          <Lucide 
+                            icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
+                            className="w-4 h-4 ml-1"
+                          />
+                        )}
                       </div>
-                    </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                      {employee.email}
-                    </div>
-                  </div>
-
-                  {/* Role/Status Section */}
-                  <div className="flex items-center">
-                    <div className="mr-8">
-                      <div className="text-sm text-gray-600 dark:text-gray-300">
-                        {employee.role === "1" ? 'Administrator' : 
-                        employee.role === "2" ? 'Sales Agent' : 
-                        employee.role === "3" ? 'Observer' : 
-                        employee.role === "4" ? 'Manager' : 
-                        employee.role === "5" ? 'Supervisor' : 'Other'}
+                    </th>
+                  )}
+                  <th scope="col" className="p-4">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginatedEmployees.map((employee) => (
+                  <tr key={employee.id} className="bg-white border-b dark:bg-gray-800 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600">
+                    <td className="p-4 font-medium text-gray-900 dark:text-white">
+                      {employee.employeeId}
+                    </td>
+                    <td className="p-4 text-left">
+                      {editingUser === employee.id && editingField === 'name' ? (
+                        <FormInput
+                          type="text"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={() => handleFieldUpdate(employee.id, 'name', editValue)}
+                          className="w-full"
+                          autoFocus
+                        />
+                      ) : (
+                        <div 
+                          className="cursor-pointer hover:text-blue-600"
+                          onClick={() => {
+                            if (role === "1" || employee.email === currentUserEmail) {
+                              setEditingUser(employee.id);
+                              setEditingField('name');
+                              setEditValue(employee.name);
+                            }
+                          }}
+                        >
+                          {employee.name}
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-4 text-left">
+                      {employee.phoneNumber && (
+                        <a
+                          href={`https://wa.me/${formatPhoneForWhatsApp(employee.phoneNumber)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center px-3 py-1 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-left"
+                        >
+                          <img 
+                            src="/WhatsApp Icons.svg" 
+                            alt="WhatsApp" 
+                            className="w-6 h-6 mr-2"
+                          />
+                          {employee.phoneNumber}
+                        </a>
+                      )}
+                    </td>
+                    <td className="p-4">
+                      {editingUser === employee.id && editingField === 'role' ? (
+                        <FormSelect
+                          value={editValue}
+                          onChange={(e) => {
+                            setEditValue(e.target.value);
+                            handleFieldUpdate(employee.id, 'role', e.target.value);
+                          }}
+                          className="w-full"
+                          autoFocus
+                        >
+                          <option value="1">Admin</option>
+                          <option value="2">Sales Agent</option>
+                          <option value="3">Observer</option>
+                          <option value="4">Manager</option>
+                          <option value="5">Supervisor</option>
+                        </FormSelect>
+                      ) : (
+                        <div 
+                          className={`cursor-pointer inline-flex items-center px-2.5 py-1.5 rounded-full text-sm font-medium ${getRoleColor(employee.role)}`}
+                          onClick={() => {
+                            if (role === "1") {
+                              setEditingUser(employee.id);
+                              setEditingField('role');
+                              setEditValue(employee.role);
+                            }
+                          }}
+                        >
+                          {getRoleName(employee.role)}
+                        </div>
+                      )}
+                    </td>
+                    <td className="p-4 text-right pr-4">
+                      {editingUser === employee.id && editingField === 'quotaLeads' ? (
+                        <FormInput
+                          type="number"
+                          value={editValue}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onBlur={() => handleFieldUpdate(employee.id, 'quotaLeads', editValue)}
+                          className="w-full text-right"
+                          autoFocus
+                        />
+                      ) : (
+                        <div 
+                          className="cursor-pointer hover:text-blue-600 font-medium"
+                          onClick={() => {
+                            if (role === "1") {
+                              setEditingUser(employee.id);
+                              setEditingField('quotaLeads');
+                              setEditValue(employee.quotaLeads?.toString() || '0');
+                            }
+                          }}
+                        >
+                          {employee.quotaLeads || 0}
+                        </div>
+                      )}
+                    </td>
+                    {phoneCount > 1 && (
+                      <td className="p-4 text-right pr-4">
+                        {editingUser === employee.id && editingField === 'weightage' ? (
+                          <FormInput
+                            type="number"
+                            value={editValue}
+                            onChange={(e) => setEditValue(e.target.value)}
+                            onBlur={() => handleFieldUpdate(employee.id, 'weightage', editValue)}
+                            className="w-full text-right"
+                            autoFocus
+                          />
+                        ) : (
+                          <div 
+                            className="cursor-pointer hover:text-blue-600 font-medium"
+                            onClick={() => {
+                              if (role === "1") {
+                                setEditingUser(employee.id);
+                                setEditingField('weightage');
+                                setEditValue(employee.weightage?.toString() || '0');
+                              }
+                            }}
+                          >
+                            {employee.weightage || 0}
+                          </div>
+                        )}
+                      </td>
+                    )}
+                    <td className="p-4">
+                      <div className="flex items-center space-x-3">
+                        {(role === "1" || (role !== "1" && employee.email === currentUserEmail)) && (
+                          <button
+                            onClick={() => {
+                              // Fetch the latest data before navigating
+                              const fetchLatestData = async () => {
+                                const docRef = doc(firestore, `companies/${companyId}/employee/${employee.id}`);
+                                const docSnap = await getDoc(docRef);
+                                if (docSnap.exists()) {
+                                  const latestData = docSnap.data();
+                                  navigate(`crud-form`, { 
+                                    state: { 
+                                      contactId: employee.id, 
+                                      contact: { ...latestData, id: employee.id }, 
+                                      companyId: companyId || '' 
+                                    } 
+                                  });
+                                }
+                              };
+                              fetchLatestData();
+                            }}
+                            className="text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+                          >
+                            <Lucide icon="Pencil" className="w-5 h-5" />
+                          </button>
+                        )}
+                        {role === "1" && (
+                          <button 
+                            onClick={() => toggleModal(employee.id)}
+                            className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors"
+                          >
+                            <Lucide icon="Trash2" className="w-5 h-5" />
+                          </button>
+                        )}
                       </div>
-                    </div>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="flex items-center space-x-2">
-                    {(role === "1" || (role !== "1" && employee.email === currentUserEmail)) && (
-                      <button
-                        onClick={() => navigate(`crud-form`, { 
-                          state: { 
-                            contactId: employee.id, 
-                            contact: employee, 
-                            companyId: companyId || '' 
-                          } 
-                        })}
-                        className="p-2 text-gray-400 hover:text-blue-600 dark:hover:text-blue-400"
-                      >
-                        <Lucide icon="Pencil" className="w-5 h-5" />
-                      </button>
-                    )}
-                    {role === "1" && (
-                      <button 
-                        onClick={() => toggleModal(employee.id)}
-                        className="p-2 text-gray-400 hover:text-red-600 dark:hover:text-red-400"
-                      >
-                        <Lucide icon="Trash" className="w-5 h-5" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </div>
-          ))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
+        <div className="flex justify-center mt-5">
+          <ReactPaginate
+            breakLabel="..."
+            nextLabel={<>Next <span className="hidden sm:inline">&gt;</span></>}
+            previousLabel={<><span className="hidden sm:inline">&lt;</span> Previous</>}
+            onPageChange={handlePageChange}
+            pageRangeDisplayed={3}
+            marginPagesDisplayed={1}
+            pageCount={Math.ceil(filteredEmployees.length / itemsPerPage)}
+            renderOnZeroPageCount={null}
+            containerClassName="flex justify-center items-center flex-wrap mt-2"
+            pageClassName="m-1"
+            pageLinkClassName="px-2 py-1 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 text-sm"
+            previousClassName="m-1"
+            nextClassName="m-1"
+            previousLinkClassName="px-2 py-1 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 text-sm"
+            nextLinkClassName="px-2 py-1 rounded-lg bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700 text-sm"
+            disabledClassName="opacity-50 cursor-not-allowed"
+            activeClassName="font-bold"
+            activeLinkClassName="bg-blue-500 text-white hover:bg-blue-600 dark:bg-blue-600 dark:text-white dark:hover:bg-blue-700"
+            breakClassName="mx-1"
+            breakLinkClassName="px-2 py-1 text-gray-700 dark:text-gray-300"
+          />
+        </div>
       </div>
+
       {isModalOpen && (
         <div 
           id="popup-modal" 
