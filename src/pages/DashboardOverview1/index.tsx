@@ -1456,7 +1456,7 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
       const hubspotSnapshot = await getDocs(hubspotRef);
 
       const leadsHistory: { date: string; count: number }[] = [];
-      let latestCount = 0;
+      let totalLeads = 0;
 
       console.log('Found Hubspot documents:', hubspotSnapshot.size);
 
@@ -1470,20 +1470,16 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
             date: doc.id,
             count: data.count
           });
-
-          // Update latest count if this is the most recent document
-          if (!latestCount || doc.id > leadsHistory[leadsHistory.length - 2]?.date) {
-            latestCount = data.count;
-          }
+          totalLeads += data.count; // Add each count to the total
         }
       });
 
       // Sort by date
       leadsHistory.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-      console.log('Setting Hubspot data:', { latestCount, leadsHistory });
+      console.log('Setting Hubspot data:', { totalLeads, leadsHistory });
 
-      setHubspotLeads(latestCount);
+      setHubspotLeads(totalLeads);
       setHubspotLeadsHistory(leadsHistory);
     } catch (error) {
       console.error('Error fetching Hubspot leads:', error);
